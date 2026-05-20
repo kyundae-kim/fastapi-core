@@ -2,42 +2,78 @@
 
 ## 개요
 
-`fastapi-core`은 Keycloak 기반 인증/인가, PostgreSQL 연동, MinIO 연동 구조를 갖춘 Python Package 프로젝트 템플릿입니다.  
-`uv` 패키지 매니저 환경에서 동작합니다.
+`fastapi-core`는 DocMesh 프로젝트의 FastAPI 기반 마이크로서비스들이 공통으로 사용하는 Python SDK 패키지입니다.  
+Keycloak 기반 인증/인가, PostgreSQL 연동, MinIO 연동에 필요한 핵심 모듈을 제공하며, `uv` 패키지 매니저 환경에서 동작합니다.
 
 ---
 
-## 주요 기능
+## 배경 및 목적
 
-### Keycloak 기반 인증/인가
+DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성됩니다. 각 서비스마다 Keycloak 토큰 검증, DB 연결, MinIO 연결 코드를 중복 구현하는 문제를 해결하기 위해 `fastapi-core` SDK를 분리합니다.
 
-- OAuth2 Password Grant로 토큰 발급 및 검증
-- JWT RS256 서명 검증 및 사용자 클레임 추출 (`sub`, `preferred_username`, `email`, `name`)
-- Realm Access 기반 역할(Role) 및 스코프(Scope) 추출
+- **중복 제거**: 인증/DB/스토리지 연동 코드를 단일 패키지로 통합
+- **일관성 보장**: 모든 서비스가 동일한 설정 구조·예외 처리·로깅 정책을 공유
+- **빠른 서비스 개발**: 새 마이크로서비스는 `fastapi-core`를 의존성으로 추가하고 비즈니스 로직 구현에 집중
 
-### 환경별 설정 분리
+---
 
-- **환경 변수 레이어** (`EnvConfig`): 로깅 레벨, CORS, JWT 검증 정책, 실행 환경 타입, 설정 파일 경로, 외부 서비스 접속 정보
-- **서비스 설정 레이어** (`ServiceSettings`, YAML): 
+## 대상 사용자
+
+| 사용자 | 설명 |
+| --- | --- |
+| DocMesh 서비스 개발자 | `fastapi-core`를 의존성으로 추가하여 FastAPI 서비스를 개발하는 내부 팀 |
+| 인프라/DevOps 엔지니어 | Keycloak·PostgreSQL·MinIO 설정 및 환경 변수 관리 |
+
+---
+
+## 주요 기능 요구사항
+
+### 1. Keycloak 기반 인증/인가
+
+- OAuth2 Password Grant 방식으로 Keycloak에서 액세스 토큰 발급
+- JWT RS256 서명 검증 및 클레임 추출 (`sub`, `preferred_username`, `email`, `name`)
+- Realm Access 기반 역할(Role) 및 스코프(Scope) 파싱
+- FastAPI `Depends` 기반 `get_current_user`, `require_permissions` 의존성 함수 제공
+- 개발 환경용 서명 검증 생략 모드(`allow_insecure_jwt_decode`) 지원
+- Keycloak 토큰 인트로스펙션(`use_introspection`) 선택적 지원
+
+### 2. PostgreSQL 연동
+
+- SQLAlchemy ≥ 2.0 + psycopg v3 기반 비동기/동기 엔진 생성
+- `DatabaseConfig`로 DSN 자동 조합 (또는 `DB__URL` 직접 지정)
+- 연결 확인(`SELECT 1`) 및 DB 버전 조회 유틸리티 함수 제공
+- `trust` / `password` 인증 방식 선택 지원
+
+### 3. MinIO 연동
+
+- minio-py SDK 기반 클라이언트 생성 및 버킷 자동 생성(`ensure_bucket_exists`)
+- 연결 확인 및 버킷 목록 조회 유틸리티 함수 제공
+- TLS(`MINIO__SECURE`) 선택적 지원
+
+### 4. 설정 관리
+
+- **환경 변수 레이어** (`EnvConfig`): 외부 서비스 접속 정보, 실행 환경, 로깅 레벨 등 배포 환경에 따라 달라지는 값
+- **서비스 설정 레이어** (`ServiceSettings`, YAML): CORS, JWT 검증 정책 등 애플리케이션 동작 값
 - `dev` / `stage` / `prod` 환경 분리 및 환경별 `.env` 파일 지원
+- `__` 구분자를 통한 중첩 모델 환경 변수 주입 (예: `KEYCLOAK__REALM`)
 
-### 문서화
-
-- SDK 문서화 지원
-
-### 로깅 및 예외 처리
+### 5. 로깅
 
 - 로깅 레벨 동적 설정 (`WARNING` / `INFO` / `DEBUG`)
 
+### 6. FastAPI 앱 조립 지원
+
+- 로깅·CORS·lifespan·라우터 등록을 수행하는 `create_app` 팩토리 함수 제공
+- 헬스체크 라우터(`/health/liveness`, `/health/readiness`) 내장 제공
+
 ---
 
-## 프로젝트 구조
+## 패키지 구조
 
 ```
-fastapi_template/
-├── main.py              # 앱 진입점 (uvicorn 엔트리)
-├── factory.py           # FastAPI 앱 조립 (로깅·CORS·lifespan·라우트 등록)
-├── core/                # 공통 인프라 계층 (프레임워크 비의존)
+fastapi_core/
+├── __init__.py
+├── core/                # 프레임워크 비의존 공통 인프라
 │   ├── config.py        # EnvConfig, ServiceSettings, 각종 설정 모델
 │   ├── security.py      # KeycloakAuthProvider, JWT 디코드, Token/User 모델
 │   ├── logging.py       # 로깅 레벨 초기화
@@ -48,57 +84,78 @@ fastapi_template/
 │   ├── database.py      # get_db_engine
 │   ├── security.py      # get_current_user, require_permissions
 │   └── storage.py       # get_minio_client
-├── routes/              # HTTP 입출력 계층
-│   ├── __init__.py      # 라우터 등록 함수 (register_routes)
-│   ├── auth.py          # POST /token, GET /user, GET /example/*
-│   ├── database.py      # GET /db/example/ping, GET /db/example/version
+├── routers/             # 재사용 가능한 내장 라우터
 │   ├── health.py        # GET /health/liveness, GET /health/readiness
-│   └── storage.py       # GET /storage/ping, GET /storage/buckets
-├── schemas/             # Pydantic 요청/응답 스키마
+│   └── auth.py          # POST /token, GET /user (선택적 마운트)
+├── schemas/             # 공유 Pydantic 스키마
 │   ├── token.py         # TokenResponse
 │   ├── user.py          # UserInfo
-│   ├── health.py        # HealthResponse
-│   ├── database.py      # DB 관련 스키마
-│   └── storage.py       # MinIO 관련 스키마
-└── services/            # 외부 서비스 연동 및 도메인 로직
-    ├── security.py      # authenticate, refresh_token, decode_token, get_auth_provider
-    └── database.py      # SQLAlchemy 기반 DB 쿼리
+│   └── health.py        # HealthResponse
+└── factory.py           # create_app() — FastAPI 앱 조립 팩토리
 ```
 
 ---
 
-## SDK 
+## 공개 API (Public Interface)
 
-### 인증 (`routes/auth.py`)
+### 인증 관련
 
-| 메서드 | 경로 | 설명 | 인증 필요 |
-| --- | --- | --- | --- |
-| `POST` | `/token` | OAuth2 Password Grant로 액세스 토큰 발급 | 불필요 |
-| `GET` | `/user` | JWT로 현재 사용자 정보 조회 | 필요 |
-| `GET` | `/example/read` | `read` 역할 필요 예시 엔드포인트 | 필요 |
-| `GET` | `/example/create` | `create` 역할 필요 예시 엔드포인트 | 필요 |
-| `GET` | `/example/delete` | `delete` 역할 필요 예시 엔드포인트 | 필요 |
-
-### 헬스체크 (`routes/health.py`)
-
-| 메서드 | 경로 | 설명 |
+| 심볼 | 위치 | 설명 |
 | --- | --- | --- |
-| `GET` | `/health/liveness` | 앱 프로세스 생존 여부 확인 |
-| `GET` | `/health/readiness` | Keycloak 연결 가능 여부 확인 |
+| `KeycloakAuthProvider` | `core.security` | Keycloak 연동 인증 프로바이더 |
+| `get_current_user` | `dependencies.security` | 현재 인증 사용자 반환 `Depends` |
+| `require_permissions` | `dependencies.security` | 역할/스코프 기반 접근 제어 `Depends` |
+| `authenticate` | `services.security` | 사용자명·비밀번호로 토큰 발급 |
+| `refresh_token` | `services.security` | 리프레시 토큰으로 액세스 토큰 갱신 |
+| `decode_token` | `services.security` | JWT 디코드 및 클레임 반환 |
 
-### PostgreSQL 예시 (`routes/database.py`)
+### DB 관련
 
-| 메서드 | 경로 | 설명 |
+| 심볼 | 위치 | 설명 |
 | --- | --- | --- |
-| `GET` | `/db/example/ping` | DB 연결 확인 (`SELECT 1`) |
-| `GET` | `/db/example/version` | DB 버전 조회 (`SELECT version()`) |
+| `DatabaseConfig` | `core.config` | DB 접속 정보 설정 모델 |
+| `get_db_engine` | `dependencies.database` | SQLAlchemy 엔진 반환 `Depends` |
+| `create_db_engine` | `services.database` | 엔진 생성 유틸리티 |
+| `check_database_connection` | `services.database` | DB 연결 확인 (`SELECT 1`) |
 
-### MinIO 예시 (`routes/storage.py`)
+### 스토리지 관련
 
-| 메서드 | 경로 | 설명 |
+| 심볼 | 위치 | 설명 |
 | --- | --- | --- |
-| `GET` | `/storage/ping` | MinIO 연결 확인 및 기본 버킷 접근 여부 |
-| `GET` | `/storage/buckets` | MinIO 버킷 목록 조회 |
+| `MinIOConfig` | `core.config` | MinIO 접속 정보 설정 모델 |
+| `get_minio_client` | `dependencies.storage` | MinIO 클라이언트 반환 `Depends` |
+| `create_minio_client` | `core.storage` | 클라이언트 생성 유틸리티 |
+| `ensure_bucket_exists` | `core.storage` | 버킷 없으면 자동 생성 |
+
+### 설정 관련
+
+| 심볼 | 위치 | 설명 |
+| --- | --- | --- |
+| `EnvConfig` | `core.config` | 환경 변수 기반 전체 설정 모델 |
+| `ServiceSettings` | `core.config` | YAML 기반 서비스 설정 모델 |
+| `get_config` | `dependencies.config` | `EnvConfig` 반환 `Depends` |
+| `get_settings` | `dependencies.config` | `ServiceSettings` 반환 `Depends` |
+
+---
+
+## 비기능 요구사항
+
+### 테스트
+
+- 단위 테스트: 외부 서비스 없이 `unittest.mock` 기반으로 전체 공개 API 커버
+- 통합 테스트: Keycloak·PostgreSQL·MinIO 실 인스턴스 연결 검증 (devcontainer 환경)
+- 테스트 러너: pytest (`uv run pytest`)
+
+### 품질
+
+- 린터: Ruff (line-length 88)
+- Python ≥ 3.10 호환성 유지
+- 타입 힌트 전면 적용
+
+### 패키지 배포
+
+- `pyproject.toml` 기준 `uv` 로 빌드 및 설치
+- 내부 PyPI 또는 Git URL(`pip install git+...`) 방식으로 서비스에서 의존성 추가
 
 ---
 
@@ -108,7 +165,7 @@ fastapi_template/
 | --- | --- |
 | 런타임 | Python ≥ 3.10 |
 | 패키지 매니저 | [uv](https://docs.astral.sh/uv/) |
-| 웹 프레임워크 | FastAPI (with standard extras) |
+| 웹 프레임워크 | FastAPI |
 | 인증 서버 | Keycloak (OAuth2 / OIDC) |
 | JWT 처리 | PyJWT\[crypto\] (RS256) |
 | DB 드라이버 | psycopg (v3, binary) |
