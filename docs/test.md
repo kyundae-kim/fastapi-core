@@ -42,7 +42,8 @@ test_fastapi_core/
 │   ├── test_database_integration.py    # PostgreSQL 연동 통합 테스트
 │   ├── test_security.py                # get_current_user, require_permissions mock 단위 테스트 (dependencies/auth.py)
 │   ├── test_security_integration.py    # Keycloak 연동 통합 테스트 (dependencies/auth.py)
-│   └── test_storage.py                 # get_minio_client Depends 단위 테스트
+│   ├── test_storage.py                 # get_minio_client Depends mock 단위 테스트
+│   └── test_storage_integration.py     # MinIO 연동 통합 테스트
 └── routers/
     ├── test_health.py                  # /health/liveness, /health/readiness 단위 테스트
     ├── test_auth.py                    # /token, /user 라우터 mock 단위 테스트
@@ -69,7 +70,7 @@ uv run pytest -q
 | `dependencies/test_config.py` | `get_config`, `get_settings` Depends 반환값 검증 |
 | `dependencies/test_database.py` | `create_db_engine`·`check_database_connection` mock 테스트, `get_db_engine` Depends mock 테스트 — `app.state.db_engine` 우선 반환 및 fallback 동작 검증 포함 |
 | `dependencies/test_security.py` | `set_auth_provider`·`get_auth_provider`·`get_current_user`·`require_permissions` mock 테스트 — `app.state.auth_provider` 우선 반환 및 fallback 동작 검증 포함 |
-| `dependencies/test_storage.py` | `get_minio_client` Depends mock 테스트 — `app.state.minio_client` 우선 반환 및 fallback 동작 검증 포함 |
+| `dependencies/test_storage.py` | `create_minio_client`·`get_minio_client`·`set_minio_client` mock 테스트 — `app.state.minio_client` 우선 반환 및 fallback 동작 검증 포함 |
 | `routers/test_health.py` | `/health/liveness` 200 응답, `/health/readiness` Keycloak mock 연결 확인 |
 | `routers/test_auth.py` | `/token` 발급 및 오류 응답, `/user` 인증 사용자 정보 반환 mock 테스트 |
 
@@ -141,6 +142,7 @@ uv run pytest -q -m integration
 | `core/test_storage_integration.py` | 실제 MinIO 클라이언트 생성, 버킷 자동 생성, 버킷 목록 조회 |
 | `dependencies/test_database_integration.py` | 실제 PostgreSQL 엔진 생성, 연결 확인(SELECT 1), DB 버전 조회, state 싱글톤 검증 |
 | `dependencies/test_security_integration.py` | 실제 Keycloak 토큰으로 RS256 검증, `get_current_user`·`require_permissions` 실환경 동작 검증 |
+| `dependencies/test_storage_integration.py` | 실제 MinIO 클라이언트로 state 싱글톤 검증, config 기반 등록, Depends 경유 버킷 접근 검증 |
 | `routers/test_auth_integration.py` | `/token` 실제 토큰 발급, `/user` 실제 토큰으로 사용자 정보 조회 |
 
 ---
@@ -202,11 +204,20 @@ uv run pytest -q -m integration
 | `test_get_database_version` | 실제 DB 버전 문자열 반환 및 `PostgreSQL` 포함 검증 |
 | `test_get_db_engine_from_state_integration` | 실제 엔진을 `app.state`에 등록 후 `get_db_engine` Depends가 동일 인스턴스를 반환하는지 검증 |
 
-## `dependencies/test_storage.py` 검증 항목
+## `dependencies/test_storage.py` 검증 항목 (mock 단위 테스트)
 
 | 테스트 함수 | 검증 내용 |
 | --- | --- |
+| `test_get_minio_client_creates_client` | `Minio` 생성자 mock — `MinIOConfig` 인자 전달 및 반환값 검증 |
 | `test_get_minio_client_from_state` | `app.state.minio_client` 가 있을 때 동일 인스턴스 반환, `create_minio_client` 미호출 |
 | `test_get_minio_client_fallback` | `app.state`에 `minio_client` 없을 때 `create_minio_client` 즉시 호출 후 반환 |
 | `test_set_minio_client_from_config` | `config` 전달 시 `create_minio_client` 호출 후 `app.state.minio_client` 에 등록 |
 | `test_set_minio_client_requires_client_or_config` | `client`, `config` 모두 생략 시 `ValueError` 발생 |
+
+## `dependencies/test_storage_integration.py` 검증 항목 (통합 테스트)
+
+| 테스트 함수 | 검증 내용 |
+| --- | --- |
+| `test_get_minio_client_from_state_integration` | 실제 MinIO 클라이언트를 `app.state`에 등록 후 `get_minio_client` Depends가 동일 인스턴스를 반환하는지 검증 |
+| `test_set_minio_client_from_config_integration` | 실제 config으로 `set_minio_client` 호출 시 실제 `Minio` 인스턴스가 `app.state`에 등록됨 검증 |
+| `test_get_minio_client_bucket_accessible` | Depends 경유 실제 클라이언트로 버킷 존재 여부 조회 가능 검증 |
