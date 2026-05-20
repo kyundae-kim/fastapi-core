@@ -263,3 +263,54 @@ def test_refresh_token_includes_secret():
         provider.refresh_access_token("ref_tok")
         _, kwargs = mock_client.post.call_args
         assert kwargs["data"]["client_secret"] == "mysecret"
+
+
+# ---------------------------------------------------------------------------
+# KeycloakAuthProvider — decode_token (RS256 서명 검증)
+# ---------------------------------------------------------------------------
+
+
+def test_decode_token_valid():
+    """PyJWKClient mock을 사용한 RS256 서명 검증 성공 경로."""
+    provider = KeycloakAuthProvider(
+        http_url="http://keycloak:8080/",
+        realm="realm",
+        client_id="client",
+    )
+    expected_payload = {"sub": "user-1", "aud": "client", "iss": provider.issuer}
+
+    with patch("fastapi_core.core.auth.jwt.PyJWKClient") as mock_jwks_cls:
+        mock_jwks_client = MagicMock()
+        mock_jwks_cls.return_value = mock_jwks_client
+        mock_signing_key = MagicMock()
+        mock_signing_key.key = "fake_rsa_key"
+        mock_jwks_client.get_signing_key_from_jwt.return_value = mock_signing_key
+
+        with patch("fastapi_core.core.auth.jwt.decode", return_value=expected_payload) as mock_decode:
+            result = provider.decode_token("some.jwt.token")
+            mock_decode.assert_called_once_with(
+                "some.jwt.token",
+                "fake_rsa_key",
+                algorithms=["RS256"],
+                audience="client",
+                issuer=provider.issuer,
+            )
+
+    assert result["sub"] == "user-1"
+
+
+def test_decode_token_invalid():
+    """PyJWKClient에서 오류 발생 시 ValueError로 변환된다."""
+    provider = KeycloakAuthProvider(
+        http_url="http://keycloak:8080/",
+        realm="realm",
+        client_id="client",
+    )
+
+    with patch("fastapi_core.core.auth.jwt.PyJWKClient") as mock_jwks_cls:
+        mock_jwks_client = MagicMock()
+        mock_jwks_cls.return_value = mock_jwks_client
+        mock_jwks_client.get_signing_key_from_jwt.side_effect = jwt.PyJWTError("invalid key")
+
+        with pytest.raises(ValueError, match="Invalid token"):
+            provider.decode_token("bad.jwt.token")
