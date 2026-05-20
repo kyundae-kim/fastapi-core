@@ -89,7 +89,7 @@ app = create_app(config=config, settings=settings, lifespan=lifespan)
 ```python
 from fastapi import APIRouter, Depends
 from fastapi_core import UserInfo
-from fastapi_core.dependencies.security import get_current_user, require_permissions
+from fastapi_core.dependencies.auth import get_current_user, require_permissions
 
 router = APIRouter()
 

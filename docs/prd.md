@@ -109,7 +109,7 @@ fastapi_core/
 ├── dependencies/        # FastAPI Depends 모듈
 │   ├── config.py        # get_config, get_settings
 │   ├── database.py      # get_db_engine
-│   ├── security.py      # get_current_user, require_permissions
+│   ├── auth.py          # get_current_user, require_permissions, set_auth_provider, get_auth_provider
 │   └── storage.py       # get_minio_client
 ├── routers/             # 재사용 가능한 내장 라우터
 │   ├── health.py        # GET /health/liveness, GET /health/readiness
@@ -130,10 +130,10 @@ fastapi_core/
 | 심볼 | 위치 | 설명 |
 | --- | --- | --- |
 | `KeycloakAuthProvider` | `core.auth` | Keycloak 연동 인증 프로바이더 |
-| `set_auth_provider` | `dependencies.security` | `app.state`의 고정 속성에 `KeycloakAuthProvider` 저장 |
-| `get_auth_provider` | `dependencies.security` | `app.state`의 고정 속성에서 `KeycloakAuthProvider` 반환 `Depends` (fallback: 즉시 생성) |
-| `get_current_user` | `dependencies.security` | 현재 인증 사용자 반환 `Depends` |
-| `require_permissions` | `dependencies.security` | 역할/스코프 기반 접근 제어 `Depends` |
+| `set_auth_provider` | `dependencies.auth` | `app.state`의 고정 속성에 `KeycloakAuthProvider` 저장 |
+| `get_auth_provider` | `dependencies.auth` | `app.state`의 고정 속성에서 `KeycloakAuthProvider` 반환 `Depends` (fallback: 즉시 생성) |
+| `get_current_user` | `dependencies.auth` | 현재 인증 사용자 반환 `Depends` |
+| `require_permissions` | `dependencies.auth` | 역할/스코프 기반 접근 제어 `Depends` |
 | `authenticate` | `services.security` | 사용자명·비밀번호로 토큰 발급 |
 | `refresh_token` | `services.security` | 리프레시 토큰으로 액세스 토큰 갱신 |
 | `decode_token` | `services.security` | JWT 디코드 및 클레임 반환 |

@@ -39,7 +39,7 @@ test_fastapi_core/
 ├── dependencies/
 │   ├── test_config.py                  # get_config, get_settings Depends 단위 테스트
 │   ├── test_database.py                # get_db_engine Depends 단위 테스트
-│   ├── test_security.py                # get_current_user, require_permissions 단위 테스트
+│   ├── test_security.py                # get_current_user, require_permissions 단위 테스트 (dependencies/auth.py)
 │   └── test_storage.py                 # get_minio_client Depends 단위 테스트
 └── routers/
     ├── test_health.py                  # /health/liveness, /health/readiness 단위 테스트
@@ -154,8 +154,7 @@ uv run pytest -q -m integration
 | `test_authenticate_*` | Keycloak 토큰 발급 정상/HTTP 오류 경로 |
 | `test_refresh_token_*` | 토큰 갱신 정상/오류 경로 |
 
-## `dependencies/test_security.py` 검증 항목
-
+## `dependencies/test_security.py` 검증 항목 
 | 테스트 함수 | 검증 내용 |
 | --- | --- |
 | `test_get_auth_provider_from_state` | `app.state.auth_provider` 가 있을 때 동일 인스턴스 반환, `KeycloakAuthProvider` 생성자 미호출 |

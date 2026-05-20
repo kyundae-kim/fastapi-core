@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from fastapi_core.core.config import AuthSettings, ServiceSettings
 from fastapi_core.core.auth import KeycloakAuthProvider
 from fastapi_core.dependencies.config import get_settings
-from fastapi_core.dependencies.security import (
+from fastapi_core.dependencies.auth import (
     get_auth_provider,
     get_current_user,
     require_permissions,
@@ -140,7 +140,7 @@ def test_get_auth_provider_from_state():
 
     from fastapi import Depends
 
-    from fastapi_core.dependencies.security import set_auth_provider
+    from fastapi_core.dependencies.auth import set_auth_provider
 
     app = FastAPI()
     mock_provider = MagicMock(spec=KeycloakAuthProvider)
@@ -151,7 +151,7 @@ def test_get_auth_provider_from_state():
         return {"id": id(provider)}
 
     client = TestClient(app)
-    with patch("fastapi_core.dependencies.security.KeycloakAuthProvider") as mock_cls:
+    with patch("fastapi_core.dependencies.auth.KeycloakAuthProvider") as mock_cls:
         response = client.get("/provider-id")
         mock_cls.assert_not_called()
     assert response.status_code == 200
@@ -182,7 +182,7 @@ def test_get_auth_provider_fallback():
         return {"id": id(provider)}
 
     with patch(
-        "fastapi_core.dependencies.security.KeycloakAuthProvider",
+        "fastapi_core.dependencies.auth.KeycloakAuthProvider",
         return_value=mock_provider,
     ) as mock_cls:
         client = TestClient(app)

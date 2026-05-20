@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from fastapi_core.core.config import AuthSettings, ServiceSettings
 from fastapi_core.dependencies.config import get_settings
-from fastapi_core.dependencies.security import get_auth_provider, get_current_user
+from fastapi_core.dependencies.auth import get_auth_provider, get_current_user
 from fastapi_core.routers.auth import router
 from fastapi_core.schemas.user import UserInfo
 
