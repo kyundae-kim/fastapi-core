@@ -2,8 +2,8 @@
 
 ## 개요
 
-`fastapi-template`은 Keycloak 기반 인증/인가, PostgreSQL 연동, 계층형 의존성 주입 구조를 갖춘 FastAPI 프로젝트 템플릿입니다.  
-`uv` 패키지 매니저 환경에서 동작하며, 실 서비스 확장을 위한 뼈대 코드를 제공합니다.
+`fastapi-core`은 Keycloak 기반 인증/인가, PostgreSQL 연동, MinIO 연동 구조를 갖춘 Python Package 프로젝트 템플릿입니다.  
+`uv` 패키지 매니저 환경에서 동작합니다.
 
 ---
 
@@ -14,35 +14,20 @@
 - OAuth2 Password Grant로 토큰 발급 및 검증
 - JWT RS256 서명 검증 및 사용자 클레임 추출 (`sub`, `preferred_username`, `email`, `name`)
 - Realm Access 기반 역할(Role) 및 스코프(Scope) 추출
-- 역할/스코프 조합을 선언형으로 강제하는 `require_permissions` 의존성
 
 ### 환경별 설정 분리
 
-- **환경 변수 레이어** (`EnvConfig`): 실행 환경 타입, 설정 파일 경로, 외부 서비스 접속 정보
-- **서비스 설정 레이어** (`ServiceSettings`, YAML): 로깅 레벨, CORS, JWT 검증 정책
-- `dev` / `test` / `prod` 환경 분리 및 환경별 `.env` 파일 지원
+- **환경 변수 레이어** (`EnvConfig`): 로깅 레벨, CORS, JWT 검증 정책, 실행 환경 타입, 설정 파일 경로, 외부 서비스 접속 정보
+- **서비스 설정 레이어** (`ServiceSettings`, YAML): 
+- `dev` / `stage` / `prod` 환경 분리 및 환경별 `.env` 파일 지원
 
-### 의존성 주입(DI) 구조
+### 문서화
 
-- FastAPI `Depends`를 활용한 설정·인증·DB 모듈 분리
-- 앱 `state`를 통한 `AuthProvider`, DB 엔진 싱글턴 관리
-- 테스트 시 `dependency_overrides`로 외부 의존성 교체 가능
-
-### API 라우팅 및 문서화
-
-- OpenAPI(Swagger UI) 자동 문서화 지원
-- 인증, 헬스체크, DB 예시 엔드포인트 제공
-
-### PostgreSQL 연동 예시
-
-- SQLAlchemy 기반 비동기 연결 및 간단한 쿼리 예시
-- 패스워드/트러스트 인증 방식 선택 지원
-- `DB__URL` 환경 변수로 DSN 직접 주입 가능
+- SDK 문서화 지원
 
 ### 로깅 및 예외 처리
 
 - 로깅 레벨 동적 설정 (`WARNING` / `INFO` / `DEBUG`)
-- `AuthError` 커스텀 예외와 전역 핸들러로 일관된 오류 응답 구조
 
 ---
 
@@ -82,7 +67,7 @@ fastapi_template/
 
 ---
 
-## API 엔드포인트
+## SDK 
 
 ### 인증 (`routes/auth.py`)
 
