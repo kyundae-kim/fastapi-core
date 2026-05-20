@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from fastapi_core.core.config import AuthSettings, ServiceSettings
-from fastapi_core.core.security import KeycloakAuthProvider
+from fastapi_core.core.auth import KeycloakAuthProvider
 from fastapi_core.dependencies.config import get_settings
 from fastapi_core.dependencies.security import (
     get_auth_provider,

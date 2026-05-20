@@ -6,7 +6,7 @@ from fastapi_core.core.config import (
     ServiceSettings,
 )
 from fastapi_core.core.exceptions import AuthError
-from fastapi_core.core.security import KeycloakAuthProvider, extract_roles, extract_scopes
+from fastapi_core.core.auth import KeycloakAuthProvider, extract_roles, extract_scopes
 from fastapi_core.factory import create_app
 from fastapi_core.schemas.health import HealthResponse
 from fastapi_core.schemas.token import TokenResponse

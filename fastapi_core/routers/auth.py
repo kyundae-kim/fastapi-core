@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 
-from fastapi_core.core.security import KeycloakAuthProvider
+from fastapi_core.core.auth import KeycloakAuthProvider
 from fastapi_core.dependencies.security import get_auth_provider, get_current_user
 from fastapi_core.schemas.token import TokenResponse
 from fastapi_core.schemas.user import UserInfo

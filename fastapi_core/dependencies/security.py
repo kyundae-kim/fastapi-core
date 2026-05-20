@@ -4,7 +4,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 
 from fastapi_core.core.config import EnvConfig, ServiceSettings
-from fastapi_core.core.security import KeycloakAuthProvider
+from fastapi_core.core.auth import KeycloakAuthProvider
 from fastapi_core.dependencies.config import get_config, get_settings
 from fastapi_core.schemas.user import UserInfo
 

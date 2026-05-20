@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import jwt
 import pytest
 
-from fastapi_core.core.security import KeycloakAuthProvider, extract_roles, extract_scopes
+from fastapi_core.core.auth import KeycloakAuthProvider, extract_roles, extract_scopes
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +190,7 @@ def test_authenticate_success():
         "token_type": "bearer",
     }
 
-    with patch("fastapi_core.core.security.httpx.Client") as mock_cls:
+    with patch("fastapi_core.core.auth.httpx.Client") as mock_cls:
         mock_client = MagicMock()
         mock_cls.return_value.__enter__.return_value = mock_client
         mock_client.post.return_value = mock_response
@@ -208,7 +208,7 @@ def test_authenticate_http_error():
         realm="realm",
         client_id="client",
     )
-    with patch("fastapi_core.core.security.httpx.Client") as mock_cls:
+    with patch("fastapi_core.core.auth.httpx.Client") as mock_cls:
         mock_client = MagicMock()
         mock_cls.return_value.__enter__.return_value = mock_client
         mock_response = MagicMock()
@@ -237,7 +237,7 @@ def test_refresh_token_success():
         "token_type": "bearer",
     }
 
-    with patch("fastapi_core.core.security.httpx.Client") as mock_cls:
+    with patch("fastapi_core.core.auth.httpx.Client") as mock_cls:
         mock_client = MagicMock()
         mock_cls.return_value.__enter__.return_value = mock_client
         mock_client.post.return_value = mock_response
@@ -256,7 +256,7 @@ def test_refresh_token_includes_secret():
     mock_response = MagicMock()
     mock_response.json.return_value = {"access_token": "tok", "token_type": "bearer"}
 
-    with patch("fastapi_core.core.security.httpx.Client") as mock_cls:
+    with patch("fastapi_core.core.auth.httpx.Client") as mock_cls:
         mock_client = MagicMock()
         mock_cls.return_value.__enter__.return_value = mock_client
         mock_client.post.return_value = mock_response

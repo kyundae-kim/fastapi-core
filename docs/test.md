@@ -32,7 +32,7 @@ uv run pytest test_fastapi_core/core/test_security.py -v
 test_fastapi_core/
 ├── core/
 │   ├── test_config.py                  # EnvConfig, DatabaseConfig, MinIOConfig 단위 테스트
-│   ├── test_security.py                # core.security mock 단위 테스트
+│   ├── test_security.py                # core.auth mock 단위 테스트
 │   ├── test_security_integration.py    # Keycloak 연동 통합 테스트
 │   ├── test_storage.py                 # core.storage mock 단위 테스트
 │   └── test_storage_integration.py     # MinIO 연동 통합 테스트
@@ -62,7 +62,7 @@ uv run pytest -q
 | 파일 | 설명 |
 | --- | --- |
 | `core/test_config.py` | `DatabaseConfig.sqlalchemy_database_url` 조합 로직, `trust`/`password` 인증 방식, `DB__URL` 직접 지정 케이스 |
-| `core/test_security.py` | `extract_roles`, `extract_scopes` 순수 함수 및 `KeycloakAuthProvider` 메서드 전체 mock 테스트 |
+| `core/test_security.py` | `extract_roles`, `extract_scopes` 순수 함수 및 `KeycloakAuthProvider` 메서드 전체 mock 테스트 (`core.auth`) |
 | `core/test_storage.py` | `create_minio_client`, `ensure_bucket_exists`, `list_buckets` mock 테스트 |
 | `dependencies/test_config.py` | `get_config`, `get_settings` Depends 반환값 검증 |
 | `dependencies/test_database.py` | `get_db_engine` Depends mock 테스트 — `app.state.db_engine` 우선 반환 및 fallback 동작 검증 포함 |

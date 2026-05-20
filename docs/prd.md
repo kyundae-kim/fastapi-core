@@ -102,7 +102,7 @@ fastapi_core/
 ├── __init__.py
 ├── core/                # 프레임워크 비의존 공통 인프라
 │   ├── config.py        # EnvConfig, ServiceSettings, 각종 설정 모델
-│   ├── security.py      # KeycloakAuthProvider, JWT 디코드, Token/User 모델
+│   ├── auth.py          # KeycloakAuthProvider, JWT 디코드, Token/User 모델
 │   ├── logging.py       # 로깅 레벨 초기화
 │   ├── exceptions.py    # AuthError 및 전역 예외 핸들러
 │   └── storage.py       # MinIO 클라이언트 생성 및 버킷 관리
@@ -129,7 +129,7 @@ fastapi_core/
 
 | 심볼 | 위치 | 설명 |
 | --- | --- | --- |
-| `KeycloakAuthProvider` | `core.security` | Keycloak 연동 인증 프로바이더 |
+| `KeycloakAuthProvider` | `core.auth` | Keycloak 연동 인증 프로바이더 |
 | `set_auth_provider` | `dependencies.security` | `app.state`의 고정 속성에 `KeycloakAuthProvider` 저장 |
 | `get_auth_provider` | `dependencies.security` | `app.state`의 고정 속성에서 `KeycloakAuthProvider` 반환 `Depends` (fallback: 즉시 생성) |
 | `get_current_user` | `dependencies.security` | 현재 인증 사용자 반환 `Depends` |
