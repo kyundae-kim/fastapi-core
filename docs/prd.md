@@ -129,47 +129,7 @@ fastapi_core/
 
 ## 공개 API (Public Interface)
 
-### 인증 관련
-
-| 심볼 | 위치 | 설명 |
-| --- | --- | --- |
-| `KeycloakAuthProvider` | `core.auth` | Keycloak 연동 인증 프로바이더 |
-| `set_auth_provider` | `dependencies.auth` | `app.state`의 고정 속성에 `KeycloakAuthProvider` 저장 (객체 직접 전달 또는 `EnvConfig`로 내부 생성) |
-| `get_auth_provider` | `dependencies.auth` | `app.state`의 고정 속성에서 `KeycloakAuthProvider` 반환 `Depends` (fallback: 즉시 생성) |
-| `get_current_user` | `dependencies.auth` | 현재 인증 사용자 반환 `Depends` |
-| `require_permissions` | `dependencies.auth` | 역할/스코프 기반 접근 제어 `Depends` |
-| `authenticate` | `services.security` | 사용자명·비밀번호로 토큰 발급 |
-| `refresh_token` | `services.security` | 리프레시 토큰으로 액세스 토큰 갱신 |
-| `decode_token` | `services.security` | JWT 디코드 및 클레임 반환 |
-
-### DB 관련
-
-| 심볼 | 위치 | 설명 |
-| --- | --- | --- |
-| `DatabaseConfig` | `core.config` | DB 접속 정보 설정 모델 |
-| `set_db_engine` | `dependencies.database` | `app.state`의 고정 속성에 SQLAlchemy `Engine` 저장 |
-| `get_db_engine` | `dependencies.database` | `app.state`의 고정 속성에서 SQLAlchemy `Engine` 반환 `Depends` (fallback: 즉시 생성) |
-| `create_db_engine` | `services.database` | 엔진 생성 유틸리티 |
-| `check_database_connection` | `services.database` | DB 연결 확인 (`SELECT 1`) |
-
-### 스토리지 관련
-
-| 심볼 | 위치 | 설명 |
-| --- | --- | --- |
-| `MinIOConfig` | `core.config` | MinIO 접속 정보 설정 모델 |
-| `set_minio_client` | `dependencies.storage` | `app.state`의 고정 속성에 `Minio` 클라이언트 저장 |
-| `get_minio_client` | `dependencies.storage` | `app.state`의 고정 속성에서 `Minio` 클라이언트 반환 `Depends` (fallback: 즉시 생성) |
-| `create_minio_client` | `core.storage` | 클라이언트 생성 유틸리티 |
-| `ensure_bucket_exists` | `core.storage` | 버킷 없으면 자동 생성 |
-
-### 설정 관련
-
-| 심볼 | 위치 | 설명 |
-| --- | --- | --- |
-| `EnvConfig` | `core.config` | 환경 변수 기반 전체 설정 모델 |
-| `ServiceSettings` | `core.config` | YAML 기반 서비스 설정 모델 |
-| `get_config` | `dependencies.config` | `EnvConfig` 반환 `Depends` |
-| `get_settings` | `dependencies.config` | `ServiceSettings` 반환 `Depends` |
+각 심볼의 시그니처, 동작, 에러 처리, HTTP 엔드포인트 스펙은 **[docs/api.md](api.md)** 를 참조하세요.
 
 ---
 
