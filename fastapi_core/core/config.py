@@ -1,0 +1,110 @@
+from __future__ import annotations
+
+from enum import Enum
+from pathlib import Path
+from typing import Literal
+
+import yaml
+from pydantic import BaseModel, Field, HttpUrl
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Environment(str, Enum):
+    DEV = "dev"
+    STAGE = "stage"
+    PROD = "prod"
+
+
+class LoggingConfig(BaseModel):
+    level: Literal["WARNING", "INFO", "DEBUG"] = "DEBUG"
+
+
+class KeycloakConfig(BaseModel):
+    http_url: HttpUrl = HttpUrl("http://keycloak:8080/")
+    manage_url: HttpUrl = HttpUrl("http://keycloak:9000/")
+    realm: str = "restapi"
+    client_id: str = "fastapi"
+    client_secret: str | None = None
+
+
+class DatabaseConfig(BaseModel):
+    host: str = "postgres"
+    port: int = 5432
+    name: str = "postgres"
+    user: str = "postgres"
+    password: str = "postgres"
+    auth_method: Literal["password", "trust"] = "password"
+    sslmode: str = "prefer"
+    connect_timeout: int = 5
+    echo: bool = False
+    url: str | None = None
+
+    @property
+    def sqlalchemy_database_url(self) -> str:
+        if self.url:
+            return self.url
+        params = f"?sslmode={self.sslmode}&connect_timeout={self.connect_timeout}"
+        if self.auth_method == "trust":
+            return (
+                f"postgresql+psycopg://{self.user}"
+                f"@{self.host}:{self.port}/{self.name}{params}"
+            )
+        return (
+            f"postgresql+psycopg://{self.user}:{self.password}"
+            f"@{self.host}:{self.port}/{self.name}{params}"
+        )
+
+
+class MinIOConfig(BaseModel):
+    endpoint: str = "minio:9000"
+    access_key: str = "admin"
+    secret_key: str = "password"
+    secure: bool = False
+    bucket: str = "default"
+
+
+class CORSSettings(BaseModel):
+    origins: list[str] = Field(default_factory=lambda: ["*"])
+    credentials: bool = False
+
+
+class AuthSettings(BaseModel):
+    verify_jwt: bool = True
+    allow_insecure_jwt_decode: bool = False
+    use_introspection: bool = False
+
+
+class ServiceSettings(BaseModel):
+    cors: CORSSettings = Field(default_factory=CORSSettings)
+    auth: AuthSettings = Field(default_factory=AuthSettings)
+
+    @classmethod
+    def from_yaml(cls, path: str) -> "ServiceSettings":
+        p = Path(path)
+        if not p.exists():
+            return cls()
+        with open(p, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return cls(**data)
+
+
+class EnvConfig(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_nested_delimiter="__",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    env: Environment = Environment.DEV
+    config_path: str = ".devcontainer/config.yaml"
+    root_path: str = "/"
+    token_url: str = "/token"
+
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    keycloak: KeycloakConfig = Field(default_factory=KeycloakConfig)
+    db: DatabaseConfig = Field(default_factory=DatabaseConfig)
+    minio: MinIOConfig = Field(default_factory=MinIOConfig)
+
+    keycloak_username: str = "test"
+    keycloak_password: str = "test"
