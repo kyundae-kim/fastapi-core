@@ -38,8 +38,10 @@ test_fastapi_core/
 │   └── test_storage_integration.py     # MinIO 연동 통합 테스트
 ├── dependencies/
 │   ├── test_config.py                  # get_config, get_settings Depends 단위 테스트
-│   ├── test_database.py                # get_db_engine Depends 단위 테스트
-│   ├── test_security.py                # get_current_user, require_permissions 단위 테스트 (dependencies/auth.py)
+│   ├── test_database.py                # get_db_engine Depends mock 단위 테스트
+│   ├── test_database_integration.py    # PostgreSQL 연동 통합 테스트
+│   ├── test_security.py                # get_current_user, require_permissions mock 단위 테스트 (dependencies/auth.py)
+│   ├── test_security_integration.py    # Keycloak 연동 통합 테스트 (dependencies/auth.py)
 │   └── test_storage.py                 # get_minio_client Depends 단위 테스트
 └── routers/
     ├── test_health.py                  # /health/liveness, /health/readiness 단위 테스트
@@ -65,8 +67,8 @@ uv run pytest -q
 | `core/test_security.py` | `extract_roles`, `extract_scopes` 순수 함수 및 `KeycloakAuthProvider` 메서드 전체 mock 테스트 (`core.auth`) |
 | `core/test_storage.py` | `create_minio_client`, `ensure_bucket_exists`, `list_buckets` mock 테스트 |
 | `dependencies/test_config.py` | `get_config`, `get_settings` Depends 반환값 검증 |
-| `dependencies/test_database.py` | `get_db_engine` Depends mock 테스트 — `app.state.db_engine` 우선 반환 및 fallback 동작 검증 포함 |
-| `dependencies/test_security.py` | `get_current_user`, `require_permissions` 의존성 함수 mock 테스트 — `app.state.auth_provider` 우선 반환 및 fallback 동작 검증 포함 |
+| `dependencies/test_database.py` | `create_db_engine`·`check_database_connection` mock 테스트, `get_db_engine` Depends mock 테스트 — `app.state.db_engine` 우선 반환 및 fallback 동작 검증 포함 |
+| `dependencies/test_security.py` | `set_auth_provider`·`get_auth_provider`·`get_current_user`·`require_permissions` mock 테스트 — `app.state.auth_provider` 우선 반환 및 fallback 동작 검증 포함 |
 | `dependencies/test_storage.py` | `get_minio_client` Depends mock 테스트 — `app.state.minio_client` 우선 반환 및 fallback 동작 검증 포함 |
 | `routers/test_health.py` | `/health/liveness` 200 응답, `/health/readiness` Keycloak mock 연결 확인 |
 | `routers/test_auth.py` | `/token` 발급 및 오류 응답, `/user` 인증 사용자 정보 반환 mock 테스트 |
@@ -137,6 +139,8 @@ uv run pytest -q -m integration
 | --- | --- |
 | `core/test_security_integration.py` | 실제 Keycloak 토큰 발급, RS256 서명 검증, 클레임 추출 검증 |
 | `core/test_storage_integration.py` | 실제 MinIO 클라이언트 생성, 버킷 자동 생성, 버킷 목록 조회 |
+| `dependencies/test_database_integration.py` | 실제 PostgreSQL 엔진 생성, 연결 확인(SELECT 1), DB 버전 조회, state 싱글톤 검증 |
+| `dependencies/test_security_integration.py` | 실제 Keycloak 토큰으로 RS256 검증, `get_current_user`·`require_permissions` 실환경 동작 검증 |
 | `routers/test_auth_integration.py` | `/token` 실제 토큰 발급, `/user` 실제 토큰으로 사용자 정보 조회 |
 
 ---
@@ -154,7 +158,8 @@ uv run pytest -q -m integration
 | `test_authenticate_*` | Keycloak 토큰 발급 정상/HTTP 오류 경로 |
 | `test_refresh_token_*` | 토큰 갱신 정상/오류 경로 |
 
-## `dependencies/test_security.py` 검증 항목 
+## `dependencies/test_security.py` 검증 항목 (mock 단위 테스트)
+
 | 테스트 함수 | 검증 내용 |
 | --- | --- |
 | `test_get_auth_provider_from_state` | `app.state.auth_provider` 가 있을 때 동일 인스턴스 반환, `KeycloakAuthProvider` 생성자 미호출 |
@@ -167,14 +172,35 @@ uv run pytest -q -m integration
 | `test_require_permissions_allowed` | 필요 역할 보유 시 통과 |
 | `test_require_permissions_forbidden` | 필요 역할 미보유 시 403 반환 |
 
-## `dependencies/test_database.py` 검증 항목
+## `dependencies/test_security_integration.py` 검증 항목 (통합 테스트)
 
 | 테스트 함수 | 검증 내용 |
 | --- | --- |
+| `test_get_auth_provider_from_state_integration` | 실제 `KeycloakAuthProvider`를 `app.state`에 등록 후 `get_auth_provider` Depends가 동일 인스턴스를 반환하는지 검증 |
+| `test_get_current_user_with_real_token` | 실제 Keycloak 토큰으로 RS256 서명 검증 후 `UserInfo` 반환 및 username 일치 확인 |
+| `test_get_current_user_missing_token_integration` | 토큰 없이 요청 시 401 반환 |
+| `test_require_permissions_forbidden_integration` | 실제 토큰이지만 필요 역할 미보유 시 403 반환 |
+
+## `dependencies/test_database.py` 검증 항목 (mock 단위 테스트)
+
+| 테스트 함수 | 검증 내용 |
+| --- | --- |
+| `test_get_db_engine_creates_engine` | `create_engine` mock — `sqlalchemy_database_url`·`echo` 인자 전달 및 반환값 검증 |
+| `test_check_database_connection_success` | mock 엔진 연결 성공 시 `True` 반환 |
+| `test_check_database_connection_failure` | mock 엔진 연결 예외 시 `False` 반환 |
 | `test_get_db_engine_from_state` | `app.state.db_engine` 이 있을 때 동일 인스턴스 반환, `create_db_engine` 미호출 |
 | `test_get_db_engine_fallback` | `app.state`에 `db_engine` 없을 때 `create_db_engine` 즉시 호출 후 반환 |
 | `test_set_db_engine_from_config` | `config` 전달 시 `create_db_engine` 호출 후 `app.state.db_engine` 에 등록 |
 | `test_set_db_engine_requires_engine_or_config` | `engine`, `config` 모두 생략 시 `ValueError` 발생 |
+
+## `dependencies/test_database_integration.py` 검증 항목 (통합 테스트)
+
+| 테스트 함수 | 검증 내용 |
+| --- | --- |
+| `test_create_db_engine` | 실제 PostgreSQL 엔진 생성 확인 |
+| `test_check_database_connection` | 실제 DB에 SELECT 1 연결 확인 성공 |
+| `test_get_database_version` | 실제 DB 버전 문자열 반환 및 `PostgreSQL` 포함 검증 |
+| `test_get_db_engine_from_state_integration` | 실제 엔진을 `app.state`에 등록 후 `get_db_engine` Depends가 동일 인스턴스를 반환하는지 검증 |
 
 ## `dependencies/test_storage.py` 검증 항목
 
