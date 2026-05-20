@@ -65,11 +65,60 @@ uv run pytest -q
 | `core/test_security.py` | `extract_roles`, `extract_scopes` 순수 함수 및 `KeycloakAuthProvider` 메서드 전체 mock 테스트 |
 | `core/test_storage.py` | `create_minio_client`, `ensure_bucket_exists`, `list_buckets` mock 테스트 |
 | `dependencies/test_config.py` | `get_config`, `get_settings` Depends 반환값 검증 |
-| `dependencies/test_database.py` | `get_db_engine` Depends mock 테스트 |
-| `dependencies/test_security.py` | `get_current_user`, `require_permissions` 의존성 함수 mock 테스트 |
-| `dependencies/test_storage.py` | `get_minio_client` Depends mock 테스트 |
+| `dependencies/test_database.py` | `get_db_engine` Depends mock 테스트 — `app.state.db_engine` 우선 반환 및 fallback 동작 검증 포함 |
+| `dependencies/test_security.py` | `get_current_user`, `require_permissions` 의존성 함수 mock 테스트 — `app.state.auth_provider` 우선 반환 및 fallback 동작 검증 포함 |
+| `dependencies/test_storage.py` | `get_minio_client` Depends mock 테스트 — `app.state.minio_client` 우선 반환 및 fallback 동작 검증 포함 |
 | `routers/test_health.py` | `/health/liveness` 200 응답, `/health/readiness` Keycloak mock 연결 확인 |
 | `routers/test_auth.py` | `/token` 발급 및 오류 응답, `/user` 인증 사용자 정보 반환 mock 테스트 |
+
+---
+
+## FastAPI State 기반 싱글톤 테스트 전략
+
+`app.state`에 객체를 등록하는 싱글톤 패턴은 다음 두 가지 관점에서 테스트한다.
+
+### 1. state 우선 조회 (singleton path)
+
+lifespan이 `app.state`에 객체를 주입한 상황을 시뮬레이션하여 `Depends` 함수가 **재생성 없이 동일 인스턴스를 반환**하는지 검증한다.
+
+```python
+# 예시: dependencies/test_database.py
+def test_get_db_engine_returns_state_engine():
+    app = FastAPI()
+    mock_engine = MagicMock(spec=Engine)
+    app.state.db_engine = mock_engine          # state에 미리 주입
+
+    client = TestClient(app)
+    # get_db_engine이 create_db_engine을 호출하지 않고
+    # app.state.db_engine을 그대로 반환하는지 검증
+    with patch("fastapi_core.core.database.create_db_engine") as m:
+        result = get_db_engine(Request({"type": "http", "app": app}))
+        m.assert_not_called()
+    assert result is mock_engine
+```
+
+각 모듈별 state 속성과 검증 포인트:
+
+| 모듈 | state 속성 | 검증 포인트 |
+| --- | --- | --- |
+| `dependencies/test_security.py` | `app.state.auth_provider` | `KeycloakAuthProvider` 생성자 미호출, 동일 인스턴스 반환 |
+| `dependencies/test_database.py` | `app.state.db_engine` | `create_db_engine` 미호출, 동일 인스턴스 반환 |
+| `dependencies/test_storage.py` | `app.state.minio_client` | `create_minio_client` 미호출, 동일 인스턴스 반환 |
+
+### 2. fallback 동작 (state 미설정 path)
+
+`app.state`에 해당 속성이 없을 때(`AttributeError`) `Depends` 함수가 `EnvConfig`를 읽어 **즉시 생성하는 폴백**이 동작하는지 검증한다.
+
+```python
+# 예시: dependencies/test_storage.py
+def test_get_minio_client_fallback_when_no_state():
+    app = FastAPI()          # state에 minio_client 미설정
+
+    with patch("fastapi_core.dependencies.storage.create_minio_client") as m:
+        m.return_value = MagicMock(spec=Minio)
+        result = get_minio_client(Request({"type": "http", "app": app}))
+        m.assert_called_once()   # fallback으로 즉시 생성 호출 확인
+```
 
 ---
 
@@ -109,8 +158,24 @@ uv run pytest -q -m integration
 
 | 테스트 함수 | 검증 내용 |
 | --- | --- |
+| `test_get_auth_provider_from_state` | `app.state.auth_provider` 가 있을 때 동일 인스턴스 반환, `KeycloakAuthProvider` 생성자 미호출 |
+| `test_get_auth_provider_fallback` | `app.state`에 `auth_provider` 없을 때 `KeycloakAuthProvider` 즉시 생성 후 반환 |
 | `test_get_current_user_valid` | 유효한 Bearer 토큰으로 `UserInfo` 반환 |
 | `test_get_current_user_missing_token` | Authorization 헤더 없을 때 401 반환 |
 | `test_get_current_user_invalid_token` | 잘못된 토큰으로 401 반환 |
 | `test_require_permissions_allowed` | 필요 역할 보유 시 통과 |
 | `test_require_permissions_forbidden` | 필요 역할 미보유 시 403 반환 |
+
+## `dependencies/test_database.py` 검증 항목
+
+| 테스트 함수 | 검증 내용 |
+| --- | --- |
+| `test_get_db_engine_from_state` | `app.state.db_engine` 이 있을 때 동일 인스턴스 반환, `create_db_engine` 미호출 |
+| `test_get_db_engine_fallback` | `app.state`에 `db_engine` 없을 때 `create_db_engine` 즉시 호출 후 반환 |
+
+## `dependencies/test_storage.py` 검증 항목
+
+| 테스트 함수 | 검증 내용 |
+| --- | --- |
+| `test_get_minio_client_from_state` | `app.state.minio_client` 가 있을 때 동일 인스턴스 반환, `create_minio_client` 미호출 |
+| `test_get_minio_client_fallback` | `app.state`에 `minio_client` 없을 때 `create_minio_client` 즉시 호출 후 반환 |

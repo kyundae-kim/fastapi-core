@@ -1,7 +1,13 @@
 from unittest.mock import MagicMock, patch
 
-from fastapi_core.core.config import DatabaseConfig
+from fastapi import Depends, FastAPI
+from fastapi.testclient import TestClient
+from sqlalchemy import Engine
+
+from fastapi_core.core.config import DatabaseConfig, EnvConfig
 from fastapi_core.core.database import create_db_engine
+from fastapi_core.dependencies.config import get_config
+from fastapi_core.dependencies.database import get_db_engine, set_db_engine
 
 
 def test_get_db_engine_creates_engine():
@@ -42,3 +48,48 @@ def test_check_database_connection_failure():
     mock_engine = MagicMock()
     mock_engine.connect.side_effect = Exception("connection refused")
     assert check_database_connection(mock_engine) is False
+
+
+# ---------------------------------------------------------------------------
+# get_db_engine — state 기반 싱글톤 테스트
+# ---------------------------------------------------------------------------
+
+
+def test_get_db_engine_from_state():
+    """app.state에 db_engine이 등록돼 있으면 동일 인스턴스를 반환하고
+    create_db_engine을 호출하지 않는다."""
+    app = FastAPI()
+    mock_engine = MagicMock(spec=Engine)
+    set_db_engine(app, mock_engine)
+
+    @app.get("/engine-id")
+    def engine_id(engine: Engine = Depends(get_db_engine)):
+        return {"id": id(engine)}
+
+    with patch("fastapi_core.dependencies.database.create_db_engine") as mock_create:
+        client = TestClient(app)
+        response = client.get("/engine-id")
+        mock_create.assert_not_called()
+    assert response.status_code == 200
+    assert response.json()["id"] == id(mock_engine)
+
+
+def test_get_db_engine_fallback():
+    """app.state에 db_engine이 없으면 create_db_engine을 호출하여 새 엔진을 반환한다."""
+    app = FastAPI()
+    mock_engine = MagicMock(spec=Engine)
+    mock_config = MagicMock()
+    app.dependency_overrides[get_config] = lambda: mock_config
+
+    @app.get("/engine-id")
+    def engine_id(engine: Engine = Depends(get_db_engine)):
+        return {"id": id(engine)}
+
+    with patch(
+        "fastapi_core.dependencies.database.create_db_engine", return_value=mock_engine
+    ) as mock_create:
+        client = TestClient(app)
+        response = client.get("/engine-id")
+        mock_create.assert_called_once_with(mock_config.db)
+    assert response.status_code == 200
+    assert response.json()["id"] == id(mock_engine)

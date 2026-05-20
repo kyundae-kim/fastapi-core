@@ -126,3 +126,67 @@ def test_require_permissions_forbidden(test_app, mock_provider):
     client = TestClient(test_app, raise_server_exceptions=False)
     response = client.get("/admin", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# get_auth_provider — state 기반 싱글톤 테스트
+# ---------------------------------------------------------------------------
+
+
+def test_get_auth_provider_from_state():
+    """app.state에 auth_provider가 등록돼 있으면 동일 인스턴스를 반환하고
+    KeycloakAuthProvider 생성자를 호출하지 않는다."""
+    from unittest.mock import MagicMock, patch
+
+    from fastapi import Depends
+
+    from fastapi_core.dependencies.security import set_auth_provider
+
+    app = FastAPI()
+    mock_provider = MagicMock(spec=KeycloakAuthProvider)
+    set_auth_provider(app, mock_provider)
+
+    @app.get("/provider-id")
+    def provider_id(provider: KeycloakAuthProvider = Depends(get_auth_provider)):
+        return {"id": id(provider)}
+
+    client = TestClient(app)
+    with patch("fastapi_core.dependencies.security.KeycloakAuthProvider") as mock_cls:
+        response = client.get("/provider-id")
+        mock_cls.assert_not_called()
+    assert response.status_code == 200
+    assert response.json()["id"] == id(mock_provider)
+
+
+def test_get_auth_provider_fallback():
+    """app.state에 auth_provider가 없으면 KeycloakAuthProvider를 즉시 생성하여 반환한다."""
+    from unittest.mock import MagicMock, patch
+
+    from fastapi import Depends
+
+    from fastapi_core.core.config import EnvConfig, KeycloakConfig
+    from fastapi_core.dependencies.config import get_config
+
+    app = FastAPI()
+    mock_provider = MagicMock(spec=KeycloakAuthProvider)
+    mock_config = MagicMock(spec=EnvConfig)
+    mock_config.keycloak = MagicMock(spec=KeycloakConfig)
+    mock_config.keycloak.http_url = "http://keycloak:8080"
+    mock_config.keycloak.realm = "myrealm"
+    mock_config.keycloak.client_id = "myclient"
+    mock_config.keycloak.client_secret = "secret"
+    app.dependency_overrides[get_config] = lambda: mock_config
+
+    @app.get("/provider-id")
+    def provider_id(provider: KeycloakAuthProvider = Depends(get_auth_provider)):
+        return {"id": id(provider)}
+
+    with patch(
+        "fastapi_core.dependencies.security.KeycloakAuthProvider",
+        return_value=mock_provider,
+    ) as mock_cls:
+        client = TestClient(app)
+        response = client.get("/provider-id")
+        mock_cls.assert_called_once()
+    assert response.status_code == 200
+    assert response.json()["id"] == id(mock_provider)

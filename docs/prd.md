@@ -66,6 +66,33 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 - 로깅·CORS·lifespan·라우터 등록을 수행하는 `create_app` 팩토리 함수 제공
 - 헬스체크 라우터(`/health/liveness`, `/health/readiness`) 내장 제공
 
+### 7. FastAPI State 기반 싱글톤 관리
+
+외부 서비스 접근 객체는 요청마다 새로 생성하지 않고 **애플리케이션 시작 시 단 한 번 생성**하여 `app.state`에 저장하는 싱글톤 패턴을 적용한다.
+
+#### state 속성 위치 (하드코딩)
+
+각 객체의 `app.state` 속성명은 `fastapi-core` SDK가 고정한다. 사용자(서비스 개발자)는 속성명을 직접 지정하거나 알 필요가 없으며, 아래에 명시된 **저장 함수**와 **의존성 함수**만 사용한다.
+
+| `app.state` 속성 (내부 고정) | 타입 | 저장 함수 | 의존성 함수 |
+| --- | --- | --- | --- |
+| `app.state.auth_provider` | `KeycloakAuthProvider` | `set_auth_provider(app, provider)` | `get_auth_provider` |
+| `app.state.db_engine` | SQLAlchemy `Engine` | `set_db_engine(app, engine)` | `get_db_engine` |
+| `app.state.minio_client` | `Minio` | `set_minio_client(app, client)` | `get_minio_client` |
+
+#### 저장 함수 (state setter)
+
+- `set_auth_provider(app, provider)`, `set_db_engine(app, engine)`, `set_minio_client(app, client)` 를 `factory` 또는 `dependencies` 모듈에서 제공
+- 각 함수는 내부적으로 고정된 `app.state` 속성명에 객체를 할당하며, 사용자가 속성명을 지정할 수 없다
+- 서비스 개발자는 `lifespan` 컨텍스트 매니저 내에서 저장 함수를 호출하여 객체를 등록하고, `yield` 이후 `engine.dispose()` 등 리소스 정리를 수행한다
+
+#### 의존성 함수 (state getter)
+
+- `get_auth_provider`, `get_db_engine`, `get_minio_client` 는 `request.app.state`의 고정된 속성명에서 객체를 읽어 반환하는 `Depends` 함수다
+- 서비스 개발자는 `Depends(get_db_engine)` 형태로만 사용하며 state 속성명을 알 필요가 없다
+
+> **fallback 정책**: `app.state`에 해당 속성이 없으면 (`AttributeError`) `EnvConfig`를 읽어 즉시 생성하는 폴백을 두어 lifespan 없이도 동작하도록 한다. 단, 이 경우 커넥션 풀 재사용이 보장되지 않는다.
+
 ---
 
 ## 패키지 구조
@@ -103,6 +130,8 @@ fastapi_core/
 | 심볼 | 위치 | 설명 |
 | --- | --- | --- |
 | `KeycloakAuthProvider` | `core.security` | Keycloak 연동 인증 프로바이더 |
+| `set_auth_provider` | `dependencies.security` | `app.state`의 고정 속성에 `KeycloakAuthProvider` 저장 |
+| `get_auth_provider` | `dependencies.security` | `app.state`의 고정 속성에서 `KeycloakAuthProvider` 반환 `Depends` (fallback: 즉시 생성) |
 | `get_current_user` | `dependencies.security` | 현재 인증 사용자 반환 `Depends` |
 | `require_permissions` | `dependencies.security` | 역할/스코프 기반 접근 제어 `Depends` |
 | `authenticate` | `services.security` | 사용자명·비밀번호로 토큰 발급 |
@@ -114,7 +143,8 @@ fastapi_core/
 | 심볼 | 위치 | 설명 |
 | --- | --- | --- |
 | `DatabaseConfig` | `core.config` | DB 접속 정보 설정 모델 |
-| `get_db_engine` | `dependencies.database` | SQLAlchemy 엔진 반환 `Depends` |
+| `set_db_engine` | `dependencies.database` | `app.state`의 고정 속성에 SQLAlchemy `Engine` 저장 |
+| `get_db_engine` | `dependencies.database` | `app.state`의 고정 속성에서 SQLAlchemy `Engine` 반환 `Depends` (fallback: 즉시 생성) |
 | `create_db_engine` | `services.database` | 엔진 생성 유틸리티 |
 | `check_database_connection` | `services.database` | DB 연결 확인 (`SELECT 1`) |
 
@@ -123,7 +153,8 @@ fastapi_core/
 | 심볼 | 위치 | 설명 |
 | --- | --- | --- |
 | `MinIOConfig` | `core.config` | MinIO 접속 정보 설정 모델 |
-| `get_minio_client` | `dependencies.storage` | MinIO 클라이언트 반환 `Depends` |
+| `set_minio_client` | `dependencies.storage` | `app.state`의 고정 속성에 `Minio` 클라이언트 저장 |
+| `get_minio_client` | `dependencies.storage` | `app.state`의 고정 속성에서 `Minio` 클라이언트 반환 `Depends` (fallback: 즉시 생성) |
 | `create_minio_client` | `core.storage` | 클라이언트 생성 유틸리티 |
 | `ensure_bucket_exists` | `core.storage` | 버킷 없으면 자동 생성 |
 

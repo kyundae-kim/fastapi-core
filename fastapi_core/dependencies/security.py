@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 
 from fastapi_core.core.config import EnvConfig, ServiceSettings
@@ -10,16 +10,26 @@ from fastapi_core.schemas.user import UserInfo
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token", auto_error=False)
 
+_AUTH_PROVIDER_STATE_KEY = "auth_provider"
+
+
+def set_auth_provider(app: FastAPI, provider: KeycloakAuthProvider) -> None:
+    setattr(app.state, _AUTH_PROVIDER_STATE_KEY, provider)
+
 
 def get_auth_provider(
+    request: Request,
     config: EnvConfig = Depends(get_config),
 ) -> KeycloakAuthProvider:
-    return KeycloakAuthProvider(
-        http_url=str(config.keycloak.http_url),
-        realm=config.keycloak.realm,
-        client_id=config.keycloak.client_id,
-        client_secret=config.keycloak.client_secret,
-    )
+    try:
+        return getattr(request.app.state, _AUTH_PROVIDER_STATE_KEY)
+    except AttributeError:
+        return KeycloakAuthProvider(
+            http_url=str(config.keycloak.http_url),
+            realm=config.keycloak.realm,
+            client_id=config.keycloak.client_id,
+            client_secret=config.keycloak.client_secret,
+        )
 
 
 def get_current_user(
