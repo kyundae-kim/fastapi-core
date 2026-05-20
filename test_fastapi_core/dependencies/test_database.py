@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
@@ -93,3 +94,23 @@ def test_get_db_engine_fallback():
         mock_create.assert_called_once_with(mock_config.db)
     assert response.status_code == 200
     assert response.json()["id"] == id(mock_engine)
+
+
+def test_set_db_engine_from_config():
+    """config를 전달하면 create_db_engine을 호출하여 state에 등록한다."""
+    app = FastAPI()
+    mock_engine = MagicMock(spec=Engine)
+    mock_config = MagicMock()
+    with patch(
+        "fastapi_core.dependencies.database.create_db_engine", return_value=mock_engine
+    ) as mock_create:
+        set_db_engine(app, config=mock_config)
+        mock_create.assert_called_once_with(mock_config.db)
+    assert app.state.db_engine is mock_engine
+
+
+def test_set_db_engine_requires_engine_or_config():
+    """engine과 config 모두 생략하면 ValueError를 발생시킨다."""
+    app = FastAPI()
+    with pytest.raises(ValueError):
+        set_db_engine(app)

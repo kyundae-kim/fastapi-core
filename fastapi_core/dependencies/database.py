@@ -10,7 +10,16 @@ from fastapi_core.dependencies.config import get_config
 _DB_ENGINE_STATE_KEY = "db_engine"
 
 
-def set_db_engine(app: FastAPI, engine: Engine) -> None:
+def set_db_engine(
+    app: FastAPI,
+    engine: Engine | None = None,
+    *,
+    config: EnvConfig | None = None,
+) -> None:
+    if engine is None:
+        if config is None:
+            raise ValueError("Either engine or config must be provided")
+        engine = create_db_engine(config.db)
     setattr(app.state, _DB_ENGINE_STATE_KEY, engine)
 
 

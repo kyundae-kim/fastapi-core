@@ -13,7 +13,21 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token", auto_error=False)
 _AUTH_PROVIDER_STATE_KEY = "auth_provider"
 
 
-def set_auth_provider(app: FastAPI, provider: KeycloakAuthProvider) -> None:
+def set_auth_provider(
+    app: FastAPI,
+    provider: KeycloakAuthProvider | None = None,
+    *,
+    config: EnvConfig | None = None,
+) -> None:
+    if provider is None:
+        if config is None:
+            raise ValueError("Either provider or config must be provided")
+        provider = KeycloakAuthProvider(
+            http_url=str(config.keycloak.http_url),
+            realm=config.keycloak.realm,
+            client_id=config.keycloak.client_id,
+            client_secret=config.keycloak.client_secret,
+        )
     setattr(app.state, _AUTH_PROVIDER_STATE_KEY, provider)
 
 

@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from minio import Minio
@@ -69,3 +70,23 @@ def test_get_minio_client_fallback():
         mock_create.assert_called_once_with(mock_config.minio)
     assert response.status_code == 200
     assert response.json()["id"] == id(mock_client)
+
+
+def test_set_minio_client_from_config():
+    """config를 전달하면 create_minio_client를 호출하여 state에 등록한다."""
+    app = FastAPI()
+    mock_client = MagicMock(spec=Minio)
+    mock_config = MagicMock()
+    with patch(
+        "fastapi_core.dependencies.storage.create_minio_client", return_value=mock_client
+    ) as mock_create:
+        set_minio_client(app, config=mock_config)
+        mock_create.assert_called_once_with(mock_config.minio)
+    assert app.state.minio_client is mock_client
+
+
+def test_set_minio_client_requires_client_or_config():
+    """client와 config 모두 생략하면 ValueError를 발생시킨다."""
+    app = FastAPI()
+    with pytest.raises(ValueError):
+        set_minio_client(app)

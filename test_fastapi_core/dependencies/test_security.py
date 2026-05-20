@@ -190,3 +190,37 @@ def test_get_auth_provider_fallback():
         mock_cls.assert_called_once()
     assert response.status_code == 200
     assert response.json()["id"] == id(mock_provider)
+
+
+def test_set_auth_provider_from_config():
+    """config를 전달하면 KeycloakAuthProvider를 생성하여 state에 등록한다."""
+    from unittest.mock import MagicMock, patch
+
+    from fastapi_core.core.config import EnvConfig, KeycloakConfig
+    from fastapi_core.dependencies.auth import set_auth_provider
+
+    app = FastAPI()
+    mock_provider = MagicMock(spec=KeycloakAuthProvider)
+    mock_config = MagicMock(spec=EnvConfig)
+    mock_config.keycloak = MagicMock(spec=KeycloakConfig)
+    mock_config.keycloak.http_url = "http://keycloak:8080"
+    mock_config.keycloak.realm = "myrealm"
+    mock_config.keycloak.client_id = "myclient"
+    mock_config.keycloak.client_secret = "secret"
+
+    with patch(
+        "fastapi_core.dependencies.auth.KeycloakAuthProvider",
+        return_value=mock_provider,
+    ) as mock_cls:
+        set_auth_provider(app, config=mock_config)
+        mock_cls.assert_called_once()
+    assert app.state.auth_provider is mock_provider
+
+
+def test_set_auth_provider_requires_provider_or_config():
+    """provider와 config 모두 생략하면 ValueError를 발생시킨다."""
+    from fastapi_core.dependencies.auth import set_auth_provider
+
+    app = FastAPI()
+    with pytest.raises(ValueError):
+        set_auth_provider(app)

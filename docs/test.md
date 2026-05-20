@@ -159,6 +159,8 @@ uv run pytest -q -m integration
 | --- | --- |
 | `test_get_auth_provider_from_state` | `app.state.auth_provider` 가 있을 때 동일 인스턴스 반환, `KeycloakAuthProvider` 생성자 미호출 |
 | `test_get_auth_provider_fallback` | `app.state`에 `auth_provider` 없을 때 `KeycloakAuthProvider` 즉시 생성 후 반환 |
+| `test_set_auth_provider_from_config` | `config` 전달 시 `KeycloakAuthProvider` 생성 후 `app.state.auth_provider` 에 등록 |
+| `test_set_auth_provider_requires_provider_or_config` | `provider`, `config` 모두 생략 시 `ValueError` 발생 |
 | `test_get_current_user_valid` | 유효한 Bearer 토큰으로 `UserInfo` 반환 |
 | `test_get_current_user_missing_token` | Authorization 헤더 없을 때 401 반환 |
 | `test_get_current_user_invalid_token` | 잘못된 토큰으로 401 반환 |
@@ -171,6 +173,8 @@ uv run pytest -q -m integration
 | --- | --- |
 | `test_get_db_engine_from_state` | `app.state.db_engine` 이 있을 때 동일 인스턴스 반환, `create_db_engine` 미호출 |
 | `test_get_db_engine_fallback` | `app.state`에 `db_engine` 없을 때 `create_db_engine` 즉시 호출 후 반환 |
+| `test_set_db_engine_from_config` | `config` 전달 시 `create_db_engine` 호출 후 `app.state.db_engine` 에 등록 |
+| `test_set_db_engine_requires_engine_or_config` | `engine`, `config` 모두 생략 시 `ValueError` 발생 |
 
 ## `dependencies/test_storage.py` 검증 항목
 
@@ -178,3 +182,5 @@ uv run pytest -q -m integration
 | --- | --- |
 | `test_get_minio_client_from_state` | `app.state.minio_client` 가 있을 때 동일 인스턴스 반환, `create_minio_client` 미호출 |
 | `test_get_minio_client_fallback` | `app.state`에 `minio_client` 없을 때 `create_minio_client` 즉시 호출 후 반환 |
+| `test_set_minio_client_from_config` | `config` 전달 시 `create_minio_client` 호출 후 `app.state.minio_client` 에 등록 |
+| `test_set_minio_client_requires_client_or_config` | `client`, `config` 모두 생략 시 `ValueError` 발생 |

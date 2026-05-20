@@ -76,13 +76,17 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 
 | `app.state` 속성 (내부 고정) | 타입 | 저장 함수 | 의존성 함수 |
 | --- | --- | --- | --- |
-| `app.state.auth_provider` | `KeycloakAuthProvider` | `set_auth_provider(app, provider)` | `get_auth_provider` |
-| `app.state.db_engine` | SQLAlchemy `Engine` | `set_db_engine(app, engine)` | `get_db_engine` |
-| `app.state.minio_client` | `Minio` | `set_minio_client(app, client)` | `get_minio_client` |
+| `app.state.auth_provider` | `KeycloakAuthProvider` | `set_auth_provider(app, provider)` 또는 `set_auth_provider(app, config=config)` | `get_auth_provider` |
+| `app.state.db_engine` | SQLAlchemy `Engine` | `set_db_engine(app, engine)` 또는 `set_db_engine(app, config=config)` | `get_db_engine` |
+| `app.state.minio_client` | `Minio` | `set_minio_client(app, client)` 또는 `set_minio_client(app, config=config)` | `get_minio_client` |
 
 #### 저장 함수 (state setter)
 
-- `set_auth_provider(app, provider)`, `set_db_engine(app, engine)`, `set_minio_client(app, client)` 를 `factory` 또는 `dependencies` 모듈에서 제공
+- `set_auth_provider`, `set_db_engine`, `set_minio_client` 를 `dependencies` 모듈에서 제공
+- 각 함수는 **두 가지 호출 형태**를 지원한다:
+  - `set_auth_provider(app, provider)` — 외부에서 생성한 객체를 직접 전달
+  - `set_auth_provider(app, config=config)` — `EnvConfig`를 전달하면 내부에서 객체를 생성하여 등록
+  - `provider`와 `config` 중 하나는 반드시 지정해야 하며, 둘 다 생략하면 `ValueError`가 발생한다
 - 각 함수는 내부적으로 고정된 `app.state` 속성명에 객체를 할당하며, 사용자가 속성명을 지정할 수 없다
 - 서비스 개발자는 `lifespan` 컨텍스트 매니저 내에서 저장 함수를 호출하여 객체를 등록하고, `yield` 이후 `engine.dispose()` 등 리소스 정리를 수행한다
 
@@ -130,7 +134,7 @@ fastapi_core/
 | 심볼 | 위치 | 설명 |
 | --- | --- | --- |
 | `KeycloakAuthProvider` | `core.auth` | Keycloak 연동 인증 프로바이더 |
-| `set_auth_provider` | `dependencies.auth` | `app.state`의 고정 속성에 `KeycloakAuthProvider` 저장 |
+| `set_auth_provider` | `dependencies.auth` | `app.state`의 고정 속성에 `KeycloakAuthProvider` 저장 (객체 직접 전달 또는 `EnvConfig`로 내부 생성) |
 | `get_auth_provider` | `dependencies.auth` | `app.state`의 고정 속성에서 `KeycloakAuthProvider` 반환 `Depends` (fallback: 즉시 생성) |
 | `get_current_user` | `dependencies.auth` | 현재 인증 사용자 반환 `Depends` |
 | `require_permissions` | `dependencies.auth` | 역할/스코프 기반 접근 제어 `Depends` |
