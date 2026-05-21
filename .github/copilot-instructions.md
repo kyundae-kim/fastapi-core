@@ -7,3 +7,7 @@ Treat docs/config.md as the source of truth for EnvConfig, ServiceSettings, and 
 
 When writing or editing tests, consult and follow docs/test.md first.
 Treat docs/test.md as the source of truth for test structure, mock vs integration boundaries, and test-related environment requirements.
+
+When writing or editing SDK API code in this workspace, consult and follow docs/api.md first.
+Treat docs/api.md as the source of truth for all public interface signatures, behaviors, and error conditions in fastapi_core.
+If a code change appears to conflict with docs/api.md, prefer the API spec and call out the discrepancy.

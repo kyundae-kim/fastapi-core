@@ -1,20 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "fastapi-core"
 version = "0.1.0"
 description = "DocMesh FastAPI 기반 마이크로서비스 공통 SDK"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.111.0",
-    "httpx>=0.27.0",
+    "fastapi[standard]>=0.136.1",
+    "hermes-agent>=0.14.0",
     "minio>=7.2.20",
     "psycopg[binary]>=3.3.4",
-    "pydantic-settings>=2.0",
     "pyjwt[crypto]>=2.12.1",
-    "python-multipart>=0.0.9",
-    "pyyaml>=6.0",
     "sqlalchemy>=2.0.49",
 ]
+
+[tool.setuptools.packages.find]
+include = ["fastapi_core*"]
+exclude = ["test_fastapi_core*"]
+
+[tool.setuptools.package-data]
+fastapi_core = ["docs/*.md"]
 
 [dependency-groups]
 dev = [

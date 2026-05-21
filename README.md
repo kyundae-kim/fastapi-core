@@ -1,62 +1,44 @@
 # fastapi-core
 
-DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사용하는 Python SDK 패키지입니다.  
-Keycloak 인증/인가, PostgreSQL 연동, MinIO 연동에 필요한 핵심 모듈을 제공합니다.
+DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사용하는 Python SDK입니다.
+인증/인가(Keycloak), 데이터베이스(PostgreSQL), 오브젝트 스토리지(MinIO), 설정/의존성/앱 조립을 표준화해 서비스 개발 시 중복 구현을 줄이는 것이 목적입니다.
 
----
+## 무엇을 제공하나요?
 
-## 주요 기능
-
-- **Keycloak 인증/인가** — OAuth2 Password Grant, JWT RS256 서명 검증, Realm Access 역할·스코프 파싱
-- **PostgreSQL 연동** — SQLAlchemy ≥ 2.0 + psycopg v3 엔진 생성, 연결 확인 유틸리티
-- **MinIO 연동** — 클라이언트 생성, 버킷 자동 생성, 연결 확인 유틸리티
-- **설정 관리** — 환경 변수(`EnvConfig`) + YAML(`ServiceSettings`) 이중 레이어
-- **FastAPI 앱 팩토리** — CORS·로깅·예외 핸들러·라우터를 한 번에 조립하는 `create_app()`
-- **내장 라우터** — `/health/liveness`, `/health/readiness`, `/token`, `/user`
-
----
-
-## 패키지 구조
-
-```
-fastapi_core/
-├── core/               # 프레임워크 비의존 공통 인프라
-│   ├── config.py       # EnvConfig, ServiceSettings, DatabaseConfig, MinIOConfig
-│   ├── security.py     # KeycloakAuthProvider, extract_roles, extract_scopes
-│   ├── logging.py      # setup_logging
-│   ├── exceptions.py   # AuthError, auth_error_handler
-│   ├── storage.py      # create_minio_client, ensure_bucket_exists
-│   └── database.py     # create_db_engine, check_database_connection
-├── dependencies/       # FastAPI Depends 모듈
-│   ├── config.py       # get_config, get_settings
-│   ├── database.py     # get_db_engine
-│   ├── security.py     # get_current_user, require_permissions
-│   └── storage.py      # get_minio_client
-├── routers/            # 재사용 가능한 내장 라우터
-│   ├── health.py       # GET /health/liveness, GET /health/readiness
-│   └── auth.py         # POST /token, GET /user
-├── schemas/            # Pydantic 스키마
-│   ├── token.py        # TokenResponse
-│   ├── user.py         # UserInfo
-│   └── health.py       # HealthResponse
-└── factory.py          # create_app()
-```
-
----
+- Keycloak 인증/인가
+  - OAuth2 Password Grant 토큰 발급
+  - JWT(RS256) 검증 및 사용자 정보 변환
+  - 역할(role)/스코프(scope) 추출
+- PostgreSQL 연동
+  - SQLAlchemy + psycopg 기반 엔진 생성
+  - 연결 확인, DB 버전 조회 유틸리티
+- MinIO 연동
+  - 클라이언트 생성
+  - 버킷 존재 보장(없으면 생성)
+  - 연결 확인 유틸리티
+- 설정 관리
+  - `EnvConfig`(환경 변수/.env)
+  - `ServiceSettings`(YAML)
+- FastAPI 조립
+  - `create_app()` 팩토리
+  - 로깅/CORS/예외 핸들러/헬스체크 라우터 기본 구성
+- FastAPI state 기반 싱글톤 패턴
+  - `app.state.auth_provider`, `app.state.db_engine`, `app.state.minio_client` 사용
+  - `set_*`/`get_*` 헬퍼 제공
 
 ## 설치
 
 ```bash
-# uv (권장)
+# uv
 uv add git+https://github.com/your-org/fastapi-core.git
 
 # pip
 pip install git+https://github.com/your-org/fastapi-core.git
 ```
 
----
-
 ## 빠른 시작
+
+가장 단순한 사용:
 
 ```python
 from fastapi_core import create_app
@@ -64,31 +46,36 @@ from fastapi_core import create_app
 app = create_app()
 ```
 
-커스텀 설정과 lifespan 지정:
+권장 패턴(lifespan에서 state 싱글톤 등록):
 
 ```python
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from fastapi_core import create_app
-from fastapi_core.core.config import EnvConfig, ServiceSettings
+
+from fastapi_core.factory import create_app
+from fastapi_core.core.config import EnvConfig
+from fastapi_core.dependencies.auth import set_auth_provider
+from fastapi_core.dependencies.database import set_db_engine
+from fastapi_core.dependencies.storage import set_minio_client
 
 config = EnvConfig()
-settings = ServiceSettings.from_yaml(config.config_path)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 시작 시 초기화 작업
+    set_auth_provider(app, config=config)
+    set_db_engine(app, config=config)
+    set_minio_client(app, config=config)
     yield
-    # 종료 시 정리 작업
+    app.state.db_engine.dispose()
 
-app = create_app(config=config, settings=settings, lifespan=lifespan)
+app = create_app(config=config, lifespan=lifespan)
 ```
 
-인증 의존성 사용:
+인증 의존성 사용 예:
 
 ```python
 from fastapi import APIRouter, Depends
-from fastapi_core import UserInfo
+from fastapi_core.schemas.user import UserInfo
 from fastapi_core.dependencies.auth import get_current_user, require_permissions
 
 router = APIRouter()
@@ -97,63 +84,53 @@ router = APIRouter()
 def me(user: UserInfo = Depends(get_current_user)):
     return user
 
-@router.get("/admin-only")
-def admin(user: UserInfo = Depends(require_permissions("admin"))):
+@router.get("/admin")
+def admin_only(user: UserInfo = Depends(require_permissions("admin"))):
     return user
 ```
 
----
+## 내장 엔드포인트
 
-## 환경 변수
+- `GET /health/liveness`
+- `GET /health/readiness`
+- `POST /token` (옵션: `create_app(..., include_auth_router=True)`일 때)
+- `GET /user` (옵션: `create_app(..., include_auth_router=True)`일 때)
 
-설정은 환경 변수와 YAML 파일 두 레이어로 분리됩니다. 자세한 내용은 [docs/config.md](docs/config.md)를 참고하세요.
+## 설정 요약
 
-| 변수명 | 기본값 | 설명 |
-| --- | --- | --- |
-| `ENV` | `dev` | 실행 환경 (`dev` \| `stage` \| `prod`) |
-| `CONFIG_PATH` | `.devcontainer/config.yaml` | 서비스 설정 YAML 경로 |
-| `LOGGING__LEVEL` | `DEBUG` | 로그 레벨 |
-| `KEYCLOAK__HTTP_URL` | `http://keycloak:8080/` | Keycloak URL |
-| `KEYCLOAK__REALM` | `restapi` | Keycloak Realm |
-| `KEYCLOAK__CLIENT_ID` | `fastapi` | Client ID |
-| `DB__HOST` | `postgres` | PostgreSQL 호스트 |
-| `MINIO__ENDPOINT` | `minio:9000` | MinIO 엔드포인트 |
+설정은 2개 레이어로 분리됩니다.
 
----
+1) 환경 변수 (`EnvConfig`)
+- 외부 서비스 접속 정보, 실행 환경, 로깅 레벨
+- 예: `ENV`, `CONFIG_PATH`, `LOGGING__LEVEL`, `KEYCLOAK__*`, `DB__*`, `MINIO__*`
 
-## 개발 환경 설정
+2) 서비스 설정 YAML (`ServiceSettings`)
+- 앱 동작 정책
+- 예: `cors.origins`, `cors.credentials`, `auth.verify_jwt`, `auth.allow_insecure_jwt_decode`, `auth.use_introspection`
+
+자세한 키/기본값/예시는 `fastapi_core/docs/config.md`를 참고하세요.
+
+## 테스트
 
 ```bash
-# 의존성 설치
-uv sync --all-groups
-
-# 단위 테스트 실행 (외부 서비스 불필요)
+# 단위 테스트
 uv run pytest -q
 
-# 통합 테스트 실행 (devcontainer 환경)
+# 통합 테스트
 uv run pytest -q -m integration
 ```
 
----
+통합 테스트는 devcontainer 기반 실서비스(Keycloak/PostgreSQL/MinIO) 연결을 전제로 합니다.
 
-## 기술 스택
+## 개발 정보
 
-| 항목 | 버전 |
-| --- | --- |
-| Python | ≥ 3.10 |
-| FastAPI | ≥ 0.111.0 |
-| pydantic-settings | ≥ 2.0 |
-| SQLAlchemy | ≥ 2.0 |
-| psycopg | ≥ 3.3 (binary) |
-| PyJWT | ≥ 2.12 (crypto) |
-| minio-py | ≥ 7.2 |
-| httpx | ≥ 0.27 |
-
----
+- Python: `>=3.11` (프로젝트 설정 기준)
+- 테스트 루트: `test_fastapi_core/`
+- 린트: Ruff (line-length 88)
 
 ## 문서
 
-- [PRD](docs/prd.md) — 제품 요구사항 정의서
-- [설정 가이드](docs/config.md) — 환경 변수 및 YAML 설정 전체 목록
-- [테스트 가이드](docs/test.md) — 단위/통합 테스트 구조 및 실행 방법
-
+- `fastapi_core/docs/prd.md` : 제품 요구사항(PRD)
+- `fastapi_core/docs/api.md` : 공개 API 시그니처/동작/에러 처리
+- `fastapi_core/docs/config.md` : 설정 가이드(환경 변수/YAML)
+- `fastapi_core/docs/test.md` : 테스트 가이드(단위/통합)
