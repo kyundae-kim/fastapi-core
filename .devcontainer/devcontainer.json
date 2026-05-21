@@ -18,6 +18,10 @@
 			]
 		}
 	},
+	
+	"mounts": [
+		"source=${localEnv:HOME}/hermes,target=/home/vscode/.hermes,type=bind"
+		],
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
