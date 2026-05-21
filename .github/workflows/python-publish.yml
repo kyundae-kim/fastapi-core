@@ -9,7 +9,8 @@
 name: Upload Python Package
 
 on:
-  branches: ["ci-cd"]
+  push:
+    branches: ["ci-cd"]
   # release:
   #   types: [published]
 
