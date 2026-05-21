@@ -144,7 +144,7 @@ fastapi_core/
 ### 품질
 
 - 린터: Ruff (line-length 88)
-- Python ≥ 3.10 호환성 유지
+- Python ≥ 3.11 호환성 유지
 - 타입 힌트 전면 적용
 
 ### 패키지 배포
@@ -158,7 +158,7 @@ fastapi_core/
 
 | 항목 | 내용 |
 | --- | --- |
-| 런타임 | Python ≥ 3.10 |
+| 런타임 | Python ≥ 3.11 |
 | 패키지 매니저 | [uv](https://docs.astral.sh/uv/) |
 | 웹 프레임워크 | FastAPI |
 | 인증 서버 | Keycloak (OAuth2 / OIDC) |
