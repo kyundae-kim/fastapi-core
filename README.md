@@ -108,7 +108,7 @@ def admin_only(user: UserInfo = Depends(require_permissions("admin"))):
 - 앱 동작 정책
 - 예: `cors.origins`, `cors.credentials`, `auth.verify_jwt`, `auth.allow_insecure_jwt_decode`, `auth.use_introspection`
 
-자세한 키/기본값/예시는 `docs/config.md`를 참고하세요.
+자세한 키/기본값/예시는 `fastapi_core/docs/config.md`를 참고하세요.
 
 ## 테스트
 
@@ -130,7 +130,7 @@ uv run pytest -q -m integration
 
 ## 문서
 
-- `docs/prd.md` : 제품 요구사항(PRD)
-- `docs/api.md` : 공개 API 시그니처/동작/에러 처리
-- `docs/config.md` : 설정 가이드(환경 변수/YAML)
-- `docs/test.md` : 테스트 가이드(단위/통합)
+- `fastapi_core/docs/prd.md` : 제품 요구사항(PRD)
+- `fastapi_core/docs/api.md` : 공개 API 시그니처/동작/에러 처리
+- `fastapi_core/docs/config.md` : 설정 가이드(환경 변수/YAML)
+- `fastapi_core/docs/test.md` : 테스트 가이드(단위/통합)
