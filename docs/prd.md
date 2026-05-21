@@ -39,7 +39,7 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 
 ### 2. PostgreSQL 연동
 
-- SQLAlchemy ≥ 2.0 + psycopg v3 기반 비동기/동기 엔진 생성
+- SQLAlchemy ≥ 2.0 + psycopg v3 기반 엔진 생성
 - `DatabaseConfig`로 DSN 자동 조합 (또는 `DB__URL` 직접 지정)
 - 연결 확인(`SELECT 1`) 및 DB 버전 조회 유틸리티 함수 제공
 - `trust` / `password` 인증 방식 선택 지원
