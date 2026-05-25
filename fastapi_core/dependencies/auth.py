@@ -8,7 +8,10 @@ from fastapi_core.core.auth import KeycloakAuthProvider
 from fastapi_core.dependencies.config import get_config, get_settings
 from fastapi_core.schemas.user import UserInfo
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token", auto_error=False)
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl=EnvConfig().token_url,
+    auto_error=False,
+)
 
 _AUTH_PROVIDER_STATE_KEY = "auth_provider"
 
