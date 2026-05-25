@@ -75,3 +75,16 @@ def test_database_config_password_not_in_trust_url():
     url = config.sqlalchemy_database_url
     assert "secret" not in url
     assert "pguser@db" in url
+
+
+def test_database_pool_defaults():
+    config = DatabaseConfig()
+    assert config.pool_size == 5
+    assert config.max_overflow == 10
+    assert config.pool_timeout == 30
+    assert config.pool_recycle == 1800
+
+
+def test_minio_presigned_default_expires():
+    config = MinIOConfig()
+    assert config.presigned_expires_sec == 900

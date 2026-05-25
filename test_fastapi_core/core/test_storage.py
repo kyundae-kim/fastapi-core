@@ -1,10 +1,13 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi_core.core.config import MinIOConfig
 from fastapi_core.core.storage import (
     check_minio_connection,
     create_minio_client,
     ensure_bucket_exists,
+    generate_presigned_get_url,
+    generate_presigned_put_url,
     list_buckets,
 )
 
@@ -70,3 +73,29 @@ def test_check_minio_connection_failure():
     mock_client = MagicMock()
     mock_client.bucket_exists.side_effect = Exception("connection error")
     assert check_minio_connection(mock_client, "bucket") is False
+
+
+def test_generate_presigned_get_url_default_expires():
+    mock_client = MagicMock()
+    mock_client.get_presigned_url.return_value = "https://example/get"
+
+    url = generate_presigned_get_url(mock_client, "bucket", "obj.txt")
+
+    assert url == "https://example/get"
+    mock_client.get_presigned_url.assert_called_once()
+    args, kwargs = mock_client.get_presigned_url.call_args
+    assert args == ("GET", "bucket", "obj.txt")
+    assert kwargs["expires"].total_seconds() == pytest.approx(900)
+
+
+def test_generate_presigned_put_url_default_expires():
+    mock_client = MagicMock()
+    mock_client.get_presigned_url.return_value = "https://example/put"
+
+    url = generate_presigned_put_url(mock_client, "bucket", "obj.txt")
+
+    assert url == "https://example/put"
+    mock_client.get_presigned_url.assert_called_once()
+    args, kwargs = mock_client.get_presigned_url.call_args
+    assert args == ("PUT", "bucket", "obj.txt")
+    assert kwargs["expires"].total_seconds() == pytest.approx(900)

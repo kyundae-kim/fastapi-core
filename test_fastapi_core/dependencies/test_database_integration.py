@@ -2,15 +2,16 @@
 import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 
 from fastapi_core.core.config import EnvConfig
 from fastapi_core.core.database import (
     check_database_connection,
     create_db_engine,
     get_database_version,
+    run_in_transaction,
 )
-from fastapi_core.dependencies.database import get_db_engine, set_db_engine
+from fastapi_core.dependencies.database import get_db_engine, get_db_session, set_db_engine
 
 
 @pytest.fixture(scope="module")
@@ -80,3 +81,31 @@ def test_get_db_engine_from_state_integration(engine: Engine):
     response = client.get("/engine-id")
     assert response.status_code == 200
     assert response.json()["id"] == id(engine)
+
+
+@pytest.mark.integration
+def test_get_db_session_integration(engine: Engine):
+    """get_db_session이 실제 세션을 제공해 쿼리를 수행할 수 있다."""
+    app = FastAPI()
+    set_db_engine(app, engine)
+
+    @app.get("/db-session-check")
+    def db_session_check(session=Depends(get_db_session)):
+        row = session.execute(text("SELECT 1")).scalar()
+        return {"value": row}
+
+    client = TestClient(app)
+    response = client.get("/db-session-check")
+    assert response.status_code == 200
+    assert response.json()["value"] == 1
+
+
+@pytest.mark.integration
+def test_run_in_transaction_integration(engine: Engine):
+    """run_in_transaction이 실제 트랜잭션에서 함수를 실행하고 값을 반환한다."""
+
+    def _fn(session):
+        return session.execute(text("SELECT 1")).scalar()
+
+    result = run_in_transaction(engine, _fn)
+    assert result == 1
