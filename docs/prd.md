@@ -39,16 +39,20 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 
 ### 2. PostgreSQL 연동
 
-- SQLAlchemy ≥ 2.0 + psycopg v3 기반 비동기/동기 엔진 생성
+- SQLAlchemy ≥ 2.0 + psycopg v3 기반 엔진 생성
 - `DatabaseConfig`로 DSN 자동 조합 (또는 `DB__URL` 직접 지정)
 - 연결 확인(`SELECT 1`) 및 DB 버전 조회 유틸리티 함수 제공
 - `trust` / `password` 인증 방식 선택 지원
+- FastAPI 의존성으로 재사용 가능한 DB 세션 제공 (`get_db_session`)
+- 트랜잭션 헬퍼 제공 (`run_in_transaction` 또는 컨텍스트 매니저)
+- 커넥션 풀 관련 설정(`pool_size`, `max_overflow`, `pool_timeout`, `pool_recycle`) 노출
 
 ### 3. MinIO 연동
 
 - minio-py SDK 기반 클라이언트 생성 및 버킷 자동 생성(`ensure_bucket_exists`)
 - 연결 확인 및 버킷 목록 조회 유틸리티 함수 제공
 - TLS(`MINIO__SECURE`) 선택적 지원
+- Presigned URL 생성 유틸리티 제공 (GET/PUT)
 
 ### 4. 설정 관리
 
@@ -65,6 +69,7 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 
 - 로깅·CORS·lifespan·라우터 등록을 수행하는 `create_app` 팩토리 함수 제공
 - 헬스체크 라우터(`/health/liveness`, `/health/readiness`) 내장 제공
+- `/health/readiness`는 Keycloak뿐 아니라 PostgreSQL·MinIO 의존성까지 포함한 종합 준비 상태를 확인
 
 ### 7. FastAPI State 기반 싱글톤 관리
 

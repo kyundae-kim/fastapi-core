@@ -218,6 +218,29 @@ def get_db_engine(
 - `app.state.db_engine` 존재 시 반환 (싱글톤)
 - `AttributeError` 시 `create_db_engine(config.db)` 즉시 호출 (fallback)
 
+### `get_db_session` — `fastapi_core.dependencies.database` *(추가 예정)*
+
+```python
+def get_db_session(
+    engine: Engine = Depends(get_db_engine),
+) -> Generator[Session, None, None]:
+```
+
+- SQLAlchemy `Session`을 생성해 요청 스코프에서 제공
+- 정상/예외 종료와 관계없이 `session.close()` 보장
+
+### `run_in_transaction` — `fastapi_core.core.database` *(추가 예정)*
+
+```python
+def run_in_transaction(
+    engine: Engine,
+    fn: Callable[[Session], T],
+) -> T:
+```
+
+- 내부에서 세션/트랜잭션 경계를 생성해 `fn(session)` 실행
+- 성공 시 `commit`, 실패 시 `rollback` 후 예외 재전파
+
 ---
 
 ## 스토리지 (Storage / MinIO)
@@ -249,6 +272,32 @@ def list_buckets(client: Minio) -> list[str]:
 def check_minio_connection(client: Minio, bucket: str) -> bool:
     """bucket_exists() 호출 성공 시 True, 예외 시 False."""
 ```
+
+### `generate_presigned_get_url` — `fastapi_core.core.storage` *(추가 예정)*
+
+```python
+def generate_presigned_get_url(
+    client: Minio,
+    bucket: str,
+    object_name: str,
+    expires: timedelta = timedelta(minutes=15),
+) -> str:
+```
+
+- 지정 객체 다운로드용 presigned GET URL 반환
+
+### `generate_presigned_put_url` — `fastapi_core.core.storage` *(추가 예정)*
+
+```python
+def generate_presigned_put_url(
+    client: Minio,
+    bucket: str,
+    object_name: str,
+    expires: timedelta = timedelta(minutes=15),
+) -> str:
+```
+
+- 지정 객체 업로드용 presigned PUT URL 반환
 
 ### `set_minio_client` — `fastapi_core.dependencies.storage`
 
@@ -332,13 +381,15 @@ def create_app(
 
 ### `GET /health/readiness`
 
-`KEYCLOAK__MANAGE_URL/health/ready`를 호출하여 Keycloak 준비 상태를 확인한다.
+Keycloak + PostgreSQL + MinIO 준비 상태를 종합 확인한다. *(추가 예정)*
 
 | 조건 | 응답 |
 |---|---|
-| Keycloak `200` 응답 | `200 { "status": "ok" }` |
+| Keycloak + DB + MinIO 모두 정상 | `200 { "status": "ok" }` |
 | Keycloak 비정상 응답 | `503 { "detail": "Keycloak not ready" }` |
-| 연결 불가 (`RequestError`) | `503 { "detail": "Keycloak unreachable: ..." }` |
+| Keycloak 연결 불가 (`RequestError`) | `503 { "detail": "Keycloak unreachable: ..." }` |
+| DB 연결 실패 | `503 { "detail": "Database not ready" }` |
+| MinIO 연결 실패 | `503 { "detail": "MinIO not ready" }` |
 
 ### `POST /token`
 
@@ -386,6 +437,8 @@ class AuthError(Exception):
 | 역할 부족 | `403` | `{"detail": "Missing required role: {role}"}` |
 | Keycloak 미준비 | `503` | `{"detail": "Keycloak not ready"}` |
 | Keycloak 연결 불가 | `503` | `{"detail": "Keycloak unreachable: ..."}` |
+| DB 미준비 | `503` | `{"detail": "Database not ready"}` |
+| MinIO 미준비 | `503` | `{"detail": "MinIO not ready"}` |
 
 ---
 

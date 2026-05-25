@@ -58,6 +58,10 @@
 | `DB__SSLMODE` | `str` | `prefer` | PostgreSQL SSL 모드 |
 | `DB__CONNECT_TIMEOUT` | `int` | `5` | 연결 타임아웃 (초) |
 | `DB__ECHO` | `bool` | `false` | SQLAlchemy SQL 로그 출력 여부 |
+| `DB__POOL_SIZE` | `int` | `5` | SQLAlchemy 커넥션 풀 기본 크기 *(추가 예정)* |
+| `DB__MAX_OVERFLOW` | `int` | `10` | 풀 초과 연결 허용 수 *(추가 예정)* |
+| `DB__POOL_TIMEOUT` | `int` | `30` | 풀 연결 획득 타임아웃 (초) *(추가 예정)* |
+| `DB__POOL_RECYCLE` | `int` | `1800` | 커넥션 재생성 주기 (초) *(추가 예정)* |
 | `DB__URL` | `str \| None` | `None` | 지정 시 위 DB 변수를 무시하고 DSN 직접 사용 |
 
 ### MinIO
@@ -69,6 +73,7 @@
 | `MINIO__SECRET_KEY` | `str` | `password` | MinIO 시크릿 키 |
 | `MINIO__SECURE` | `bool` | `false` | TLS 사용 여부 (`true`이면 HTTPS) |
 | `MINIO__BUCKET` | `str` | `default` | 기본 버킷 이름 |
+| `MINIO__PRESIGNED_EXPIRES_SEC` | `int` | `900` | Presigned URL 기본 만료 (초) *(추가 예정)* |
 
 ---
 
@@ -92,6 +97,14 @@
 | `auth.use_introspection` | `bool` | `false` | Keycloak 토큰 인트로스펙션 사용 여부 |
 
 > Keycloak 접속 정보(`http_url`, `realm`, `client_id` 등)는 YAML이 아닌 환경 변수(`KEYCLOAK__*`)로 관리합니다.
+
+### `health` *(추가 예정)*
+
+| 키 | 타입 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `health.check_keycloak` | `bool` | `true` | readiness에서 Keycloak 점검 여부 |
+| `health.check_database` | `bool` | `true` | readiness에서 PostgreSQL 점검 여부 |
+| `health.check_minio` | `bool` | `true` | readiness에서 MinIO 점검 여부 |
 
 ### YAML 예시
 
@@ -146,6 +159,10 @@ DB__AUTH_METHOD=password
 DB__SSLMODE=prefer
 DB__CONNECT_TIMEOUT=5
 DB__ECHO=false
+DB__POOL_SIZE=5
+DB__MAX_OVERFLOW=10
+DB__POOL_TIMEOUT=30
+DB__POOL_RECYCLE=1800
 # DB__URL=postgresql+psycopg://user:pass@postgres:5432/dbname
 
 # MinIO
@@ -154,6 +171,7 @@ MINIO__ACCESS_KEY=admin
 MINIO__SECRET_KEY=password
 MINIO__SECURE=false
 MINIO__BUCKET=default
+MINIO__PRESIGNED_EXPIRES_SEC=900
 ```
 
 ---
