@@ -64,14 +64,14 @@ uv run pytest -q
 
 | 파일 | 설명 |
 | --- | --- |
-| `core/test_config.py` | `DatabaseConfig.sqlalchemy_database_url` 조합 로직, `trust`/`password` 인증 방식, `DB__URL` 직접 지정 케이스 |
+| `core/test_config.py` | `DatabaseConfig.sqlalchemy_database_url` 조합 로직, `trust`/`password` 인증 방식, `DB__URL` 직접 지정 케이스, DB pool 기본값 및 MinIO presigned 만료 기본값 검증 |
 | `core/test_security.py` | `extract_roles`, `extract_scopes` 순수 함수 및 `KeycloakAuthProvider` 메서드 전체 mock 테스트 (`core.auth`) |
-| `core/test_storage.py` | `create_minio_client`, `ensure_bucket_exists`, `list_buckets` mock 테스트 |
-| `dependencies/test_config.py` | `get_config`, `get_settings` Depends 반환값 검증 |
-| `dependencies/test_database.py` | `create_db_engine`·`check_database_connection` mock 테스트, `get_db_engine` Depends mock 테스트 — `app.state.db_engine` 우선 반환 및 fallback 동작 검증 포함 |
+| `core/test_storage.py` | `create_minio_client`, `ensure_bucket_exists`, `list_buckets`, presigned GET/PUT URL 생성 mock 테스트 |
+| `dependencies/test_config.py` | `get_config`, `get_settings` Depends 반환값 검증 (`settings.health.*` 기본값 포함) |
+| `dependencies/test_database.py` | `create_db_engine`·`check_database_connection` mock 테스트, `get_db_engine`/`get_db_session` Depends mock 테스트, `run_in_transaction` commit/rollback 검증 — `app.state.db_engine` 우선 반환 및 fallback 동작 포함 |
 | `dependencies/test_security.py` | `set_auth_provider`·`get_auth_provider`·`get_current_user`·`require_permissions` mock 테스트 — `app.state.auth_provider` 우선 반환 및 fallback 동작 검증 포함 |
 | `dependencies/test_storage.py` | `create_minio_client`·`get_minio_client`·`set_minio_client` mock 테스트 — `app.state.minio_client` 우선 반환 및 fallback 동작 검증 포함 |
-| `routers/test_health.py` | `/health/liveness` 200 응답, `/health/readiness` Keycloak mock 연결 확인 |
+| `routers/test_health.py` | `/health/liveness` 200 응답, `/health/readiness` Keycloak/DB/MinIO 종합 readiness mock 검증 |
 | `routers/test_auth.py` | `/token` 발급 및 오류 응답, `/user` 인증 사용자 정보 반환 mock 테스트 |
 
 ---
@@ -139,8 +139,8 @@ uv run pytest -q -m integration
 | 파일 | 설명 |
 | --- | --- |
 | `core/test_security_integration.py` | 실제 Keycloak 토큰 발급, RS256 서명 검증, 클레임 추출 검증 |
-| `core/test_storage_integration.py` | 실제 MinIO 클라이언트 생성, 버킷 자동 생성, 버킷 목록 조회 |
-| `dependencies/test_database_integration.py` | 실제 PostgreSQL 엔진 생성, 연결 확인(SELECT 1), DB 버전 조회, state 싱글톤 검증 |
+| `core/test_storage_integration.py` | 실제 MinIO 클라이언트 생성, 버킷 자동 생성, 버킷 목록 조회, presigned GET/PUT URL 생성 |
+| `dependencies/test_database_integration.py` | 실제 PostgreSQL 엔진 생성, 연결 확인(SELECT 1), DB 버전 조회, `get_db_session`/`run_in_transaction` 동작, state 싱글톤 검증 |
 | `dependencies/test_security_integration.py` | 실제 Keycloak 토큰으로 RS256 검증, `get_current_user`·`require_permissions` 실환경 동작 검증 |
 | `dependencies/test_storage_integration.py` | 실제 MinIO 클라이언트로 state 싱글톤 검증, config 기반 등록, Depends 경유 버킷 접근 검증 |
 | `routers/test_auth_integration.py` | `/token` 실제 토큰 발급, `/user` 실제 토큰으로 사용자 정보 조회 |
@@ -187,13 +187,16 @@ uv run pytest -q -m integration
 
 | 테스트 함수 | 검증 내용 |
 | --- | --- |
-| `test_get_db_engine_creates_engine` | `create_engine` mock — `sqlalchemy_database_url`·`echo` 인자 전달 및 반환값 검증 |
+| `test_get_db_engine_creates_engine` | `create_engine` mock — `sqlalchemy_database_url`·`echo`·pool 파라미터 인자 전달 및 반환값 검증 |
 | `test_check_database_connection_success` | mock 엔진 연결 성공 시 `True` 반환 |
 | `test_check_database_connection_failure` | mock 엔진 연결 예외 시 `False` 반환 |
 | `test_get_db_engine_from_state` | `app.state.db_engine` 이 있을 때 동일 인스턴스 반환, `create_db_engine` 미호출 |
 | `test_get_db_engine_fallback` | `app.state`에 `db_engine` 없을 때 `create_db_engine` 즉시 호출 후 반환 |
 | `test_set_db_engine_from_config` | `config` 전달 시 `create_db_engine` 호출 후 `app.state.db_engine` 에 등록 |
 | `test_set_db_engine_requires_engine_or_config` | `engine`, `config` 모두 생략 시 `ValueError` 발생 |
+| `test_get_db_session_closes_session` | `get_db_session`가 세션을 yield하고 종료 시 `close()` 호출을 보장 |
+| `test_run_in_transaction_commit_and_return_value` | `run_in_transaction` 성공 경로에서 `commit` 호출 및 반환값 전달 |
+| `test_run_in_transaction_rollback_on_error` | `run_in_transaction` 예외 경로에서 `rollback` 호출 후 예외 재전파 |
 
 ## `dependencies/test_database_integration.py` 검증 항목 (통합 테스트)
 
@@ -203,6 +206,8 @@ uv run pytest -q -m integration
 | `test_check_database_connection` | 실제 DB에 SELECT 1 연결 확인 성공 |
 | `test_get_database_version` | 실제 DB 버전 문자열 반환 및 `PostgreSQL` 포함 검증 |
 | `test_get_db_engine_from_state_integration` | 실제 엔진을 `app.state`에 등록 후 `get_db_engine` Depends가 동일 인스턴스를 반환하는지 검증 |
+| `test_get_db_session_integration` | 실제 DB 세션 의존성으로 `SELECT 1` 수행 가능 여부 검증 |
+| `test_run_in_transaction_integration` | 실제 트랜잭션 헬퍼로 함수 실행 및 결과 반환 검증 |
 
 ## `dependencies/test_storage.py` 검증 항목 (mock 단위 테스트)
 
@@ -221,3 +226,38 @@ uv run pytest -q -m integration
 | `test_get_minio_client_from_state_integration` | 실제 MinIO 클라이언트를 `app.state`에 등록 후 `get_minio_client` Depends가 동일 인스턴스를 반환하는지 검증 |
 | `test_set_minio_client_from_config_integration` | 실제 config으로 `set_minio_client` 호출 시 실제 `Minio` 인스턴스가 `app.state`에 등록됨 검증 |
 | `test_get_minio_client_bucket_accessible` | Depends 경유 실제 클라이언트로 버킷 존재 여부 조회 가능 검증 |
+
+## `core/test_storage.py` 검증 항목 (mock 단위 테스트)
+
+| 테스트 함수 | 검증 내용 |
+| --- | --- |
+| `test_create_minio_client` | `Minio` 생성자 mock — `MinIOConfig` 인자 전달 및 반환값 검증 |
+| `test_ensure_bucket_exists_creates_bucket` | 버킷 미존재 시 `make_bucket` 호출 검증 |
+| `test_ensure_bucket_exists_no_create_if_exists` | 버킷 존재 시 `make_bucket` 미호출 검증 |
+| `test_list_buckets` | 버킷 목록 이름 추출 검증 |
+| `test_list_buckets_empty` | 빈 버킷 목록 처리 검증 |
+| `test_check_minio_connection_success` | MinIO 연결 성공 시 `True` 반환 |
+| `test_check_minio_connection_failure` | MinIO 연결 예외 시 `False` 반환 |
+| `test_generate_presigned_get_url_default_expires` | presigned GET URL 생성 시 HTTP method/만료시간 기본값(900초) 전달 검증 |
+| `test_generate_presigned_put_url_default_expires` | presigned PUT URL 생성 시 HTTP method/만료시간 기본값(900초) 전달 검증 |
+
+## `core/test_storage_integration.py` 검증 항목 (통합 테스트)
+
+| 테스트 함수 | 검증 내용 |
+| --- | --- |
+| `test_create_minio_client` | 실제 MinIO 클라이언트 인스턴스 생성 검증 |
+| `test_ensure_bucket_exists` | 실제 버킷 생성/존재 보장 검증 |
+| `test_list_buckets` | 실제 버킷 목록 조회 검증 |
+| `test_generate_presigned_get_url` | 실제 presigned GET URL 생성 및 URL 형태/객체명 포함 검증 |
+| `test_generate_presigned_put_url` | 실제 presigned PUT URL 생성 및 URL 형태/객체명 포함 검증 |
+
+## `routers/test_health.py` 검증 항목 (mock 단위 테스트)
+
+| 테스트 함수 | 검증 내용 |
+| --- | --- |
+| `test_liveness` | `/health/liveness` 200 및 `{ "status": "ok" }` 응답 검증 |
+| `test_readiness_ok` | Keycloak/DB/MinIO 모두 정상일 때 `/health/readiness` 200 응답 검증 |
+| `test_readiness_keycloak_not_ready` | Keycloak 비정상 상태(HTTP 503)에서 503 응답 검증 |
+| `test_readiness_keycloak_unreachable` | Keycloak 연결 실패(RequestError)에서 503 응답 검증 |
+| `test_readiness_database_not_ready` | DB readiness 실패 시 503 및 `Database not ready` 응답 검증 |
+| `test_readiness_minio_not_ready` | MinIO readiness 실패 시 503 및 `MinIO not ready` 응답 검증 |

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import Depends, FastAPI, Request
 from sqlalchemy import Engine
+from sqlalchemy.orm import Session
 
 from fastapi_core.core.config import EnvConfig
 from fastapi_core.core.database import create_db_engine
@@ -31,3 +32,13 @@ def get_db_engine(
         return getattr(request.app.state, _DB_ENGINE_STATE_KEY)
     except AttributeError:
         return create_db_engine(config.db)
+
+
+def get_db_session(
+    engine: Engine = Depends(get_db_engine),
+):
+    session = Session(engine)
+    try:
+        yield session
+    finally:
+        session.close()

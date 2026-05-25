@@ -24,3 +24,6 @@ def test_get_settings_defaults():
     settings = get_settings(config)
     assert isinstance(settings.cors.origins, list)
     assert isinstance(settings.auth.verify_jwt, bool)
+    assert isinstance(settings.health.check_keycloak, bool)
+    assert isinstance(settings.health.check_database, bool)
+    assert isinstance(settings.health.check_minio, bool)

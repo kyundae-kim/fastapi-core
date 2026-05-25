@@ -1,4 +1,6 @@
 """MinIO 연동 통합 테스트 — 실제 MinIO 인스턴스 필요."""
+from datetime import timedelta
+
 import pytest
 from minio import Minio
 
@@ -6,6 +8,8 @@ from fastapi_core.core.config import EnvConfig
 from fastapi_core.core.storage import (
     create_minio_client,
     ensure_bucket_exists,
+    generate_presigned_get_url,
+    generate_presigned_put_url,
     list_buckets,
 )
 
@@ -57,3 +61,44 @@ def test_list_buckets(minio_client: Minio, config: EnvConfig):
     ensure_bucket_exists(minio_client, bucket)
     buckets = list_buckets(minio_client)
     assert bucket in buckets
+
+
+# ---------------------------------------------------------------------------
+# Presigned URL 생성
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_generate_presigned_get_url(minio_client: Minio, config: EnvConfig):
+    """다운로드용 presigned GET URL을 생성한다."""
+    bucket = config.minio.bucket
+    ensure_bucket_exists(minio_client, bucket)
+
+    url = generate_presigned_get_url(
+        minio_client,
+        bucket,
+        "integration-get.txt",
+        expires=timedelta(seconds=config.minio.presigned_expires_sec),
+    )
+
+    assert isinstance(url, str)
+    assert url.startswith("http")
+    assert "integration-get.txt" in url
+
+
+@pytest.mark.integration
+def test_generate_presigned_put_url(minio_client: Minio, config: EnvConfig):
+    """업로드용 presigned PUT URL을 생성한다."""
+    bucket = config.minio.bucket
+    ensure_bucket_exists(minio_client, bucket)
+
+    url = generate_presigned_put_url(
+        minio_client,
+        bucket,
+        "integration-put.txt",
+        expires=timedelta(seconds=config.minio.presigned_expires_sec),
+    )
+
+    assert isinstance(url, str)
+    assert url.startswith("http")
+    assert "integration-put.txt" in url

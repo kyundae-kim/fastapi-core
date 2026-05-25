@@ -12,16 +12,20 @@ DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사
 - PostgreSQL 연동
   - SQLAlchemy + psycopg 기반 엔진 생성
   - 연결 확인, DB 버전 조회 유틸리티
+  - DB 세션 의존성/트랜잭션 헬퍼 *(추가 예정)*
+  - 커넥션 풀 파라미터 설정 *(추가 예정)*
 - MinIO 연동
   - 클라이언트 생성
   - 버킷 존재 보장(없으면 생성)
   - 연결 확인 유틸리티
+  - Presigned URL 생성 유틸리티 *(추가 예정)*
 - 설정 관리
   - `EnvConfig`(환경 변수/.env)
   - `ServiceSettings`(YAML)
 - FastAPI 조립
   - `create_app()` 팩토리
   - 로깅/CORS/예외 핸들러/헬스체크 라우터 기본 구성
+  - readiness에 Keycloak·PostgreSQL·MinIO 종합 점검 *(추가 예정)*
 - FastAPI state 기반 싱글톤 패턴
   - `app.state.auth_provider`, `app.state.db_engine`, `app.state.minio_client` 사용
   - `set_*`/`get_*` 헬퍼 제공
@@ -108,7 +112,7 @@ def admin_only(user: UserInfo = Depends(require_permissions("admin"))):
 - 앱 동작 정책
 - 예: `cors.origins`, `cors.credentials`, `auth.verify_jwt`, `auth.allow_insecure_jwt_decode`, `auth.use_introspection`
 
-자세한 키/기본값/예시는 `fastapi_core/docs/config.md`를 참고하세요.
+자세한 키/기본값/예시는 `docs/config.md`를 참고하세요.
 
 ## 테스트
 
@@ -130,7 +134,7 @@ uv run pytest -q -m integration
 
 ## 문서
 
-- `fastapi_core/docs/prd.md` : 제품 요구사항(PRD)
-- `fastapi_core/docs/api.md` : 공개 API 시그니처/동작/에러 처리
-- `fastapi_core/docs/config.md` : 설정 가이드(환경 변수/YAML)
-- `fastapi_core/docs/test.md` : 테스트 가이드(단위/통합)
+- `docs/prd.md` : 제품 요구사항(PRD)
+- `docs/api.md` : 공개 API 시그니처/동작/에러 처리
+- `docs/config.md` : 설정 가이드(환경 변수/YAML)
+- `docs/test.md` : 테스트 가이드(단위/통합)

@@ -37,6 +37,10 @@ class DatabaseConfig(BaseModel):
     sslmode: str = "prefer"
     connect_timeout: int = 5
     echo: bool = False
+    pool_size: int = 5
+    max_overflow: int = 10
+    pool_timeout: int = 30
+    pool_recycle: int = 1800
     url: str | None = None
 
     @property
@@ -61,6 +65,7 @@ class MinIOConfig(BaseModel):
     secret_key: str = "password"
     secure: bool = False
     bucket: str = "default"
+    presigned_expires_sec: int = 900
 
 
 class CORSSettings(BaseModel):
@@ -74,9 +79,16 @@ class AuthSettings(BaseModel):
     use_introspection: bool = False
 
 
+class HealthSettings(BaseModel):
+    check_keycloak: bool = True
+    check_database: bool = True
+    check_minio: bool = True
+
+
 class ServiceSettings(BaseModel):
     cors: CORSSettings = Field(default_factory=CORSSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
+    health: HealthSettings = Field(default_factory=HealthSettings)
 
     @classmethod
     def from_yaml(cls, path: str) -> "ServiceSettings":

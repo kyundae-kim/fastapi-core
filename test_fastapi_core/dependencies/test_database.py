@@ -6,9 +6,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
 from fastapi_core.core.config import DatabaseConfig, EnvConfig
-from fastapi_core.core.database import create_db_engine
+from fastapi_core.core.database import create_db_engine, run_in_transaction
 from fastapi_core.dependencies.config import get_config
-from fastapi_core.dependencies.database import get_db_engine, set_db_engine
+from fastapi_core.dependencies.database import (
+    get_db_engine,
+    get_db_session,
+    set_db_engine,
+)
 
 
 def test_get_db_engine_creates_engine():
@@ -30,6 +34,10 @@ def test_get_db_engine_creates_engine():
         mock_create.assert_called_once_with(
             config.sqlalchemy_database_url,
             echo=False,
+            pool_size=5,
+            max_overflow=10,
+            pool_timeout=30,
+            pool_recycle=1800,
         )
         assert engine is mock_engine
 
@@ -114,3 +122,54 @@ def test_set_db_engine_requires_engine_or_config():
     app = FastAPI()
     with pytest.raises(ValueError):
         set_db_engine(app)
+
+
+def test_get_db_session_closes_session():
+    mock_engine = MagicMock(spec=Engine)
+    mock_session = MagicMock()
+
+    with patch("fastapi_core.dependencies.database.Session", return_value=mock_session):
+        gen = get_db_session(mock_engine)
+        yielded = next(gen)
+        assert yielded is mock_session
+
+        with pytest.raises(StopIteration):
+            next(gen)
+
+    mock_session.close.assert_called_once()
+
+
+def test_run_in_transaction_commit_and_return_value():
+    mock_engine = MagicMock(spec=Engine)
+    mock_session = MagicMock()
+    mock_ctx = MagicMock()
+    mock_ctx.__enter__.return_value = mock_session
+    mock_ctx.__exit__.return_value = False
+
+    with patch("fastapi_core.core.database.Session", return_value=mock_ctx) as mock_cls:
+        fn = MagicMock(return_value="ok")
+        result = run_in_transaction(mock_engine, fn)
+
+    mock_cls.assert_called_once_with(mock_engine)
+    fn.assert_called_once_with(mock_session)
+    mock_session.commit.assert_called_once()
+    mock_session.rollback.assert_not_called()
+    assert result == "ok"
+
+
+def test_run_in_transaction_rollback_on_error():
+    mock_engine = MagicMock(spec=Engine)
+    mock_session = MagicMock()
+    mock_ctx = MagicMock()
+    mock_ctx.__enter__.return_value = mock_session
+    mock_ctx.__exit__.return_value = False
+
+    with patch("fastapi_core.core.database.Session", return_value=mock_ctx):
+        with pytest.raises(RuntimeError):
+            run_in_transaction(
+                mock_engine,
+                lambda _session: (_ for _ in ()).throw(RuntimeError("boom")),
+            )
+
+    mock_session.rollback.assert_called_once()
+    mock_session.commit.assert_not_called()
