@@ -360,7 +360,7 @@ async def subscribe_json(
     """subject를 구독하고 수신 메시지를 JSON으로 역직렬화하여 콜백에 전달한다."""
 ```
 
-### `set_nats_client` — `fastapi_core.dependencies.messaging` *(추가 예정)*
+### `set_nats_client` — `fastapi_core.dependencies.messaging`
 
 ```python
 async def set_nats_client(
@@ -375,7 +375,7 @@ async def set_nats_client(
 - `config` 전달 → `create_nats_client(config.nats)` 내부 호출 후 할당
 - 둘 다 `None` → `ValueError`
 
-### `get_nats_client` — `fastapi_core.dependencies.messaging` *(추가 예정)*
+### `get_nats_client` — `fastapi_core.dependencies.messaging`
 
 ```python
 def get_nats_client(request: Request) -> nats.aio.client.Client:
@@ -507,7 +507,7 @@ class AuthError(Exception):
 | `app.state.auth_provider` | `KeycloakAuthProvider` | `set_auth_provider` | `get_auth_provider` |
 | `app.state.db_engine` | `Engine` | `set_db_engine` | `get_db_engine` |
 | `app.state.minio_client` | `Minio` | `set_minio_client` | `get_minio_client` |
-| `app.state.nats_client` | `nats.aio.client.Client` | `set_nats_client` *(추가 예정)* | `get_nats_client` *(추가 예정)* |
+| `app.state.nats_client` | `nats.aio.client.Client` | `set_nats_client` | `get_nats_client` |
 
 속성명은 SDK 내부에 하드코딩되어 있으며 사용자가 변경할 수 없다.
 

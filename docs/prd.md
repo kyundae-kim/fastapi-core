@@ -54,7 +54,7 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 - TLS(`MINIO__SECURE`) 선택적 지원
 - Presigned URL 생성 유틸리티 제공 (GET/PUT)
 
-### 4. NATS 메시징 *(신규)*
+### 4. NATS 메시징
 
 - `nats-py` 기반 비동기 클라이언트 연결/종료 지원
 - Subject 기반 Publish/Subscribe 패턴 제공

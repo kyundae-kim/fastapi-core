@@ -69,17 +69,17 @@ NATS__QUEUE_GROUP=docmesh-workers
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
-from fastapi_core.factory import create_app
 from fastapi_core.core.config import EnvConfig
-# from fastapi_core.dependencies.messaging import set_nats_client
+from fastapi_core.dependencies.messaging import set_nats_client
+from fastapi_core.factory import create_app
 
 config = EnvConfig()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # await set_nats_client(app, config=config)
+    await set_nats_client(app, config=config)
     yield
-    # await app.state.nats_client.drain()
+    await app.state.nats_client.drain()
 
 app = create_app(config=config, lifespan=lifespan)
 ```
@@ -88,8 +88,6 @@ app = create_app(config=config, lifespan=lifespan)
 
 ```python
 import json
-
-# from fastapi_core.dependencies.messaging import get_nats_client
 
 async def publish_order_created(nc, order_id: str, user_id: str) -> None:
     subject = "orders.created"
