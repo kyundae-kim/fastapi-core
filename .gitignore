@@ -217,5 +217,4 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Hermes Agent
-hermes/
 .hermes/
