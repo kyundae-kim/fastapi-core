@@ -328,6 +328,64 @@ def get_minio_client(
 
 ---
 
+## 메시징 (NATS) *(추가 예정)*
+
+### `create_nats_client` — `fastapi_core.core.messaging`
+
+```python
+async def create_nats_client(config: NatsConfig) -> nats.aio.client.Client:
+    """NATS 서버에 연결된 클라이언트를 생성한다."""
+```
+
+### `publish_json` — `fastapi_core.core.messaging`
+
+```python
+async def publish_json(
+    client: nats.aio.client.Client,
+    subject: str,
+    payload: dict[str, Any],
+) -> None:
+    """JSON payload를 UTF-8 bytes로 직렬화하여 subject로 발행한다."""
+```
+
+### `subscribe_json` — `fastapi_core.core.messaging`
+
+```python
+async def subscribe_json(
+    client: nats.aio.client.Client,
+    subject: str,
+    cb: Callable[[dict[str, Any]], Awaitable[None]],
+    queue: str | None = None,
+) -> None:
+    """subject를 구독하고 수신 메시지를 JSON으로 역직렬화하여 콜백에 전달한다."""
+```
+
+### `set_nats_client` — `fastapi_core.dependencies.messaging` *(추가 예정)*
+
+```python
+async def set_nats_client(
+    app: FastAPI,
+    client: nats.aio.client.Client | None = None,
+    *,
+    config: EnvConfig | None = None,
+) -> None:
+```
+
+- `client` 직접 전달 → `app.state.nats_client`에 할당
+- `config` 전달 → `create_nats_client(config.nats)` 내부 호출 후 할당
+- 둘 다 `None` → `ValueError`
+
+### `get_nats_client` — `fastapi_core.dependencies.messaging` *(추가 예정)*
+
+```python
+def get_nats_client(request: Request) -> nats.aio.client.Client:
+```
+
+- `app.state.nats_client` 존재 시 반환 (싱글톤)
+- 미등록 시 `RuntimeError` 또는 명시적 초기화 요구
+
+---
+
 ## 설정 (Config)
 
 ### `get_config` — `fastapi_core.dependencies.config`
@@ -449,6 +507,7 @@ class AuthError(Exception):
 | `app.state.auth_provider` | `KeycloakAuthProvider` | `set_auth_provider` | `get_auth_provider` |
 | `app.state.db_engine` | `Engine` | `set_db_engine` | `get_db_engine` |
 | `app.state.minio_client` | `Minio` | `set_minio_client` | `get_minio_client` |
+| `app.state.nats_client` | `nats.aio.client.Client` | `set_nats_client` *(추가 예정)* | `get_nats_client` *(추가 예정)* |
 
 속성명은 SDK 내부에 하드코딩되어 있으며 사용자가 변경할 수 없다.
 

@@ -12,6 +12,7 @@ dependencies = [
     "fastapi[standard]>=0.136.1",
     "hermes-agent>=0.14.0",
     "minio>=7.2.20",
+    "nats-py>=2.14.0",
     "psycopg[binary]>=3.3.4",
     "pyjwt[crypto]>=2.12.1",
     "sqlalchemy>=2.0.49",

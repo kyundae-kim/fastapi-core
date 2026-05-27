@@ -19,6 +19,11 @@ DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사
   - 버킷 존재 보장(없으면 생성)
   - 연결 확인 유틸리티
   - Presigned URL 생성 유틸리티 *(추가 예정)*
+- NATS 메시징 *(추가 예정)*
+  - `nats-py` 기반 비동기 클라이언트 연결/종료
+  - Subject 기반 Publish/Subscribe 헬퍼
+  - Queue Group 기반 다중 소비자 스케일아웃
+  - 도메인 이벤트 발행 패턴 (`*.created`, `*.updated`, `*.deleted`)
 - 설정 관리
   - `EnvConfig`(환경 변수/.env)
   - `ServiceSettings`(YAML)
@@ -27,7 +32,7 @@ DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사
   - 로깅/CORS/예외 핸들러/헬스체크 라우터 기본 구성
   - readiness에 Keycloak·PostgreSQL·MinIO 종합 점검 *(추가 예정)*
 - FastAPI state 기반 싱글톤 패턴
-  - `app.state.auth_provider`, `app.state.db_engine`, `app.state.minio_client` 사용
+  - `app.state.auth_provider`, `app.state.db_engine`, `app.state.minio_client`, `app.state.nats_client` 사용
   - `set_*`/`get_*` 헬퍼 제공
 
 ## 설치
@@ -61,6 +66,7 @@ from fastapi_core.core.config import EnvConfig
 from fastapi_core.dependencies.auth import set_auth_provider
 from fastapi_core.dependencies.database import set_db_engine
 from fastapi_core.dependencies.storage import set_minio_client
+# from fastapi_core.dependencies.messaging import set_nats_client
 
 config = EnvConfig()
 
@@ -69,8 +75,10 @@ async def lifespan(app: FastAPI):
     set_auth_provider(app, config=config)
     set_db_engine(app, config=config)
     set_minio_client(app, config=config)
+    # await set_nats_client(app, config=config)  # NATS 적용 시 활성화
     yield
     app.state.db_engine.dispose()
+    # await app.state.nats_client.drain()        # NATS 적용 시 종료 처리
 
 app = create_app(config=config, lifespan=lifespan)
 ```
@@ -106,7 +114,7 @@ def admin_only(user: UserInfo = Depends(require_permissions("admin"))):
 
 1) 환경 변수 (`EnvConfig`)
 - 외부 서비스 접속 정보, 실행 환경, 로깅 레벨
-- 예: `ENV`, `CONFIG_PATH`, `LOGGING__LEVEL`, `KEYCLOAK__*`, `DB__*`, `MINIO__*`
+- 예: `ENV`, `CONFIG_PATH`, `LOGGING__LEVEL`, `KEYCLOAK__*`, `DB__*`, `MINIO__*`, `NATS__*`
 
 2) 서비스 설정 YAML (`ServiceSettings`)
 - 앱 동작 정책
@@ -125,6 +133,7 @@ uv run pytest -q -m integration
 ```
 
 통합 테스트는 devcontainer 기반 실서비스(Keycloak/PostgreSQL/MinIO) 연결을 전제로 합니다.
+NATS 적용 시 테스트 NATS 서버(로컬 또는 devcontainer) 연결을 추가로 구성하세요.
 
 ## 개발 정보
 
@@ -138,3 +147,4 @@ uv run pytest -q -m integration
 - `docs/api.md` : 공개 API 시그니처/동작/에러 처리
 - `docs/config.md` : 설정 가이드(환경 변수/YAML)
 - `docs/test.md` : 테스트 가이드(단위/통합)
+- `docs/messaging.md` : NATS 메시징 적용 가이드(설정, pub/sub, 도메인 적용, 테스트)
