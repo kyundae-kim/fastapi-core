@@ -75,6 +75,17 @@
 | `MINIO__BUCKET` | `str` | `default` | 기본 버킷 이름 |
 | `MINIO__PRESIGNED_EXPIRES_SEC` | `int` | `900` | Presigned URL 기본 만료 (초) *(추가 예정)* |
 
+### NATS
+
+| 변수명 | 타입 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `NATS__SERVERS` | `str` (콤마 구분) | `nats://nats:4222` | NATS 서버 주소 목록 |
+| `NATS__NAME` | `str` | `fastapi-core` | NATS 연결 이름 |
+| `NATS__CONNECT_TIMEOUT` | `int` | `2` | 연결 타임아웃 (초) |
+| `NATS__MAX_RECONNECT_ATTEMPTS` | `int` | `60` | 재연결 최대 시도 횟수 |
+| `NATS__RECONNECT_TIME_WAIT_MS` | `int` | `2000` | 재연결 간격 (ms) |
+| `NATS__QUEUE_GROUP` | `str` | `default-workers` | 기본 queue group 이름 |
+
 ---
 
 ## 서비스 설정 (`ServiceSettings`, YAML)
@@ -172,6 +183,14 @@ MINIO__SECRET_KEY=password
 MINIO__SECURE=false
 MINIO__BUCKET=default
 MINIO__PRESIGNED_EXPIRES_SEC=900
+
+# NATS
+NATS__SERVERS=nats://nats:4222
+NATS__NAME=fastapi-core
+NATS__CONNECT_TIMEOUT=2
+NATS__MAX_RECONNECT_ATTEMPTS=60
+NATS__RECONNECT_TIME_WAIT_MS=2000
+NATS__QUEUE_GROUP=default-workers
 ```
 
 ---
