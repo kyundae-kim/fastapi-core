@@ -54,7 +54,15 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 - TLS(`MINIO__SECURE`) 선택적 지원
 - Presigned URL 생성 유틸리티 제공 (GET/PUT)
 
-### 4. 설정 관리
+### 4. NATS 메시징
+
+- `nats-py` 기반 비동기 클라이언트 연결/종료 지원
+- Subject 기반 Publish/Subscribe 패턴 제공
+- Queue Group 기반 소비자 수평 확장 지원
+- 도메인 이벤트 발행 규칙 표준화 (`<domain>.<entity>.<action>`)
+- FastAPI `app.state` 기반 NATS 클라이언트 싱글톤 관리 (`app.state.nats_client`)
+
+### 5. 설정 관리
 
 - **환경 변수 레이어** (`EnvConfig`): 외부 서비스 접속 정보, 실행 환경, 로깅 레벨 등 배포 환경에 따라 달라지는 값
 - **서비스 설정 레이어** (`ServiceSettings`, YAML): CORS, JWT 검증 정책 등 애플리케이션 동작 값
@@ -71,7 +79,7 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 - 헬스체크 라우터(`/health/liveness`, `/health/readiness`) 내장 제공
 - `/health/readiness`는 Keycloak뿐 아니라 PostgreSQL·MinIO 의존성까지 포함한 종합 준비 상태를 확인
 
-### 7. FastAPI State 기반 싱글톤 관리
+### 8. FastAPI State 기반 싱글톤 관리
 
 외부 서비스 접근 객체는 요청마다 새로 생성하지 않고 **애플리케이션 시작 시 단 한 번 생성**하여 `app.state`에 저장하는 싱글톤 패턴을 적용한다.
 
@@ -84,10 +92,11 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 | `app.state.auth_provider` | `KeycloakAuthProvider` | `set_auth_provider(app, provider)` 또는 `set_auth_provider(app, config=config)` | `get_auth_provider` |
 | `app.state.db_engine` | SQLAlchemy `Engine` | `set_db_engine(app, engine)` 또는 `set_db_engine(app, config=config)` | `get_db_engine` |
 | `app.state.minio_client` | `Minio` | `set_minio_client(app, client)` 또는 `set_minio_client(app, config=config)` | `get_minio_client` |
+| `app.state.nats_client` | `nats.aio.client.Client` | `set_nats_client(app, client)` 또는 `set_nats_client(app, config=config)` *(추가 예정)* | `get_nats_client` *(추가 예정)* |
 
 #### 저장 함수 (state setter)
 
-- `set_auth_provider`, `set_db_engine`, `set_minio_client` 를 `dependencies` 모듈에서 제공
+- `set_auth_provider`, `set_db_engine`, `set_minio_client`, `set_nats_client` *(추가 예정)* 를 `dependencies` 모듈에서 제공
 - 각 함수는 **두 가지 호출 형태**를 지원한다:
   - `set_auth_provider(app, provider)` — 외부에서 생성한 객체를 직접 전달
   - `set_auth_provider(app, config=config)` — `EnvConfig`를 전달하면 내부에서 객체를 생성하여 등록
@@ -97,7 +106,7 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 
 #### 의존성 함수 (state getter)
 
-- `get_auth_provider`, `get_db_engine`, `get_minio_client` 는 `request.app.state`의 고정된 속성명에서 객체를 읽어 반환하는 `Depends` 함수다
+- `get_auth_provider`, `get_db_engine`, `get_minio_client`, `get_nats_client` *(추가 예정)* 는 `request.app.state`의 고정된 속성명에서 객체를 읽어 반환하는 `Depends` 함수다
 - 서비스 개발자는 `Depends(get_db_engine)` 형태로만 사용하며 state 속성명을 알 필요가 없다
 
 > **fallback 정책**: `app.state`에 해당 속성이 없으면 (`AttributeError`) `EnvConfig`를 읽어 즉시 생성하는 폴백을 두어 lifespan 없이도 동작하도록 한다. 단, 이 경우 커넥션 풀 재사용이 보장되지 않는다.
@@ -114,12 +123,14 @@ fastapi_core/
 │   ├── auth.py          # KeycloakAuthProvider, JWT 디코드, Token/User 모델
 │   ├── logging.py       # 로깅 레벨 초기화
 │   ├── exceptions.py    # AuthError 및 전역 예외 핸들러
-│   └── storage.py       # MinIO 클라이언트 생성 및 버킷 관리
+│   ├── storage.py       # MinIO 클라이언트 생성 및 버킷 관리
+│   └── messaging.py     # NATS 클라이언트 생성, pub/sub 헬퍼 *(추가 예정)*
 ├── dependencies/        # FastAPI Depends 모듈
 │   ├── config.py        # get_config, get_settings
 │   ├── database.py      # get_db_engine
 │   ├── auth.py          # get_current_user, require_permissions, set_auth_provider, get_auth_provider
-│   └── storage.py       # get_minio_client
+│   ├── storage.py       # get_minio_client
+│   └── messaging.py     # set_nats_client, get_nats_client *(추가 예정)*
 ├── routers/             # 재사용 가능한 내장 라우터
 │   ├── health.py        # GET /health/liveness, GET /health/readiness
 │   └── auth.py          # POST /token, GET /user (선택적 마운트)
@@ -171,5 +182,6 @@ fastapi_core/
 | DB 드라이버 | psycopg (v3, binary) |
 | ORM | SQLAlchemy ≥ 2.0 |
 | 오브젝트 스토리지 | MinIO (minio-py SDK) |
+| 메시징 | NATS (nats-py SDK) *(신규)* |
 | 테스트 | pytest |
 | 린터 | Ruff |

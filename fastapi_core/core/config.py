@@ -68,6 +68,19 @@ class MinIOConfig(BaseModel):
     presigned_expires_sec: int = 900
 
 
+class NatsConfig(BaseModel):
+    servers: str = "nats://nats:4222"
+    name: str = "fastapi-core"
+    connect_timeout: int = 2
+    max_reconnect_attempts: int = 60
+    reconnect_time_wait_ms: int = 2000
+    queue_group: str = "default-workers"
+
+    @property
+    def server_list(self) -> list[str]:
+        return [s.strip() for s in self.servers.split(",") if s.strip()]
+
+
 class CORSSettings(BaseModel):
     origins: list[str] = Field(default_factory=lambda: ["*"])
     credentials: bool = False
@@ -117,6 +130,7 @@ class EnvConfig(BaseSettings):
     keycloak: KeycloakConfig = Field(default_factory=KeycloakConfig)
     db: DatabaseConfig = Field(default_factory=DatabaseConfig)
     minio: MinIOConfig = Field(default_factory=MinIOConfig)
+    nats: NatsConfig = Field(default_factory=NatsConfig)
 
     keycloak_username: str = "test"
     keycloak_password: str = "test"
