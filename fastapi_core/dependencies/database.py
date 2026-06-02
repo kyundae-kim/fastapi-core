@@ -31,7 +31,9 @@ def get_db_engine(
     try:
         return getattr(request.app.state, _DB_ENGINE_STATE_KEY)
     except AttributeError:
-        return create_db_engine(config.db)
+        engine = create_db_engine(config.db)
+        setattr(request.app.state, _DB_ENGINE_STATE_KEY, engine)
+        return engine
 
 
 def get_db_session(

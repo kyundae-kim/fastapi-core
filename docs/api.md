@@ -216,7 +216,7 @@ def get_db_engine(
 ```
 
 - `app.state.db_engine` 존재 시 반환 (싱글톤)
-- `AttributeError` 시 `create_db_engine(config.db)` 즉시 호출 (fallback)
+- `AttributeError` 시 `create_db_engine(config.db)` 호출 후 `app.state.db_engine`에 저장 (fallback lazy singleton)
 
 ### `get_db_session` — `fastapi_core.dependencies.database` *(추가 예정)*
 

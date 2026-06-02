@@ -109,7 +109,7 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 - `get_auth_provider`, `get_db_engine`, `get_minio_client`, `get_nats_client` *(추가 예정)* 는 `request.app.state`의 고정된 속성명에서 객체를 읽어 반환하는 `Depends` 함수다
 - 서비스 개발자는 `Depends(get_db_engine)` 형태로만 사용하며 state 속성명을 알 필요가 없다
 
-> **fallback 정책**: `app.state`에 해당 속성이 없으면 (`AttributeError`) `EnvConfig`를 읽어 생성하는 폴백을 두어 lifespan 없이도 동작하도록 한다. `auth_provider`는 생성 후 `app.state`에 저장하여 재사용하고, DB 엔진 등 커넥션 리소스는 명시적인 lifespan 등록을 권장한다.
+> **fallback 정책**: `app.state`에 해당 속성이 없으면 (`AttributeError`) `EnvConfig`를 읽어 생성하는 폴백을 두어 lifespan 없이도 동작하도록 한다. `auth_provider`와 `db_engine`은 생성 후 `app.state`에 저장하여 재사용한다.
 
 ---
 

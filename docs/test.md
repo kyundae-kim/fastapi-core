@@ -195,7 +195,7 @@ uv run pytest -q -m integration
 | `test_check_database_connection_success` | mock 엔진 연결 성공 시 `True` 반환 |
 | `test_check_database_connection_failure` | mock 엔진 연결 예외 시 `False` 반환 |
 | `test_get_db_engine_from_state` | `app.state.db_engine` 이 있을 때 동일 인스턴스 반환, `create_db_engine` 미호출 |
-| `test_get_db_engine_fallback` | `app.state`에 `db_engine` 없을 때 `create_db_engine` 즉시 호출 후 반환 |
+| `test_get_db_engine_fallback` | `app.state`에 `db_engine` 없을 때 `create_db_engine` 호출 후 `app.state.db_engine`에 등록하여 반환 |
 | `test_set_db_engine_from_config` | `config` 전달 시 `create_db_engine` 호출 후 `app.state.db_engine` 에 등록 |
 | `test_set_db_engine_requires_engine_or_config` | `engine`, `config` 모두 생략 시 `ValueError` 발생 |
 | `test_get_db_session_closes_session` | `get_db_session`가 세션을 yield하고 종료 시 `close()` 호출을 보장 |
