@@ -219,7 +219,7 @@ uv run pytest -q -m integration
 | --- | --- |
 | `test_get_minio_client_creates_client` | `Minio` 생성자 mock — `MinIOConfig` 인자 전달 및 반환값 검증 |
 | `test_get_minio_client_from_state` | `app.state.minio_client` 가 있을 때 동일 인스턴스 반환, `create_minio_client` 미호출 |
-| `test_get_minio_client_fallback` | `app.state`에 `minio_client` 없을 때 `create_minio_client` 즉시 호출 후 반환 |
+| `test_get_minio_client_fallback` | `app.state`에 `minio_client` 없을 때 `create_minio_client` 호출 후 `app.state.minio_client`에 등록하여 반환 |
 | `test_set_minio_client_from_config` | `config` 전달 시 `create_minio_client` 호출 후 `app.state.minio_client` 에 등록 |
 | `test_set_minio_client_requires_client_or_config` | `client`, `config` 모두 생략 시 `ValueError` 발생 |
 

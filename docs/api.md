@@ -324,7 +324,7 @@ def get_minio_client(
 ```
 
 - `app.state.minio_client` 존재 시 반환 (싱글톤)
-- `AttributeError` 시 `create_minio_client(config.minio)` 즉시 호출 (fallback)
+- `AttributeError` 시 `create_minio_client(config.minio)` 호출 후 `app.state.minio_client`에 저장 (fallback lazy singleton)
 
 ---
 
