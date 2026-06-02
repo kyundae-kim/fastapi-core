@@ -60,12 +60,28 @@ class TestGetNatsClient:
         mock_client = MagicMock()
         app.state.nats_client = mock_client
 
-        request = _make_request(app)
-        result = get_nats_client(request)
+        async def run():
+            request = _make_request(app)
+            return await get_nats_client(request)
+
+        result = anyio.run(run)
         assert result is mock_client
 
-    def test_raises_runtime_error_when_not_initialized(self):
+    def test_creates_and_registers_client_when_not_initialized(self):
         app = FastAPI()
-        request = _make_request(app)
-        with pytest.raises(RuntimeError, match="NATS client is not initialized"):
-            get_nats_client(request)
+        mock_client = MagicMock()
+        config = EnvConfig()
+
+        async def run():
+            request = _make_request(app)
+            return await get_nats_client(request, config=config)
+
+        with patch(
+            "fastapi_core.dependencies.messaging.create_nats_client",
+            new=AsyncMock(return_value=mock_client),
+        ) as mock_create:
+            result = anyio.run(run)
+
+        mock_create.assert_awaited_once_with(config.nats)
+        assert result is mock_client
+        assert app.state.nats_client is mock_client

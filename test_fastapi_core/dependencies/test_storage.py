@@ -52,7 +52,7 @@ def test_get_minio_client_from_state():
 
 
 def test_get_minio_client_fallback():
-    """app.state에 minio_client가 없으면 create_minio_client를 호출하여 새 클라이언트를 반환한다."""
+    """app.state에 minio_client가 없으면 생성 후 state에 등록하여 반환한다."""
     app = FastAPI()
     mock_client = MagicMock(spec=Minio)
     mock_config = MagicMock()
@@ -70,6 +70,7 @@ def test_get_minio_client_fallback():
         mock_create.assert_called_once_with(mock_config.minio)
     assert response.status_code == 200
     assert response.json()["id"] == id(mock_client)
+    assert app.state.minio_client is mock_client
 
 
 def test_set_minio_client_from_config():

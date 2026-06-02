@@ -30,4 +30,6 @@ def get_minio_client(
     try:
         return getattr(request.app.state, _MINIO_CLIENT_STATE_KEY)
     except AttributeError:
-        return create_minio_client(config.minio)
+        client = create_minio_client(config.minio)
+        setattr(request.app.state, _MINIO_CLIENT_STATE_KEY, client)
+        return client

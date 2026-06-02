@@ -145,8 +145,8 @@ uv run pytest -q -m integration
 | `dependencies/test_database_integration.py` | 실제 PostgreSQL 엔진 생성, 연결 확인(SELECT 1), DB 버전 조회, `get_db_session`/`run_in_transaction` 동작, state 싱글톤 검증 |
 | `dependencies/test_security_integration.py` | 실제 Keycloak 토큰으로 RS256 검증, `get_current_user`·`require_permissions` 실환경 동작 검증 |
 | `dependencies/test_storage_integration.py` | 실제 MinIO 클라이언트로 state 싱글톤 검증, config 기반 등록, Depends 경유 버킷 접근 검증 |
-| `dependencies/test_messaging.py` *(추가 예정)* | NATS publish/subscribe 의존성 단위 테스트 (`AsyncMock` 기반) |
-| `dependencies/test_messaging_integration.py` *(추가 예정)* | 테스트 NATS 서버 연결, pub/sub round-trip, queue group 분배 검증 |
+| `dependencies/test_messaging.py` | `set_nats_client` 등록, `get_nats_client` state 반환 및 fallback lazy singleton 검증 (`AsyncMock` 기반) |
+| `dependencies/test_messaging_integration.py` | 테스트 NATS 서버 연결, pub/sub round-trip, queue group 분배 검증 |
 | `routers/test_auth_integration.py` | `/token` 실제 토큰 발급, `/user` 실제 토큰으로 사용자 정보 조회 |
 
 ---
@@ -169,7 +169,7 @@ uv run pytest -q -m integration
 | 테스트 함수 | 검증 내용 |
 | --- | --- |
 | `test_get_auth_provider_from_state` | `app.state.auth_provider` 가 있을 때 동일 인스턴스 반환, `KeycloakAuthProvider` 생성자 미호출 |
-| `test_get_auth_provider_fallback` | `app.state`에 `auth_provider` 없을 때 `KeycloakAuthProvider` 즉시 생성 후 반환 |
+| `test_get_auth_provider_fallback` | `app.state`에 `auth_provider` 없을 때 `KeycloakAuthProvider` 생성 후 `app.state.auth_provider`에 등록하여 반환 |
 | `test_set_auth_provider_from_config` | `config` 전달 시 `KeycloakAuthProvider` 생성 후 `app.state.auth_provider` 에 등록 |
 | `test_set_auth_provider_requires_provider_or_config` | `provider`, `config` 모두 생략 시 `ValueError` 발생 |
 | `test_get_current_user_valid` | 유효한 Bearer 토큰으로 `UserInfo` 반환 |
@@ -195,7 +195,7 @@ uv run pytest -q -m integration
 | `test_check_database_connection_success` | mock 엔진 연결 성공 시 `True` 반환 |
 | `test_check_database_connection_failure` | mock 엔진 연결 예외 시 `False` 반환 |
 | `test_get_db_engine_from_state` | `app.state.db_engine` 이 있을 때 동일 인스턴스 반환, `create_db_engine` 미호출 |
-| `test_get_db_engine_fallback` | `app.state`에 `db_engine` 없을 때 `create_db_engine` 즉시 호출 후 반환 |
+| `test_get_db_engine_fallback` | `app.state`에 `db_engine` 없을 때 `create_db_engine` 호출 후 `app.state.db_engine`에 등록하여 반환 |
 | `test_set_db_engine_from_config` | `config` 전달 시 `create_db_engine` 호출 후 `app.state.db_engine` 에 등록 |
 | `test_set_db_engine_requires_engine_or_config` | `engine`, `config` 모두 생략 시 `ValueError` 발생 |
 | `test_get_db_session_closes_session` | `get_db_session`가 세션을 yield하고 종료 시 `close()` 호출을 보장 |
@@ -219,7 +219,7 @@ uv run pytest -q -m integration
 | --- | --- |
 | `test_get_minio_client_creates_client` | `Minio` 생성자 mock — `MinIOConfig` 인자 전달 및 반환값 검증 |
 | `test_get_minio_client_from_state` | `app.state.minio_client` 가 있을 때 동일 인스턴스 반환, `create_minio_client` 미호출 |
-| `test_get_minio_client_fallback` | `app.state`에 `minio_client` 없을 때 `create_minio_client` 즉시 호출 후 반환 |
+| `test_get_minio_client_fallback` | `app.state`에 `minio_client` 없을 때 `create_minio_client` 호출 후 `app.state.minio_client`에 등록하여 반환 |
 | `test_set_minio_client_from_config` | `config` 전달 시 `create_minio_client` 호출 후 `app.state.minio_client` 에 등록 |
 | `test_set_minio_client_requires_client_or_config` | `client`, `config` 모두 생략 시 `ValueError` 발생 |
 

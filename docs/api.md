@@ -128,7 +128,7 @@ def get_auth_provider(
 ```
 
 - `app.state.auth_provider` 존재 시 반환 (싱글톤)
-- `AttributeError` 시 `EnvConfig`로 즉시 생성 (fallback)
+- `AttributeError` 시 `EnvConfig`로 생성 후 `app.state.auth_provider`에 저장 (fallback lazy singleton)
 
 ### `get_current_user` — `fastapi_core.dependencies.auth`
 
@@ -216,7 +216,7 @@ def get_db_engine(
 ```
 
 - `app.state.db_engine` 존재 시 반환 (싱글톤)
-- `AttributeError` 시 `create_db_engine(config.db)` 즉시 호출 (fallback)
+- `AttributeError` 시 `create_db_engine(config.db)` 호출 후 `app.state.db_engine`에 저장 (fallback lazy singleton)
 
 ### `get_db_session` — `fastapi_core.dependencies.database` *(추가 예정)*
 
@@ -324,7 +324,7 @@ def get_minio_client(
 ```
 
 - `app.state.minio_client` 존재 시 반환 (싱글톤)
-- `AttributeError` 시 `create_minio_client(config.minio)` 즉시 호출 (fallback)
+- `AttributeError` 시 `create_minio_client(config.minio)` 호출 후 `app.state.minio_client`에 저장 (fallback lazy singleton)
 
 ---
 
@@ -378,11 +378,14 @@ async def set_nats_client(
 ### `get_nats_client` — `fastapi_core.dependencies.messaging`
 
 ```python
-def get_nats_client(request: Request) -> nats.aio.client.Client:
+async def get_nats_client(
+    request: Request,
+    config: EnvConfig = Depends(get_config),
+) -> nats.aio.client.Client:
 ```
 
 - `app.state.nats_client` 존재 시 반환 (싱글톤)
-- 미등록 시 `RuntimeError` 또는 명시적 초기화 요구
+- 미등록 시 `create_nats_client(config.nats)` 호출 후 `app.state.nats_client`에 저장 (fallback lazy singleton)
 
 ---
 

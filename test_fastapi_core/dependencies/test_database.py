@@ -81,10 +81,11 @@ def test_get_db_engine_from_state():
         mock_create.assert_not_called()
     assert response.status_code == 200
     assert response.json()["id"] == id(mock_engine)
+    assert app.state.db_engine is mock_engine
 
 
 def test_get_db_engine_fallback():
-    """app.state에 db_engine이 없으면 create_db_engine을 호출하여 새 엔진을 반환한다."""
+    """app.state에 db_engine이 없으면 생성 후 state에 등록하여 반환한다."""
     app = FastAPI()
     mock_engine = MagicMock(spec=Engine)
     mock_config = MagicMock()
@@ -102,6 +103,7 @@ def test_get_db_engine_fallback():
         mock_create.assert_called_once_with(mock_config.db)
     assert response.status_code == 200
     assert response.json()["id"] == id(mock_engine)
+    assert app.state.db_engine is mock_engine
 
 
 def test_set_db_engine_from_config():
