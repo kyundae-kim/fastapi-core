@@ -128,7 +128,7 @@ def get_auth_provider(
 ```
 
 - `app.state.auth_provider` 존재 시 반환 (싱글톤)
-- `AttributeError` 시 `EnvConfig`로 즉시 생성 (fallback)
+- `AttributeError` 시 `EnvConfig`로 생성 후 `app.state.auth_provider`에 저장 (fallback lazy singleton)
 
 ### `get_current_user` — `fastapi_core.dependencies.auth`
 

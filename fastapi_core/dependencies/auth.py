@@ -41,12 +41,14 @@ def get_auth_provider(
     try:
         return getattr(request.app.state, _AUTH_PROVIDER_STATE_KEY)
     except AttributeError:
-        return KeycloakAuthProvider(
+        provider = KeycloakAuthProvider(
             http_url=str(config.keycloak.http_url),
             realm=config.keycloak.realm,
             client_id=config.keycloak.client_id,
             client_secret=config.keycloak.client_secret,
         )
+        setattr(request.app.state, _AUTH_PROVIDER_STATE_KEY, provider)
+        return provider
 
 
 def get_current_user(

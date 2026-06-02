@@ -169,7 +169,7 @@ uv run pytest -q -m integration
 | 테스트 함수 | 검증 내용 |
 | --- | --- |
 | `test_get_auth_provider_from_state` | `app.state.auth_provider` 가 있을 때 동일 인스턴스 반환, `KeycloakAuthProvider` 생성자 미호출 |
-| `test_get_auth_provider_fallback` | `app.state`에 `auth_provider` 없을 때 `KeycloakAuthProvider` 즉시 생성 후 반환 |
+| `test_get_auth_provider_fallback` | `app.state`에 `auth_provider` 없을 때 `KeycloakAuthProvider` 생성 후 `app.state.auth_provider`에 등록하여 반환 |
 | `test_set_auth_provider_from_config` | `config` 전달 시 `KeycloakAuthProvider` 생성 후 `app.state.auth_provider` 에 등록 |
 | `test_set_auth_provider_requires_provider_or_config` | `provider`, `config` 모두 생략 시 `ValueError` 발생 |
 | `test_get_current_user_valid` | 유효한 Bearer 토큰으로 `UserInfo` 반환 |
