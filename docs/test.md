@@ -145,8 +145,8 @@ uv run pytest -q -m integration
 | `dependencies/test_database_integration.py` | 실제 PostgreSQL 엔진 생성, 연결 확인(SELECT 1), DB 버전 조회, `get_db_session`/`run_in_transaction` 동작, state 싱글톤 검증 |
 | `dependencies/test_security_integration.py` | 실제 Keycloak 토큰으로 RS256 검증, `get_current_user`·`require_permissions` 실환경 동작 검증 |
 | `dependencies/test_storage_integration.py` | 실제 MinIO 클라이언트로 state 싱글톤 검증, config 기반 등록, Depends 경유 버킷 접근 검증 |
-| `dependencies/test_messaging.py` *(추가 예정)* | NATS publish/subscribe 의존성 단위 테스트 (`AsyncMock` 기반) |
-| `dependencies/test_messaging_integration.py` *(추가 예정)* | 테스트 NATS 서버 연결, pub/sub round-trip, queue group 분배 검증 |
+| `dependencies/test_messaging.py` | `set_nats_client` 등록, `get_nats_client` state 반환 및 fallback lazy singleton 검증 (`AsyncMock` 기반) |
+| `dependencies/test_messaging_integration.py` | 테스트 NATS 서버 연결, pub/sub round-trip, queue group 분배 검증 |
 | `routers/test_auth_integration.py` | `/token` 실제 토큰 발급, `/user` 실제 토큰으로 사용자 정보 조회 |
 
 ---

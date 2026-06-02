@@ -378,11 +378,14 @@ async def set_nats_client(
 ### `get_nats_client` — `fastapi_core.dependencies.messaging`
 
 ```python
-def get_nats_client(request: Request) -> nats.aio.client.Client:
+async def get_nats_client(
+    request: Request,
+    config: EnvConfig = Depends(get_config),
+) -> nats.aio.client.Client:
 ```
 
 - `app.state.nats_client` 존재 시 반환 (싱글톤)
-- 미등록 시 `RuntimeError` 또는 명시적 초기화 요구
+- 미등록 시 `create_nats_client(config.nats)` 호출 후 `app.state.nats_client`에 저장 (fallback lazy singleton)
 
 ---
 
