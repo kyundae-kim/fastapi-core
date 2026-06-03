@@ -54,14 +54,11 @@ def get_auth_provider(
         return provider
 
 
-auth_provider_schema = get_auth_provider
-
-
 class GetCurrentUserDependency:
     def __call__(
         self,
         token: str | None = Depends(oauth2_scheme),
-        provider: KeycloakAuthProvider = Depends(auth_provider_schema),
+        provider: KeycloakAuthProvider = Depends(get_auth_provider),
         settings: ServiceSettings = Depends(get_settings),
     ) -> UserInfo:
         if not token:

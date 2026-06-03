@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from fastapi_core.core.auth import KeycloakAuthProvider
 from fastapi_core.core.config import AuthSettings, EnvConfig, ServiceSettings
 from fastapi_core.dependencies.auth import (
-    auth_provider_schema,
+    get_auth_provider,
     current_user_schema,
     require_permissions,
     set_auth_provider,
@@ -69,7 +69,7 @@ def test_get_auth_provider_from_state_integration(
     set_auth_provider(_app, provider)
 
     @_app.get("/provider-id")
-    def provider_id(p: KeycloakAuthProvider = Depends(auth_provider_schema)):
+    def provider_id(p: KeycloakAuthProvider = Depends(get_auth_provider)):
         return {"id": id(p)}
 
     client = TestClient(_app)

@@ -9,7 +9,7 @@ from fastapi_core.core.config import AuthSettings, ServiceSettings
 from fastapi_core.core.auth import KeycloakAuthProvider
 from fastapi_core.dependencies.config import get_settings
 from fastapi_core.dependencies.auth import (
-    auth_provider_schema,
+    get_auth_provider,
     current_user_schema,
     require_permissions,
 )
@@ -73,7 +73,7 @@ def test_app(mock_provider: KeycloakAuthProvider, insecure_settings: ServiceSett
     def admin(user: UserInfo = Depends(require_permissions("admin"))):
         return user.model_dump()
 
-    app.dependency_overrides[auth_provider_schema] = lambda: mock_provider
+    app.dependency_overrides[get_auth_provider] = lambda: mock_provider
     app.dependency_overrides[get_settings] = lambda: insecure_settings
     return app
 
@@ -149,7 +149,7 @@ def test_get_auth_provider_from_state():
     set_auth_provider(app, mock_provider)
 
     @app.get("/provider-id")
-    def provider_id(provider: KeycloakAuthProvider = Depends(auth_provider_schema)):
+    def provider_id(provider: KeycloakAuthProvider = Depends(get_auth_provider)):
         return {"id": id(provider)}
 
     client = TestClient(app)
@@ -165,7 +165,8 @@ def test_auth_provider_dependency_is_function():
     import fastapi_core.dependencies.auth as auth_dependencies
 
     assert not hasattr(auth_dependencies, "GetAuthProviderDependency")
-    assert inspect.isfunction(auth_provider_schema)
+    assert not hasattr(auth_dependencies, "auth_provider_schema")
+    assert inspect.isfunction(get_auth_provider)
 
 
 def test_get_auth_provider_fallback():
@@ -188,7 +189,7 @@ def test_get_auth_provider_fallback():
     app.dependency_overrides[get_config] = lambda: mock_config
 
     @app.get("/provider-id")
-    def provider_id(provider: KeycloakAuthProvider = Depends(auth_provider_schema)):
+    def provider_id(provider: KeycloakAuthProvider = Depends(get_auth_provider)):
         return {"id": id(provider)}
 
     with patch(
