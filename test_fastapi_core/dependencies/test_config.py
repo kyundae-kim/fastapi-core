@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+
 from fastapi import FastAPI, Request
 
 import fastapi_core.dependencies.config as config_dependencies
@@ -15,6 +17,11 @@ def _make_request(app: FastAPI) -> Request:
 def test_config_schema_aliases_are_removed():
     assert not hasattr(config_dependencies, "config_schema")
     assert not hasattr(config_dependencies, "settings_schema")
+
+
+def test_config_dependencies_are_functions():
+    assert inspect.isfunction(get_config)
+    assert inspect.isfunction(get_settings)
 
 
 def test_get_config_creates_env_config_on_app_state():
