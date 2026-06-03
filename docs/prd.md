@@ -92,11 +92,11 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 | `app.state.auth_provider` | `KeycloakAuthProvider` | `set_auth_provider(app, provider)` 또는 `set_auth_provider(app, config=config)` | `get_auth_provider` |
 | `app.state.db_engine` | SQLAlchemy `Engine` | `set_db_engine(app, engine)` 또는 `set_db_engine(app, config=config)` | `get_db_engine` |
 | `app.state.minio_client` | `Minio` | `set_minio_client(app, client)` 또는 `set_minio_client(app, config=config)` | `get_minio_client` |
-| `app.state.nats_client` | `nats.aio.client.Client` | `set_nats_client(app, client)` 또는 `set_nats_client(app, config=config)` *(추가 예정)* | `get_nats_client` *(추가 예정)* |
+| `app.state.nats_client` | `nats.aio.client.Client` | `set_nats_client(app, client)` 또는 `set_nats_client(app, config=config)` | `get_nats_client` |
 
 #### 저장 함수 (state setter)
 
-- `set_auth_provider`, `set_db_engine`, `set_minio_client`, `set_nats_client` *(추가 예정)* 를 `dependencies` 모듈에서 제공
+- `set_auth_provider`, `set_db_engine`, `set_minio_client`, `set_nats_client`를 `dependencies` 모듈에서 제공
 - 각 함수는 **두 가지 호출 형태**를 지원한다:
   - `set_auth_provider(app, provider)` — 외부에서 생성한 객체를 직접 전달
   - `set_auth_provider(app, config=config)` — `EnvConfig`를 전달하면 내부에서 객체를 생성하여 등록
@@ -106,7 +106,8 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 
 #### 의존성 함수 (state getter)
 
-- `get_auth_provider`, `get_db_engine`, `get_minio_client`, `get_nats_client` *(추가 예정)* 는 `request.app.state`의 고정된 속성명에서 객체를 읽어 반환하는 `Depends` 함수다
+- `get_auth_provider`, `get_db_engine`, `get_minio_client`, `get_nats_client`는 `request.app.state`의 고정된 속성명에서 객체를 읽어 반환하는 함수형 `Depends` dependency다
+- `Get*Dependency` class와 `get_* = Get*Dependency()` 형태의 전역 인스턴스는 공개 API로 제공하지 않는다
 - 서비스 개발자는 `Depends(get_db_engine)` 형태로만 사용하며 state 속성명을 알 필요가 없다
 
 > **fallback 정책**: `app.state`에 해당 속성이 없으면 (`AttributeError`) `EnvConfig`를 읽어 생성하는 폴백을 두어 lifespan 없이도 동작하도록 한다. `auth_provider`, `db_engine`, `minio_client`, `nats_client`는 생성 후 `app.state`에 저장하여 재사용한다.
@@ -124,13 +125,13 @@ fastapi_core/
 │   ├── logging.py       # 로깅 레벨 초기화
 │   ├── exceptions.py    # AuthError 및 전역 예외 핸들러
 │   ├── storage.py       # MinIO 클라이언트 생성 및 버킷 관리
-│   └── messaging.py     # NATS 클라이언트 생성, pub/sub 헬퍼 *(추가 예정)*
+│   └── messaging.py     # NATS 클라이언트 생성, pub/sub 헬퍼
 ├── dependencies/        # FastAPI Depends 모듈
 │   ├── config.py        # get_config, get_settings
-│   ├── database.py      # get_db_engine
+│   ├── database.py      # get_db_engine, get_db_session, set_db_engine
 │   ├── auth.py          # get_current_user, require_permissions, set_auth_provider, get_auth_provider
-│   ├── storage.py       # get_minio_client
-│   └── messaging.py     # set_nats_client, get_nats_client *(추가 예정)*
+│   ├── storage.py       # set_minio_client, get_minio_client
+│   └── messaging.py     # set_nats_client, get_nats_client
 ├── routers/             # 재사용 가능한 내장 라우터
 │   ├── health.py        # GET /health/liveness, GET /health/readiness
 │   └── auth.py          # POST /token, GET /user (선택적 마운트)

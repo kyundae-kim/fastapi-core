@@ -12,14 +12,14 @@ DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사
 - PostgreSQL 연동
   - SQLAlchemy + psycopg 기반 엔진 생성
   - 연결 확인, DB 버전 조회 유틸리티
-  - DB 세션 의존성/트랜잭션 헬퍼 *(추가 예정)*
-  - 커넥션 풀 파라미터 설정 *(추가 예정)*
+  - DB 세션 의존성/트랜잭션 헬퍼
+  - 커넥션 풀 파라미터 설정
 - MinIO 연동
   - 클라이언트 생성
   - 버킷 존재 보장(없으면 생성)
   - 연결 확인 유틸리티
-  - Presigned URL 생성 유틸리티 *(추가 예정)*
-- NATS 메시징 *(추가 예정)*
+  - Presigned URL 생성 유틸리티
+- NATS 메시징
   - `nats-py` 기반 비동기 클라이언트 연결/종료
   - Subject 기반 Publish/Subscribe 헬퍼
   - Queue Group 기반 다중 소비자 스케일아웃
@@ -30,10 +30,11 @@ DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사
 - FastAPI 조립
   - `create_app()` 팩토리
   - 로깅/CORS/예외 핸들러/헬스체크 라우터 기본 구성
-  - readiness에 Keycloak·PostgreSQL·MinIO 종합 점검 *(추가 예정)*
+  - readiness에 Keycloak·PostgreSQL·MinIO 종합 점검
 - FastAPI state 기반 싱글톤 패턴
   - `app.state.auth_provider`, `app.state.db_engine`, `app.state.minio_client`, `app.state.nats_client` 사용
-  - `set_*`/`get_*` 헬퍼 제공
+  - `set_*`/함수형 `get_*` dependency 제공
+  - `Get*Dependency` class와 `get_* = Get*Dependency()` 전역 인스턴스는 사용하지 않음
 
 ## 설치
 
@@ -66,7 +67,7 @@ from fastapi_core.core.config import EnvConfig
 from fastapi_core.dependencies.auth import set_auth_provider
 from fastapi_core.dependencies.database import set_db_engine
 from fastapi_core.dependencies.storage import set_minio_client
-# from fastapi_core.dependencies.messaging import set_nats_client
+from fastapi_core.dependencies.messaging import set_nats_client
 
 config = EnvConfig()
 
@@ -75,10 +76,10 @@ async def lifespan(app: FastAPI):
     set_auth_provider(app, config=config)
     set_db_engine(app, config=config)
     set_minio_client(app, config=config)
-    # await set_nats_client(app, config=config)  # NATS 적용 시 활성화
+    await set_nats_client(app, config=config)
     yield
     app.state.db_engine.dispose()
-    # await app.state.nats_client.drain()        # NATS 적용 시 종료 처리
+    await app.state.nats_client.drain()
 
 app = create_app(config=config, lifespan=lifespan)
 ```
