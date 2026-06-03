@@ -1,3 +1,4 @@
+import inspect
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -71,6 +72,13 @@ def test_get_minio_client_fallback():
     assert response.status_code == 200
     assert response.json()["id"] == id(mock_client)
     assert app.state.minio_client is mock_client
+
+
+def test_storage_dependencies_are_functions():
+    import fastapi_core.dependencies.storage as storage_dependencies
+
+    assert not hasattr(storage_dependencies, "GetMinioClientDependency")
+    assert inspect.isfunction(storage_dependencies.get_minio_client)
 
 
 def test_set_minio_client_from_config():

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.params import Depends as DependsParam
 from minio import Minio
 
 from fastapi_core.core.config import EnvConfig
@@ -23,18 +24,15 @@ def set_minio_client(
     setattr(app.state, _MINIO_CLIENT_STATE_KEY, client)
 
 
-class GetMinioClientDependency:
-    def __call__(
-        self,
-        request: Request,
-        config: EnvConfig = Depends(get_config),
-    ) -> Minio:
-        try:
-            return getattr(request.app.state, _MINIO_CLIENT_STATE_KEY)
-        except AttributeError:
-            client = create_minio_client(config.minio)
-            setattr(request.app.state, _MINIO_CLIENT_STATE_KEY, client)
-            return client
-
-
-get_minio_client = GetMinioClientDependency()
+def get_minio_client(
+    request: Request,
+    config: EnvConfig | DependsParam = Depends(get_config),
+) -> Minio:
+    try:
+        return getattr(request.app.state, _MINIO_CLIENT_STATE_KEY)
+    except AttributeError:
+        if isinstance(config, DependsParam):
+            config = get_config(request)
+        client = create_minio_client(config.minio)
+        set_minio_client(request.app, client)
+        return client
