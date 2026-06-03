@@ -5,15 +5,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from fastapi_core.core.config import EnvConfig, HealthSettings, ServiceSettings
-from fastapi_core.dependencies.config import get_config, get_settings
+from fastapi_core.dependencies.config import config_schema, settings_schema
 from fastapi_core.factory import create_app
 
 
 @pytest.fixture
 def client():
     app = create_app(include_auth_router=False)
-    app.dependency_overrides[get_config] = lambda: EnvConfig()
-    app.dependency_overrides[get_settings] = lambda: ServiceSettings(
+    app.dependency_overrides[config_schema] = lambda: EnvConfig()
+    app.dependency_overrides[settings_schema] = lambda: ServiceSettings(
         health=HealthSettings(
             check_keycloak=True,
             check_database=True,

@@ -5,7 +5,7 @@ from minio import Minio
 
 from fastapi_core.core.config import EnvConfig
 from fastapi_core.core.storage import create_minio_client
-from fastapi_core.dependencies.config import get_config
+from fastapi_core.dependencies.config import config_schema
 
 _MINIO_CLIENT_STATE_KEY = "minio_client"
 
@@ -23,13 +23,18 @@ def set_minio_client(
     setattr(app.state, _MINIO_CLIENT_STATE_KEY, client)
 
 
-def get_minio_client(
-    request: Request,
-    config: EnvConfig = Depends(get_config),
-) -> Minio:
-    try:
-        return getattr(request.app.state, _MINIO_CLIENT_STATE_KEY)
-    except AttributeError:
-        client = create_minio_client(config.minio)
-        setattr(request.app.state, _MINIO_CLIENT_STATE_KEY, client)
-        return client
+class GetMinioClientDependency:
+    def __call__(
+        self,
+        request: Request,
+        config: EnvConfig = Depends(config_schema),
+    ) -> Minio:
+        try:
+            return getattr(request.app.state, _MINIO_CLIENT_STATE_KEY)
+        except AttributeError:
+            client = create_minio_client(config.minio)
+            setattr(request.app.state, _MINIO_CLIENT_STATE_KEY, client)
+            return client
+
+
+get_minio_client = GetMinioClientDependency()

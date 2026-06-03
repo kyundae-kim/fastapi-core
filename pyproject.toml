@@ -26,6 +26,9 @@ dev = [
     "pytest>=9.0.3",
 ]
 
+[tool.fastapi]
+entrypoint = "fastapi_core.factory:create_app"
+
 [tool.ruff]
 line-length = 88
 indent-width = 4

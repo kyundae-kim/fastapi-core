@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from fastapi_core.core.config import AuthSettings, ServiceSettings
 from fastapi_core.core.auth import KeycloakAuthProvider
-from fastapi_core.dependencies.config import get_settings
+from fastapi_core.dependencies.config import settings_schema
 from fastapi_core.dependencies.auth import (
     get_auth_provider,
     get_current_user,
@@ -72,7 +72,7 @@ def test_app(mock_provider: KeycloakAuthProvider, insecure_settings: ServiceSett
         return user.model_dump()
 
     app.dependency_overrides[get_auth_provider] = lambda: mock_provider
-    app.dependency_overrides[get_settings] = lambda: insecure_settings
+    app.dependency_overrides[settings_schema] = lambda: insecure_settings
     return app
 
 
@@ -166,7 +166,7 @@ def test_get_auth_provider_fallback():
     from fastapi import Depends
 
     from fastapi_core.core.config import EnvConfig, KeycloakConfig
-    from fastapi_core.dependencies.config import get_config
+    from fastapi_core.dependencies.config import config_schema
 
     app = FastAPI()
     mock_provider = MagicMock(spec=KeycloakAuthProvider)
@@ -176,7 +176,7 @@ def test_get_auth_provider_fallback():
     mock_config.keycloak.realm = "myrealm"
     mock_config.keycloak.client_id = "myclient"
     mock_config.keycloak.client_secret = "secret"
-    app.dependency_overrides[get_config] = lambda: mock_config
+    app.dependency_overrides[config_schema] = lambda: mock_config
 
     @app.get("/provider-id")
     def provider_id(provider: KeycloakAuthProvider = Depends(get_auth_provider)):

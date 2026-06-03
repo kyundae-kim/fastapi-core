@@ -11,7 +11,7 @@ from fastapi_core.dependencies.auth import (
     require_permissions,
     set_auth_provider,
 )
-from fastapi_core.dependencies.config import get_settings
+from fastapi_core.dependencies.config import settings_schema
 from fastapi_core.schemas.user import UserInfo
 
 
@@ -40,7 +40,7 @@ def access_token(provider: KeycloakAuthProvider, config: EnvConfig) -> str:
 def app(config: EnvConfig) -> FastAPI:
     _app = FastAPI()
     set_auth_provider(_app, config=config)
-    _app.dependency_overrides[get_settings] = lambda: ServiceSettings(
+    _app.dependency_overrides[settings_schema] = lambda: ServiceSettings(
         auth=AuthSettings(verify_jwt=True)
     )
 

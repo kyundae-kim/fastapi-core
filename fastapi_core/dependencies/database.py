@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 from fastapi import Depends, FastAPI, Request
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from fastapi_core.core.config import EnvConfig
 from fastapi_core.core.database import create_db_engine
-from fastapi_core.dependencies.config import get_config
+from fastapi_core.dependencies.config import config_schema
 
 _DB_ENGINE_STATE_KEY = "db_engine"
 
@@ -24,23 +26,30 @@ def set_db_engine(
     setattr(app.state, _DB_ENGINE_STATE_KEY, engine)
 
 
-def get_db_engine(
-    request: Request,
-    config: EnvConfig = Depends(get_config),
-) -> Engine:
-    try:
-        return getattr(request.app.state, _DB_ENGINE_STATE_KEY)
-    except AttributeError:
-        engine = create_db_engine(config.db)
-        setattr(request.app.state, _DB_ENGINE_STATE_KEY, engine)
-        return engine
+class GetDbEngineDependency:
+    def __call__(
+        self,
+        request: Request,
+        config: EnvConfig = Depends(config_schema),
+    ) -> Engine:
+        try:
+            return getattr(request.app.state, _DB_ENGINE_STATE_KEY)
+        except AttributeError:
+            engine = create_db_engine(config.db)
+            setattr(request.app.state, _DB_ENGINE_STATE_KEY, engine)
+            return engine
 
 
-def get_db_session(
-    engine: Engine = Depends(get_db_engine),
-):
-    session = Session(engine)
-    try:
-        yield session
-    finally:
-        session.close()
+get_db_engine = GetDbEngineDependency()
+
+
+class GetDbSessionDependency:
+    def __call__(self, engine: Engine = Depends(get_db_engine)) -> Iterator[Session]:
+        session = Session(engine)
+        try:
+            yield session
+        finally:
+            session.close()
+
+
+get_db_session = GetDbSessionDependency()

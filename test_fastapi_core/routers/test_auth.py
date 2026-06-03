@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from fastapi_core.core.config import AuthSettings, ServiceSettings
-from fastapi_core.dependencies.config import get_settings
+from fastapi_core.dependencies.config import settings_schema
 from fastapi_core.dependencies.auth import get_auth_provider, get_current_user
 from fastapi_core.routers.auth import router
 from fastapi_core.schemas.user import UserInfo
@@ -21,7 +21,7 @@ def app(mock_provider):
     _app = FastAPI()
     _app.include_router(router)
     _app.dependency_overrides[get_auth_provider] = lambda: mock_provider
-    _app.dependency_overrides[get_settings] = lambda: ServiceSettings(
+    _app.dependency_overrides[settings_schema] = lambda: ServiceSettings(
         auth=AuthSettings(verify_jwt=False)
     )
     return _app

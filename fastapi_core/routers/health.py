@@ -8,7 +8,7 @@ from sqlalchemy import Engine
 from fastapi_core.core.config import EnvConfig, ServiceSettings
 from fastapi_core.core.database import check_database_connection
 from fastapi_core.core.storage import check_minio_connection
-from fastapi_core.dependencies.config import get_config, get_settings
+from fastapi_core.dependencies.config import config_schema, settings_schema
 from fastapi_core.dependencies.database import get_db_engine
 from fastapi_core.dependencies.storage import get_minio_client
 from fastapi_core.schemas.health import HealthResponse
@@ -23,8 +23,8 @@ async def liveness() -> HealthResponse:
 
 @router.get("/readiness", response_model=HealthResponse)
 async def readiness(
-    config: EnvConfig = Depends(get_config),
-    settings: ServiceSettings = Depends(get_settings),
+    config: EnvConfig = Depends(config_schema),
+    settings: ServiceSettings = Depends(settings_schema),
     engine: Engine = Depends(get_db_engine),
     minio_client: Minio = Depends(get_minio_client),
 ) -> HealthResponse:

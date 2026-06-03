@@ -5,7 +5,7 @@ from fastapi import Depends, FastAPI, Request
 
 from fastapi_core.core.config import EnvConfig
 from fastapi_core.core.messaging import create_nats_client
-from fastapi_core.dependencies.config import get_config
+from fastapi_core.dependencies.config import config_schema
 
 _NATS_CLIENT_STATE_KEY = "nats_client"
 
@@ -29,14 +29,19 @@ async def set_nats_client(
     setattr(app.state, _NATS_CLIENT_STATE_KEY, client)
 
 
-async def get_nats_client(
-    request: Request,
-    config: EnvConfig = Depends(get_config),
-) -> nats.aio.client.Client:
-    """app.state.nats_client를 반환한다. 미등록 시 생성 후 state에 등록한다."""
-    try:
-        return getattr(request.app.state, _NATS_CLIENT_STATE_KEY)
-    except AttributeError:
-        client = await create_nats_client(config.nats)
-        setattr(request.app.state, _NATS_CLIENT_STATE_KEY, client)
-        return client
+class GetNatsClientDependency:
+    async def __call__(
+        self,
+        request: Request,
+        config: EnvConfig = Depends(config_schema),
+    ) -> nats.aio.client.Client:
+        """app.state.nats_client를 반환한다. 미등록 시 생성 후 state에 등록한다."""
+        try:
+            return getattr(request.app.state, _NATS_CLIENT_STATE_KEY)
+        except AttributeError:
+            client = await create_nats_client(config.nats)
+            setattr(request.app.state, _NATS_CLIENT_STATE_KEY, client)
+            return client
+
+
+get_nats_client = GetNatsClientDependency()

@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from fastapi_core.core.config import AuthSettings, EnvConfig, ServiceSettings
 from fastapi_core.dependencies.auth import set_auth_provider
-from fastapi_core.dependencies.config import get_settings
+from fastapi_core.dependencies.config import settings_schema
 from fastapi_core.routers.auth import router
 
 
@@ -20,7 +20,7 @@ def app(config: EnvConfig) -> FastAPI:
     _app.include_router(router)
     set_auth_provider(_app, config=config)
     # RS256 서명 검증 활성화
-    _app.dependency_overrides[get_settings] = lambda: ServiceSettings(
+    _app.dependency_overrides[settings_schema] = lambda: ServiceSettings(
         auth=AuthSettings(verify_jwt=True)
     )
     return _app
