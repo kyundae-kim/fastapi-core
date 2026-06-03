@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.params import Depends as DependsParam
 from fastapi.security import OAuth2PasswordBearer
 
 from fastapi_core.core.auth import KeycloakAuthProvider
@@ -34,30 +35,26 @@ def set_auth_provider(
     setattr(app.state, _AUTH_PROVIDER_STATE_KEY, provider)
 
 
-def get_auth_provider(request: Request) -> KeycloakAuthProvider:
-    return getattr(request.app.state, _AUTH_PROVIDER_STATE_KEY)
+def get_auth_provider(
+    request: Request,
+    config: EnvConfig | DependsParam = Depends(get_config),
+) -> KeycloakAuthProvider:
+    try:
+        return getattr(request.app.state, _AUTH_PROVIDER_STATE_KEY)
+    except AttributeError:
+        if isinstance(config, DependsParam):
+            config = get_config(request)
+        provider = KeycloakAuthProvider(
+            http_url=str(config.keycloak.http_url),
+            realm=config.keycloak.realm,
+            client_id=config.keycloak.client_id,
+            client_secret=config.keycloak.client_secret,
+        )
+        set_auth_provider(request.app, provider)
+        return provider
 
 
-class GetAuthProviderDependency:
-    def __call__(
-        self,
-        request: Request,
-        config: EnvConfig = Depends(get_config),
-    ) -> KeycloakAuthProvider:
-        try:
-            return get_auth_provider(request)
-        except AttributeError:
-            provider = KeycloakAuthProvider(
-                http_url=str(config.keycloak.http_url),
-                realm=config.keycloak.realm,
-                client_id=config.keycloak.client_id,
-                client_secret=config.keycloak.client_secret,
-            )
-            set_auth_provider(request.app, provider)
-            return provider
-
-
-auth_provider_schema = GetAuthProviderDependency()
+auth_provider_schema = get_auth_provider
 
 
 class GetCurrentUserDependency:
