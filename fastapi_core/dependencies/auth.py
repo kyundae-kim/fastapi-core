@@ -54,34 +54,32 @@ def get_auth_provider(
         return provider
 
 
-class GetCurrentUserDependency:
-    def __call__(
-        self,
-        token: str | None = Depends(oauth2_scheme),
-        provider: KeycloakAuthProvider = Depends(get_auth_provider),
-        settings: ServiceSettings = Depends(get_settings),
-    ) -> UserInfo:
-        if not token:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Not authenticated",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        try:
-            if settings.auth.verify_jwt:
-                payload = provider.decode_token(token)
-            else:
-                payload = provider.decode_token_insecure(token)
-            return provider.to_user(payload)
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=str(e),
-                headers={"WWW-Authenticate": "Bearer"},
-            ) from e
+def get_current_user(
+    token: str | None = Depends(oauth2_scheme),
+    provider: KeycloakAuthProvider = Depends(get_auth_provider),
+    settings: ServiceSettings = Depends(get_settings),
+) -> UserInfo:
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        if settings.auth.verify_jwt:
+            payload = provider.decode_token(token)
+        else:
+            payload = provider.decode_token_insecure(token)
+        return provider.to_user(payload)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from e
 
 
-current_user_schema = GetCurrentUserDependency()
+current_user_schema = get_current_user
 
 
 def require_permissions(*roles: str):

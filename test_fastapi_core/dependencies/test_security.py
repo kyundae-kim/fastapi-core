@@ -169,6 +169,15 @@ def test_auth_provider_dependency_is_function():
     assert inspect.isfunction(get_auth_provider)
 
 
+def test_current_user_dependency_is_function():
+    import fastapi_core.dependencies.auth as auth_dependencies
+
+    assert not hasattr(auth_dependencies, "GetCurrentUserDependency")
+    assert hasattr(auth_dependencies, "get_current_user")
+    assert inspect.isfunction(auth_dependencies.get_current_user)
+    assert current_user_schema is auth_dependencies.get_current_user
+
+
 def test_get_auth_provider_fallback():
     """app.state에 auth_provider가 없으면 생성 후 state에 등록하여 반환한다."""
     from unittest.mock import MagicMock, patch
