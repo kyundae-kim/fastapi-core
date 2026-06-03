@@ -1,3 +1,5 @@
+import inspect
+
 import jwt
 import pytest
 from fastapi import FastAPI
@@ -157,6 +159,23 @@ def test_get_auth_provider_from_state():
     assert response.status_code == 200
     assert response.json()["id"] == id(mock_provider)
     assert app.state.auth_provider is mock_provider
+
+
+def test_auth_provider_dependency_is_function():
+    import fastapi_core.dependencies.auth as auth_dependencies
+
+    assert not hasattr(auth_dependencies, "GetAuthProviderDependency")
+    assert not hasattr(auth_dependencies, "auth_provider_schema")
+    assert inspect.isfunction(get_auth_provider)
+
+
+def test_current_user_dependency_is_function():
+    import fastapi_core.dependencies.auth as auth_dependencies
+
+    assert not hasattr(auth_dependencies, "GetCurrentUserDependency")
+    assert not hasattr(auth_dependencies, "current_user_schema")
+    assert hasattr(auth_dependencies, "get_current_user")
+    assert inspect.isfunction(auth_dependencies.get_current_user)
 
 
 def test_get_auth_provider_fallback():

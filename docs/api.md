@@ -5,6 +5,15 @@
 
 ---
 
+## FastAPI 의존성 export 정책
+
+- `get_config`, `get_settings`, `get_auth_provider`, `get_current_user`, `get_db_engine`, `get_db_session`, `get_minio_client`, `get_nats_client`는 모두 **함수형 dependency**로 export한다.
+- `Get*Dependency` callable class와 `get_* = Get*Dependency()` 형태의 전역 인스턴스는 사용하지 않는다.
+- 중복 dependency alias인 `config_schema`, `settings_schema`, `auth_provider_schema`, `current_user_schema`는 제공하지 않는다.
+- 라우터와 테스트에서는 항상 `Depends(get_*)` 형태로 직접 참조한다.
+
+---
+
 ## 스키마 (Pydantic 모델)
 
 ### `UserInfo` — `fastapi_core.schemas.user`
@@ -123,7 +132,7 @@ def set_auth_provider(
 ```python
 def get_auth_provider(
     request: Request,
-    config: EnvConfig = Depends(get_config),
+    config: EnvConfig | DependsParam = Depends(get_config),
 ) -> KeycloakAuthProvider:
 ```
 
@@ -211,25 +220,25 @@ def set_db_engine(
 ```python
 def get_db_engine(
     request: Request,
-    config: EnvConfig = Depends(get_config),
+    config: EnvConfig | DependsParam = Depends(get_config),
 ) -> Engine:
 ```
 
 - `app.state.db_engine` 존재 시 반환 (싱글톤)
 - `AttributeError` 시 `create_db_engine(config.db)` 호출 후 `app.state.db_engine`에 저장 (fallback lazy singleton)
 
-### `get_db_session` — `fastapi_core.dependencies.database` *(추가 예정)*
+### `get_db_session` — `fastapi_core.dependencies.database`
 
 ```python
 def get_db_session(
     engine: Engine = Depends(get_db_engine),
-) -> Generator[Session, None, None]:
+) -> Iterator[Session]:
 ```
 
 - SQLAlchemy `Session`을 생성해 요청 스코프에서 제공
 - 정상/예외 종료와 관계없이 `session.close()` 보장
 
-### `run_in_transaction` — `fastapi_core.core.database` *(추가 예정)*
+### `run_in_transaction` — `fastapi_core.core.database`
 
 ```python
 def run_in_transaction(
@@ -273,7 +282,7 @@ def check_minio_connection(client: Minio, bucket: str) -> bool:
     """bucket_exists() 호출 성공 시 True, 예외 시 False."""
 ```
 
-### `generate_presigned_get_url` — `fastapi_core.core.storage` *(추가 예정)*
+### `generate_presigned_get_url` — `fastapi_core.core.storage`
 
 ```python
 def generate_presigned_get_url(
@@ -286,7 +295,7 @@ def generate_presigned_get_url(
 
 - 지정 객체 다운로드용 presigned GET URL 반환
 
-### `generate_presigned_put_url` — `fastapi_core.core.storage` *(추가 예정)*
+### `generate_presigned_put_url` — `fastapi_core.core.storage`
 
 ```python
 def generate_presigned_put_url(
@@ -319,7 +328,7 @@ def set_minio_client(
 ```python
 def get_minio_client(
     request: Request,
-    config: EnvConfig = Depends(get_config),
+    config: EnvConfig | DependsParam = Depends(get_config),
 ) -> Minio:
 ```
 
@@ -328,7 +337,7 @@ def get_minio_client(
 
 ---
 
-## 메시징 (NATS) *(추가 예정)*
+## 메시징 (NATS)
 
 ### `create_nats_client` — `fastapi_core.core.messaging`
 
@@ -380,7 +389,7 @@ async def set_nats_client(
 ```python
 async def get_nats_client(
     request: Request,
-    config: EnvConfig = Depends(get_config),
+    config: EnvConfig | DependsParam = Depends(get_config),
 ) -> nats.aio.client.Client:
 ```
 
@@ -394,15 +403,18 @@ async def get_nats_client(
 ### `get_config` — `fastapi_core.dependencies.config`
 
 ```python
-def get_config() -> EnvConfig:
-    """EnvConfig() 인스턴스 반환 (환경 변수 / .env 파일 로드)."""
+def get_config(request: Request) -> EnvConfig:
+    """app.state.config 반환. 미등록 시 EnvConfig() 생성 후 app.state에 저장."""
 ```
 
 ### `get_settings` — `fastapi_core.dependencies.config`
 
 ```python
-def get_settings(config: EnvConfig = Depends(get_config)) -> ServiceSettings:
-    """ServiceSettings.from_yaml(config.config_path) 반환."""
+def get_settings(
+    request: Request,
+    config: EnvConfig | DependsParam = Depends(get_config),
+) -> ServiceSettings:
+    """app.state.settings 반환. 미등록 시 YAML에서 로드 후 app.state에 저장."""
 ```
 
 ---
@@ -442,7 +454,7 @@ def create_app(
 
 ### `GET /health/readiness`
 
-Keycloak + PostgreSQL + MinIO 준비 상태를 종합 확인한다. *(추가 예정)*
+Keycloak + PostgreSQL + MinIO 준비 상태를 종합 확인한다.
 
 | 조건 | 응답 |
 |---|---|
@@ -526,6 +538,7 @@ from fastapi_core.core.config import EnvConfig
 from fastapi_core.dependencies.auth import set_auth_provider
 from fastapi_core.dependencies.database import set_db_engine
 from fastapi_core.dependencies.storage import set_minio_client
+from fastapi_core.dependencies.messaging import set_nats_client
 
 config = EnvConfig()
 
@@ -534,8 +547,10 @@ async def lifespan(app: FastAPI):
     set_auth_provider(app, config=config)
     set_db_engine(app, config=config)
     set_minio_client(app, config=config)
+    await set_nats_client(app, config=config)
     yield
     app.state.db_engine.dispose()
+    await app.state.nats_client.drain()
 
 app = create_app(config=config, lifespan=lifespan)
 ```

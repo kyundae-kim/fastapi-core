@@ -1,3 +1,4 @@
+import inspect
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -104,6 +105,15 @@ def test_get_db_engine_fallback():
     assert response.status_code == 200
     assert response.json()["id"] == id(mock_engine)
     assert app.state.db_engine is mock_engine
+
+
+def test_database_dependencies_are_functions():
+    import fastapi_core.dependencies.database as database_dependencies
+
+    assert not hasattr(database_dependencies, "GetDbEngineDependency")
+    assert not hasattr(database_dependencies, "GetDbSessionDependency")
+    assert inspect.isfunction(database_dependencies.get_db_engine)
+    assert inspect.isfunction(database_dependencies.get_db_session)
 
 
 def test_set_db_engine_from_config():

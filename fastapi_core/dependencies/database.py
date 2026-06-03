@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 from fastapi import Depends, FastAPI, Request
+from fastapi.params import Depends as DependsParam
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
@@ -26,19 +29,19 @@ def set_db_engine(
 
 def get_db_engine(
     request: Request,
-    config: EnvConfig = Depends(get_config),
+    config: EnvConfig | DependsParam = Depends(get_config),
 ) -> Engine:
     try:
         return getattr(request.app.state, _DB_ENGINE_STATE_KEY)
     except AttributeError:
+        if isinstance(config, DependsParam):
+            config = get_config(request)
         engine = create_db_engine(config.db)
-        setattr(request.app.state, _DB_ENGINE_STATE_KEY, engine)
+        set_db_engine(request.app, engine)
         return engine
 
 
-def get_db_session(
-    engine: Engine = Depends(get_db_engine),
-):
+def get_db_session(engine: Engine = Depends(get_db_engine)) -> Iterator[Session]:
     session = Session(engine)
     try:
         yield session

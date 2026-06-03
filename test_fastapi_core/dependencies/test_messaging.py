@@ -1,6 +1,7 @@
 """Unit tests for fastapi_core.dependencies.messaging."""
 from __future__ import annotations
 
+import inspect
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import anyio
@@ -55,6 +56,12 @@ class TestSetNatsClient:
 
 
 class TestGetNatsClient:
+    def test_dependency_is_function(self):
+        import fastapi_core.dependencies.messaging as messaging_dependencies
+
+        assert not hasattr(messaging_dependencies, "GetNatsClientDependency")
+        assert inspect.isfunction(messaging_dependencies.get_nats_client)
+
     def test_returns_registered_client(self):
         app = FastAPI()
         mock_client = MagicMock()

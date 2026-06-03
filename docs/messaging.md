@@ -84,6 +84,27 @@ async def lifespan(app: FastAPI):
 app = create_app(config=config, lifespan=lifespan)
 ```
 
+### 3.1.1 FastAPI dependency로 주입
+
+`get_nats_client`는 `GetNatsClientDependency` class instance가 아니라 함수형 dependency입니다. 라우터에서는 `Depends(get_nats_client)`를 직접 사용합니다.
+
+```python
+import nats.aio.client
+from fastapi import APIRouter, Depends
+
+from fastapi_core.dependencies.messaging import get_nats_client
+
+router = APIRouter()
+
+@router.post("/events/{subject}")
+async def publish_event(
+    subject: str,
+    nc: nats.aio.client.Client = Depends(get_nats_client),
+):
+    await nc.publish(subject, b"{}")
+    return {"status": "published"}
+```
+
 ### 3.2 이벤트 발행
 
 ```python
