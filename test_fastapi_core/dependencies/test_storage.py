@@ -7,7 +7,7 @@ from minio import Minio
 
 from fastapi_core.core.config import EnvConfig, MinIOConfig
 from fastapi_core.core.storage import create_minio_client
-from fastapi_core.dependencies.config import config_schema
+from fastapi_core.dependencies.config import get_config
 from fastapi_core.dependencies.storage import get_minio_client, set_minio_client
 
 
@@ -56,7 +56,7 @@ def test_get_minio_client_fallback():
     app = FastAPI()
     mock_client = MagicMock(spec=Minio)
     mock_config = MagicMock()
-    app.dependency_overrides[config_schema] = lambda: mock_config
+    app.dependency_overrides[get_config] = lambda: mock_config
 
     @app.get("/client-id")
     def client_id(client: Minio = Depends(get_minio_client)):

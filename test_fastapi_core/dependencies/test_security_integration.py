@@ -6,12 +6,12 @@ from fastapi.testclient import TestClient
 from fastapi_core.core.auth import KeycloakAuthProvider
 from fastapi_core.core.config import AuthSettings, EnvConfig, ServiceSettings
 from fastapi_core.dependencies.auth import (
-    get_auth_provider,
-    get_current_user,
+    auth_provider_schema,
+    current_user_schema,
     require_permissions,
     set_auth_provider,
 )
-from fastapi_core.dependencies.config import settings_schema
+from fastapi_core.dependencies.config import get_settings
 from fastapi_core.schemas.user import UserInfo
 
 
@@ -40,12 +40,12 @@ def access_token(provider: KeycloakAuthProvider, config: EnvConfig) -> str:
 def app(config: EnvConfig) -> FastAPI:
     _app = FastAPI()
     set_auth_provider(_app, config=config)
-    _app.dependency_overrides[settings_schema] = lambda: ServiceSettings(
+    _app.dependency_overrides[get_settings] = lambda: ServiceSettings(
         auth=AuthSettings(verify_jwt=True)
     )
 
     @_app.get("/me")
-    def me(user: UserInfo = Depends(get_current_user)):
+    def me(user: UserInfo = Depends(current_user_schema)):
         return user.model_dump()
 
     @_app.get("/admin")
@@ -69,7 +69,7 @@ def test_get_auth_provider_from_state_integration(
     set_auth_provider(_app, provider)
 
     @_app.get("/provider-id")
-    def provider_id(p: KeycloakAuthProvider = Depends(get_auth_provider)):
+    def provider_id(p: KeycloakAuthProvider = Depends(auth_provider_schema)):
         return {"id": id(p)}
 
     client = TestClient(_app)

@@ -7,7 +7,7 @@ from sqlalchemy import Engine
 
 from fastapi_core.core.config import DatabaseConfig, EnvConfig
 from fastapi_core.core.database import create_db_engine, run_in_transaction
-from fastapi_core.dependencies.config import config_schema
+from fastapi_core.dependencies.config import get_config
 from fastapi_core.dependencies.database import (
     get_db_engine,
     get_db_session,
@@ -89,7 +89,7 @@ def test_get_db_engine_fallback():
     app = FastAPI()
     mock_engine = MagicMock(spec=Engine)
     mock_config = MagicMock()
-    app.dependency_overrides[config_schema] = lambda: mock_config
+    app.dependency_overrides[get_config] = lambda: mock_config
 
     @app.get("/engine-id")
     def engine_id(engine: Engine = Depends(get_db_engine)):

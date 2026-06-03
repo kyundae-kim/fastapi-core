@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from fastapi_core.core.config import EnvConfig
 from fastapi_core.core.database import create_db_engine
-from fastapi_core.dependencies.config import config_schema
+from fastapi_core.dependencies.config import get_config
 
 _DB_ENGINE_STATE_KEY = "db_engine"
 
@@ -30,7 +30,7 @@ class GetDbEngineDependency:
     def __call__(
         self,
         request: Request,
-        config: EnvConfig = Depends(config_schema),
+        config: EnvConfig = Depends(get_config),
     ) -> Engine:
         try:
             return getattr(request.app.state, _DB_ENGINE_STATE_KEY)

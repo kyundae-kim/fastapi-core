@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordBearer
 
 from fastapi_core.core.auth import KeycloakAuthProvider
 from fastapi_core.core.config import EnvConfig, ServiceSettings
-from fastapi_core.dependencies.config import config_schema, settings_schema
+from fastapi_core.dependencies.config import get_config, get_settings
 from fastapi_core.schemas.user import UserInfo
 
 oauth2_scheme = OAuth2PasswordBearer(
@@ -34,14 +34,18 @@ def set_auth_provider(
     setattr(app.state, _AUTH_PROVIDER_STATE_KEY, provider)
 
 
+def get_auth_provider(request: Request) -> KeycloakAuthProvider:
+    return getattr(request.app.state, _AUTH_PROVIDER_STATE_KEY)
+
+
 class GetAuthProviderDependency:
     def __call__(
         self,
         request: Request,
-        config: EnvConfig = Depends(config_schema),
+        config: EnvConfig = Depends(get_config),
     ) -> KeycloakAuthProvider:
         try:
-            return getattr(request.app.state, _AUTH_PROVIDER_STATE_KEY)
+            return get_auth_provider(request)
         except AttributeError:
             provider = KeycloakAuthProvider(
                 http_url=str(config.keycloak.http_url),
@@ -49,19 +53,19 @@ class GetAuthProviderDependency:
                 client_id=config.keycloak.client_id,
                 client_secret=config.keycloak.client_secret,
             )
-            setattr(request.app.state, _AUTH_PROVIDER_STATE_KEY, provider)
+            set_auth_provider(request.app, provider)
             return provider
 
 
-get_auth_provider = GetAuthProviderDependency()
+auth_provider_schema = GetAuthProviderDependency()
 
 
 class GetCurrentUserDependency:
     def __call__(
         self,
         token: str | None = Depends(oauth2_scheme),
-        provider: KeycloakAuthProvider = Depends(get_auth_provider),
-        settings: ServiceSettings = Depends(settings_schema),
+        provider: KeycloakAuthProvider = Depends(auth_provider_schema),
+        settings: ServiceSettings = Depends(get_settings),
     ) -> UserInfo:
         if not token:
             raise HTTPException(
@@ -83,11 +87,11 @@ class GetCurrentUserDependency:
             ) from e
 
 
-get_current_user = GetCurrentUserDependency()
+current_user_schema = GetCurrentUserDependency()
 
 
 def require_permissions(*roles: str):
-    def _check(user: UserInfo = Depends(get_current_user)) -> UserInfo:
+    def _check(user: UserInfo = Depends(current_user_schema)) -> UserInfo:
         for role in roles:
             if role not in user.roles:
                 raise HTTPException(

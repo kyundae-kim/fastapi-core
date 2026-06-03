@@ -5,7 +5,7 @@ from minio import Minio
 
 from fastapi_core.core.config import EnvConfig
 from fastapi_core.core.storage import create_minio_client
-from fastapi_core.dependencies.config import config_schema
+from fastapi_core.dependencies.config import get_config
 
 _MINIO_CLIENT_STATE_KEY = "minio_client"
 
@@ -27,7 +27,7 @@ class GetMinioClientDependency:
     def __call__(
         self,
         request: Request,
-        config: EnvConfig = Depends(config_schema),
+        config: EnvConfig = Depends(get_config),
     ) -> Minio:
         try:
             return getattr(request.app.state, _MINIO_CLIENT_STATE_KEY)
