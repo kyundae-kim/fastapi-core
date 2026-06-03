@@ -1,13 +1,25 @@
 from __future__ import annotations
 
+import importlib
 import inspect
+import pkgutil
 
-from fastapi_core.dependencies.messaging import get_nats_client
+import fastapi_core.dependencies as dependencies_package
 
 
-def test_get_dependencies_are_callable_class_instances():
-    dependency = get_nats_client
+def test_no_get_dependencies_are_callable_class_instances():
+    dependency_class_names: list[str] = []
 
-    assert callable(dependency)
-    assert not inspect.isfunction(dependency)
-    assert dependency.__class__.__name__.endswith("Dependency")
+    for module_info in pkgutil.iter_modules(dependencies_package.__path__):
+        module = importlib.import_module(
+            f"{dependencies_package.__name__}.{module_info.name}"
+        )
+        dependency_class_names.extend(
+            name
+            for name, value in vars(module).items()
+            if name.startswith("Get")
+            and name.endswith("Dependency")
+            and inspect.isclass(value)
+        )
+
+    assert dependency_class_names == []
