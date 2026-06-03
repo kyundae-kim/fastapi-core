@@ -7,7 +7,7 @@ from fastapi_core.core.auth import KeycloakAuthProvider
 from fastapi_core.core.config import AuthSettings, EnvConfig, ServiceSettings
 from fastapi_core.dependencies.auth import (
     get_auth_provider,
-    current_user_schema,
+    get_current_user,
     require_permissions,
     set_auth_provider,
 )
@@ -45,7 +45,7 @@ def app(config: EnvConfig) -> FastAPI:
     )
 
     @_app.get("/me")
-    def me(user: UserInfo = Depends(current_user_schema)):
+    def me(user: UserInfo = Depends(get_current_user)):
         return user.model_dump()
 
     @_app.get("/admin")

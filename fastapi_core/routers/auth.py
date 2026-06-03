@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from fastapi_core.core.auth import KeycloakAuthProvider
-from fastapi_core.dependencies.auth import current_user_schema, get_auth_provider
+from fastapi_core.dependencies.auth import get_auth_provider, get_current_user
 from fastapi_core.schemas.token import TokenResponse
 from fastapi_core.schemas.user import UserInfo
 
@@ -32,5 +32,5 @@ def token(
 
 
 @router.get("/user", response_model=UserInfo)
-def user(current_user: UserInfo = Depends(current_user_schema)) -> UserInfo:
+def user(current_user: UserInfo = Depends(get_current_user)) -> UserInfo:
     return current_user

@@ -79,11 +79,8 @@ def get_current_user(
         ) from e
 
 
-current_user_schema = get_current_user
-
-
 def require_permissions(*roles: str):
-    def _check(user: UserInfo = Depends(current_user_schema)) -> UserInfo:
+    def _check(user: UserInfo = Depends(get_current_user)) -> UserInfo:
         for role in roles:
             if role not in user.roles:
                 raise HTTPException(

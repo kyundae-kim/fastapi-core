@@ -10,7 +10,7 @@ from fastapi_core.core.auth import KeycloakAuthProvider
 from fastapi_core.dependencies.config import get_settings
 from fastapi_core.dependencies.auth import (
     get_auth_provider,
-    current_user_schema,
+    get_current_user,
     require_permissions,
 )
 from fastapi_core.schemas.user import UserInfo
@@ -29,7 +29,7 @@ def _make_app() -> tuple[FastAPI, dict]:
     app.routes.clear()
 
     @app.get("/me")
-    def me(user: UserInfo = __import__("fastapi").Depends(current_user_schema)):  # noqa: F811
+    def me(user: UserInfo = __import__("fastapi").Depends(get_current_user)):  # noqa: F811
         return user.model_dump()
 
     @app.get("/admin")
@@ -66,7 +66,7 @@ def test_app(mock_provider: KeycloakAuthProvider, insecure_settings: ServiceSett
     app = FastAPI()
 
     @app.get("/me")
-    def me(user: UserInfo = Depends(current_user_schema)):
+    def me(user: UserInfo = Depends(get_current_user)):
         return user.model_dump()
 
     @app.get("/admin")
@@ -173,9 +173,9 @@ def test_current_user_dependency_is_function():
     import fastapi_core.dependencies.auth as auth_dependencies
 
     assert not hasattr(auth_dependencies, "GetCurrentUserDependency")
+    assert not hasattr(auth_dependencies, "current_user_schema")
     assert hasattr(auth_dependencies, "get_current_user")
     assert inspect.isfunction(auth_dependencies.get_current_user)
-    assert current_user_schema is auth_dependencies.get_current_user
 
 
 def test_get_auth_provider_fallback():
