@@ -75,6 +75,15 @@
 | `MINIO__BUCKET` | `str` | `default` | 기본 버킷 이름 |
 | `MINIO__PRESIGNED_EXPIRES_SEC` | `int` | `900` | Presigned URL 기본 만료 (초) |
 
+### Milvus
+
+| 변수명 | 타입 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `MILVUS__URI` | `str` | `http://milvus:19530` | Milvus 엔드포인트 |
+| `MILVUS__DB_NAME` | `str` | `""` | 기본 데이터베이스 이름 |
+| `MILVUS__TOKEN` | `str \| None` | `None` | 인증 토큰 (`username:password` 형식 등) |
+| `MILVUS__TIMEOUT` | `float` | `10.0` | Milvus 요청 타임아웃 (초) |
+
 ### Ollama
 
 | 변수명 | 타입 | 기본값 | 설명 |
@@ -191,6 +200,12 @@ MINIO__SECRET_KEY=password
 MINIO__SECURE=false
 MINIO__BUCKET=default
 MINIO__PRESIGNED_EXPIRES_SEC=900
+
+# Milvus
+MILVUS__URI=http://milvus:19530
+MILVUS__DB_NAME=
+# MILVUS__TOKEN=username:password
+MILVUS__TIMEOUT=10.0
 
 # Ollama
 OLLAMA__HOST=http://ollama:11434

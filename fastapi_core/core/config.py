@@ -74,6 +74,13 @@ class OllamaConfig(BaseModel):
     timeout: float = 60.0
 
 
+class MilvusConfig(BaseModel):
+    uri: str = "http://milvus:19530"
+    db_name: str = ""
+    token: str = ""
+    timeout: float | None = None
+
+
 class NatsConfig(BaseModel):
     servers: str = "nats://nats:4222"
     name: str = "fastapi-core"
@@ -137,6 +144,7 @@ class EnvConfig(BaseSettings):
     db: DatabaseConfig = Field(default_factory=DatabaseConfig)
     minio: MinIOConfig = Field(default_factory=MinIOConfig)
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
+    milvus: MilvusConfig = Field(default_factory=MilvusConfig)
     nats: NatsConfig = Field(default_factory=NatsConfig)
 
     keycloak_username: str = "test"

@@ -2,6 +2,7 @@ from fastapi_core.core.config import (
     DatabaseConfig,
     EnvConfig,
     KeycloakConfig,
+    MilvusConfig,
     MinIOConfig,
     OllamaConfig,
     ServiceSettings,
@@ -9,6 +10,12 @@ from fastapi_core.core.config import (
 from fastapi_core.core.exceptions import AuthError
 from fastapi_core.core.auth import KeycloakAuthProvider, extract_roles, extract_scopes
 from fastapi_core.core.database import run_in_transaction
+from fastapi_core.core.milvus import (
+    check_milvus_connection,
+    create_milvus_client,
+    ensure_collection_exists,
+    list_collection_names,
+)
 from fastapi_core.core.ollama import (
     check_ollama_connection,
     create_ollama_client,
@@ -31,19 +38,24 @@ __all__ = [
     "HealthResponse",
     "KeycloakAuthProvider",
     "KeycloakConfig",
+    "MilvusConfig",
     "MinIOConfig",
     "OllamaConfig",
     "ServiceSettings",
     "TokenResponse",
     "UserInfo",
+    "check_milvus_connection",
     "check_ollama_connection",
+    "create_milvus_client",
     "create_ollama_client",
     "create_app",
+    "ensure_collection_exists",
     "extract_roles",
     "extract_scopes",
     "generate_text",
     "generate_presigned_get_url",
     "generate_presigned_put_url",
+    "list_collection_names",
     "list_model_names",
     "run_in_transaction",
 ]

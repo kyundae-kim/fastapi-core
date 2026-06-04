@@ -7,7 +7,7 @@
 
 ## FastAPI 의존성 export 정책
 
-- `get_config`, `get_settings`, `get_auth_provider`, `get_current_user`, `get_db_engine`, `get_db_session`, `get_minio_client`, `get_ollama_client`, `get_nats_client`는 모두 **함수형 dependency**로 export한다.
+- `get_config`, `get_settings`, `get_auth_provider`, `get_current_user`, `get_db_engine`, `get_db_session`, `get_minio_client`, `get_milvus_client`, `get_ollama_client`, `get_nats_client`는 모두 **함수형 dependency**로 export한다.
 - `Get*Dependency` callable class와 `get_* = Get*Dependency()` 형태의 전역 인스턴스는 사용하지 않는다.
 - 중복 dependency alias인 `config_schema`, `settings_schema`, `auth_provider_schema`, `current_user_schema`는 제공하지 않는다.
 - 라우터와 테스트에서는 항상 `Depends(get_*)` 형태로 직접 참조한다.
@@ -337,6 +337,78 @@ def get_minio_client(
 
 ---
 
+## 벡터 데이터베이스 (Milvus)
+
+### `create_milvus_client` — `fastapi_core.core.milvus`
+
+```python
+def create_milvus_client(config: MilvusConfig) -> MilvusClient:
+```
+
+- `config.uri`, `config.db_name`, `config.timeout`으로 `MilvusClient`를 생성한다.
+- `config.token`이 있으면 함께 전달한다.
+
+### `check_milvus_connection` — `fastapi_core.core.milvus`
+
+```python
+def check_milvus_connection(client: MilvusClient) -> bool:
+```
+
+- `client.list_collections()` 호출 성공 시 `True`, 예외 시 `False`
+
+### `list_collection_names` — `fastapi_core.core.milvus`
+
+```python
+def list_collection_names(client: MilvusClient) -> list[str]:
+```
+
+- 현재 DB의 컬렉션 이름 목록을 문자열 리스트로 반환한다.
+
+### `ensure_collection_exists` — `fastapi_core.core.milvus`
+
+```python
+def ensure_collection_exists(
+    client: MilvusClient,
+    collection_name: str,
+    *,
+    dimension: int,
+    metric_type: str = "COSINE",
+    auto_id: bool = False,
+) -> None:
+```
+
+- 컬렉션이 이미 존재하면 아무 작업도 하지 않는다.
+- 존재하지 않으면 `client.create_collection(...)`으로 생성한다.
+
+### `set_milvus_client` — `fastapi_core.dependencies.milvus`
+
+```python
+def set_milvus_client(
+    app: FastAPI,
+    client: MilvusClient | None = None,
+    *,
+    config: EnvConfig | None = None,
+) -> None:
+```
+
+- `client` 직접 전달 → `app.state.milvus_client`에 할당
+- `config` 전달 → `create_milvus_client(config.milvus)` 내부 호출 후 할당
+- 둘 다 `None` → `ValueError`
+
+### `get_milvus_client` — `fastapi_core.dependencies.milvus`
+
+```python
+def get_milvus_client(
+    request: Request,
+    config: EnvConfig | DependsParam = Depends(get_config),
+) -> MilvusClient:
+```
+
+- `app.state.milvus_client` 존재 시 반환 (싱글톤)
+- `AttributeError` 시 `create_milvus_client(config.milvus)` 호출 후 `app.state.milvus_client`에 저장 (fallback lazy singleton)
+
+---
+
 ## Ollama
 
 ### `create_ollama_client` — `fastapi_core.core.ollama`
@@ -588,6 +660,7 @@ class AuthError(Exception):
 | `app.state.auth_provider` | `KeycloakAuthProvider` | `set_auth_provider` | `get_auth_provider` |
 | `app.state.db_engine` | `Engine` | `set_db_engine` | `get_db_engine` |
 | `app.state.minio_client` | `Minio` | `set_minio_client` | `get_minio_client` |
+| `app.state.milvus_client` | `MilvusClient` | `set_milvus_client` | `get_milvus_client` |
 | `app.state.ollama_client` | `ollama.Client` | `set_ollama_client` | `get_ollama_client` |
 | `app.state.nats_client` | `nats.aio.client.Client` | `set_nats_client` | `get_nats_client` |
 
@@ -605,6 +678,7 @@ from fastapi_core.core.config import EnvConfig
 from fastapi_core.dependencies.auth import set_auth_provider
 from fastapi_core.dependencies.database import set_db_engine
 from fastapi_core.dependencies.storage import set_minio_client
+from fastapi_core.dependencies.milvus import set_milvus_client
 from fastapi_core.dependencies.ollama import set_ollama_client
 from fastapi_core.dependencies.messaging import set_nats_client
 
@@ -615,10 +689,12 @@ async def lifespan(app: FastAPI):
     set_auth_provider(app, config=config)
     set_db_engine(app, config=config)
     set_minio_client(app, config=config)
+    set_milvus_client(app, config=config)
     set_ollama_client(app, config=config)
     await set_nats_client(app, config=config)
     yield
     app.state.db_engine.dispose()
+    app.state.milvus_client.close()
     await app.state.nats_client.drain()
 
 app = create_app(config=config, lifespan=lifespan)

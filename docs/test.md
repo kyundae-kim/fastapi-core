@@ -4,7 +4,7 @@
 
 테스트는 **단위 테스트(mock 기반)**와 **통합 테스트(실 서비스 연결)**로 분리됩니다.
 
-- **단위 테스트**: 외부 서비스(Keycloak, PostgreSQL, MinIO) 없이 `unittest.mock`으로 의존성을 교체하여 빠른 피드백 제공
+- **단위 테스트**: 외부 서비스(Keycloak, PostgreSQL, MinIO, Milvus, Ollama) 없이 `unittest.mock`으로 의존성을 교체하여 빠른 피드백 제공
 - **통합 테스트**: devcontainer 환경에서 실제 인스턴스에 연결하여 실환경 문제 조기 탐지
 
 pytest 설정은 `pyproject.toml`의 `[tool.pytest.ini_options]`에 정의되어 있으며, 테스트 루트는 `test_fastapi_core/`입니다.
@@ -32,6 +32,10 @@ uv run pytest test_fastapi_core/core/test_security.py -v
 test_fastapi_core/
 ├── core/
 │   ├── test_config.py                  # EnvConfig, DatabaseConfig, MinIOConfig 단위 테스트
+│   ├── test_milvus.py                  # core.milvus mock 단위 테스트
+│   ├── test_milvus_integration.py      # Milvus 연동 통합 테스트
+│   ├── test_ollama.py                  # core.ollama mock 단위 테스트
+│   ├── test_ollama_integration.py      # Ollama 연동 통합 테스트
 │   ├── test_security.py                # core.auth mock 단위 테스트
 │   ├── test_security_integration.py    # Keycloak 연동 통합 테스트
 │   ├── test_storage.py                 # core.storage mock 단위 테스트
@@ -40,21 +44,27 @@ test_fastapi_core/
 │   ├── test_config.py                  # get_config, get_settings Depends 단위 테스트
 │   ├── test_database.py                # get_db_engine Depends mock 단위 테스트
 │   ├── test_database_integration.py    # PostgreSQL 연동 통합 테스트
+│   ├── test_messaging.py               # get_nats_client Depends mock 단위 테스트
+│   ├── test_messaging_integration.py   # NATS 연동 통합 테스트
+│   ├── test_milvus.py                  # get_milvus_client Depends mock 단위 테스트
+│   ├── test_milvus_integration.py      # Milvus 연동 통합 테스트
+│   ├── test_ollama.py                  # get_ollama_client Depends mock 단위 테스트
+│   ├── test_ollama_integration.py      # Ollama 연동 통합 테스트
 │   ├── test_security.py                # get_current_user, require_permissions mock 단위 테스트 (dependencies/auth.py)
 │   ├── test_security_integration.py    # Keycloak 연동 통합 테스트 (dependencies/auth.py)
 │   ├── test_storage.py                 # get_minio_client Depends mock 단위 테스트
 │   └── test_storage_integration.py     # MinIO 연동 통합 테스트
 └── routers/
-    ├── test_health.py                  # /health/liveness, /health/readiness 단위 테스트
     ├── test_auth.py                    # /token, /user 라우터 mock 단위 테스트
-    └── test_auth_integration.py        # /token, /user 라우터 Keycloak 연동 통합 테스트
+    ├── test_auth_integration.py        # /token, /user 라우터 Keycloak 연동 통합 테스트
+    └── test_health.py                  # /health/liveness, /health/readiness 단위 테스트
 ```
 
 ---
 
 ## 단위 테스트 (mock 기반)
 
-외부 의존성(Keycloak, DB, MinIO) 없이 실행됩니다.
+외부 의존성(Keycloak, DB, MinIO, Milvus, Ollama) 없이 실행됩니다.
 
 ```bash
 uv run pytest -q
@@ -66,9 +76,13 @@ uv run pytest -q
 | --- | --- |
 | `core/test_config.py` | `DatabaseConfig.sqlalchemy_database_url` 조합 로직, `trust`/`password` 인증 방식, `DB__URL` 직접 지정 케이스, DB pool 기본값 및 MinIO presigned 만료 기본값 검증 |
 | `core/test_security.py` | `extract_roles`, `extract_scopes` 순수 함수 및 `KeycloakAuthProvider` 메서드 전체 mock 테스트 (`core.auth`) |
+| `core/test_milvus.py` | `create_milvus_client`, `check_milvus_connection`, `list_collection_names`, `ensure_collection_exists` mock 테스트 |
+| `core/test_ollama.py` | `create_ollama_client`, `check_ollama_connection`, `list_model_names`, `generate_text` mock 테스트 |
 | `core/test_storage.py` | `create_minio_client`, `ensure_bucket_exists`, `list_buckets`, presigned GET/PUT URL 생성 mock 테스트 |
 | `dependencies/test_config.py` | `get_config`, `get_settings` Depends 반환값 검증 (`settings.health.*` 기본값 포함) |
 | `dependencies/test_database.py` | `create_db_engine`·`check_database_connection` mock 테스트, `get_db_engine`/`get_db_session` Depends mock 테스트, `run_in_transaction` commit/rollback 검증 — `app.state.db_engine` 우선 반환 및 fallback 동작 포함 |
+| `dependencies/test_milvus.py` | `create_milvus_client`·`get_milvus_client`·`set_milvus_client` mock 테스트 — `app.state.milvus_client` 우선 반환 및 fallback 동작 검증 포함 |
+| `dependencies/test_ollama.py` | `create_ollama_client`·`get_ollama_client`·`set_ollama_client` mock 테스트 — `app.state.ollama_client` 우선 반환 및 fallback 동작 검증 포함 |
 | `dependencies/test_security.py` | `set_auth_provider`·`get_auth_provider`·`get_current_user`·`require_permissions` mock 테스트 — `app.state.auth_provider` 우선 반환 및 fallback 동작 검증 포함 |
 | `dependencies/test_storage.py` | `create_minio_client`·`get_minio_client`·`set_minio_client` mock 테스트 — `app.state.minio_client` 우선 반환 및 fallback 동작 검증 포함 |
 | `routers/test_health.py` | `/health/liveness` 200 응답, `/health/readiness` Keycloak/DB/MinIO 종합 readiness mock 검증 |
@@ -107,6 +121,8 @@ def test_get_db_engine_returns_state_engine():
 | `dependencies/test_security.py` | `app.state.auth_provider` | `KeycloakAuthProvider` 생성자 미호출, 동일 인스턴스 반환 |
 | `dependencies/test_database.py` | `app.state.db_engine` | `create_db_engine` 미호출, 동일 인스턴스 반환 |
 | `dependencies/test_storage.py` | `app.state.minio_client` | `create_minio_client` 미호출, 동일 인스턴스 반환 |
+| `dependencies/test_milvus.py` | `app.state.milvus_client` | `create_milvus_client` 미호출, 동일 인스턴스 반환 |
+| `dependencies/test_ollama.py` | `app.state.ollama_client` | `create_ollama_client` 미호출, 동일 인스턴스 반환 |
 
 ### 2. fallback 동작 (state 미설정 path)
 
@@ -127,7 +143,7 @@ def test_get_minio_client_fallback_when_no_state():
 
 ## 통합 테스트
 
-devcontainer 환경에서 실제 Keycloak·PostgreSQL·MinIO 인스턴스에 연결합니다.  
+devcontainer 환경에서 실제 Keycloak·PostgreSQL·MinIO·Milvus·Ollama 인스턴스에 연결합니다.  
 `KEYCLOAK_USERNAME`, `KEYCLOAK_PASSWORD` 환경 변수가 설정되어 있어야 합니다.
 
 NATS를 적용한 경우 테스트 NATS 서버를 함께 기동하여 메시징 통합 테스트를 추가합니다.
@@ -141,8 +157,12 @@ uv run pytest -q -m integration
 | 파일 | 설명 |
 | --- | --- |
 | `core/test_security_integration.py` | 실제 Keycloak 토큰 발급, RS256 서명 검증, 클레임 추출 검증 |
+| `core/test_milvus_integration.py` | 실제 Milvus 클라이언트 생성, 연결 확인, 컬렉션 목록 조회, 컬렉션 생성/정리 검증 |
+| `core/test_ollama_integration.py` | 실제 Ollama 클라이언트 생성, 연결 확인, 모델 목록 조회 검증 |
 | `core/test_storage_integration.py` | 실제 MinIO 클라이언트 생성, 버킷 자동 생성, 버킷 목록 조회, presigned GET/PUT URL 생성 |
 | `dependencies/test_database_integration.py` | 실제 PostgreSQL 엔진 생성, 연결 확인(SELECT 1), DB 버전 조회, `get_db_session`/`run_in_transaction` 동작, state 싱글톤 검증 |
+| `dependencies/test_milvus_integration.py` | 실제 Milvus 클라이언트로 state 싱글톤 검증, config 기반 등록, Depends 경유 연결 확인 |
+| `dependencies/test_ollama_integration.py` | 실제 Ollama 클라이언트로 state 싱글톤 검증, config 기반 등록, Depends 경유 연결 확인 |
 | `dependencies/test_security_integration.py` | 실제 Keycloak 토큰으로 RS256 검증, `get_current_user`·`require_permissions` 실환경 동작 검증 |
 | `dependencies/test_storage_integration.py` | 실제 MinIO 클라이언트로 state 싱글톤 검증, config 기반 등록, Depends 경유 버킷 접근 검증 |
 | `dependencies/test_messaging.py` | `set_nats_client` 등록, `get_nats_client` state 반환 및 fallback lazy singleton 검증 (`AsyncMock` 기반) |
