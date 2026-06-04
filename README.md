@@ -21,6 +21,7 @@ DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사
   - Presigned URL 생성 유틸리티
 - Milvus 연동
   - Milvus 클라이언트 생성
+  - 비동기 AsyncMilvusClient 생성
   - 컬렉션 목록 조회 / 연결 확인 유틸리티
   - 컬렉션 존재 보장 헬퍼
 - Ollama 연동

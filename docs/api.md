@@ -348,6 +348,15 @@ def create_milvus_client(config: MilvusConfig) -> MilvusClient:
 - `config.uri`, `config.db_name`, `config.timeout`으로 `MilvusClient`를 생성한다.
 - `config.token`이 있으면 함께 전달한다.
 
+### `create_async_milvus_client` — `fastapi_core.core.milvus`
+
+```python
+def create_async_milvus_client(config: MilvusConfig) -> AsyncMilvusClient:
+```
+
+- `config.uri`, `config.db_name`, `config.timeout`으로 `AsyncMilvusClient`를 생성한다.
+- `config.token`이 있으면 함께 전달한다.
+
 ### `check_milvus_connection` — `fastapi_core.core.milvus`
 
 ```python
@@ -356,10 +365,26 @@ def check_milvus_connection(client: MilvusClient) -> bool:
 
 - `client.list_collections()` 호출 성공 시 `True`, 예외 시 `False`
 
+### `check_async_milvus_connection` — `fastapi_core.core.milvus`
+
+```python
+async def check_async_milvus_connection(client: AsyncMilvusClient) -> bool:
+```
+
+- `await client.list_collections()` 호출 성공 시 `True`, 예외 시 `False`
+
 ### `list_collection_names` — `fastapi_core.core.milvus`
 
 ```python
 def list_collection_names(client: MilvusClient) -> list[str]:
+```
+
+- 현재 DB의 컬렉션 이름 목록을 문자열 리스트로 반환한다.
+
+### `list_async_collection_names` — `fastapi_core.core.milvus`
+
+```python
+async def list_async_collection_names(client: AsyncMilvusClient) -> list[str]:
 ```
 
 - 현재 DB의 컬렉션 이름 목록을 문자열 리스트로 반환한다.
@@ -379,6 +404,22 @@ def ensure_collection_exists(
 
 - 컬렉션이 이미 존재하면 아무 작업도 하지 않는다.
 - 존재하지 않으면 `client.create_collection(...)`으로 생성한다.
+
+### `ensure_async_collection_exists` — `fastapi_core.core.milvus`
+
+```python
+async def ensure_async_collection_exists(
+    client: AsyncMilvusClient,
+    collection_name: str,
+    *,
+    dimension: int,
+    metric_type: str = "COSINE",
+    auto_id: bool = False,
+) -> None:
+```
+
+- 컬렉션이 이미 존재하면 아무 작업도 하지 않는다.
+- 존재하지 않으면 `await client.create_collection(...)`으로 생성한다.
 
 ### `set_milvus_client` — `fastapi_core.dependencies.milvus`
 
@@ -406,6 +447,33 @@ def get_milvus_client(
 
 - `app.state.milvus_client` 존재 시 반환 (싱글톤)
 - `AttributeError` 시 `create_milvus_client(config.milvus)` 호출 후 `app.state.milvus_client`에 저장 (fallback lazy singleton)
+
+### `set_async_milvus_client` — `fastapi_core.dependencies.async_milvus`
+
+```python
+async def set_async_milvus_client(
+    app: FastAPI,
+    client: AsyncMilvusClient | None = None,
+    *,
+    config: EnvConfig | None = None,
+) -> None:
+```
+
+- `client` 직접 전달 → `app.state.async_milvus_client`에 할당
+- `config` 전달 → `create_async_milvus_client(config.milvus)` 내부 호출 후 할당
+- 둘 다 `None` → `ValueError`
+
+### `get_async_milvus_client` — `fastapi_core.dependencies.async_milvus`
+
+```python
+async def get_async_milvus_client(
+    request: Request,
+    config: EnvConfig | DependsParam = Depends(get_config),
+) -> AsyncMilvusClient:
+```
+
+- `app.state.async_milvus_client` 존재 시 반환 (싱글톤)
+- `AttributeError` 시 `create_async_milvus_client(config.milvus)` 호출 후 `app.state.async_milvus_client`에 저장 (fallback lazy singleton)
 
 ---
 
@@ -661,6 +729,7 @@ class AuthError(Exception):
 | `app.state.db_engine` | `Engine` | `set_db_engine` | `get_db_engine` |
 | `app.state.minio_client` | `Minio` | `set_minio_client` | `get_minio_client` |
 | `app.state.milvus_client` | `MilvusClient` | `set_milvus_client` | `get_milvus_client` |
+| `app.state.async_milvus_client` | `AsyncMilvusClient` | `set_async_milvus_client` | `get_async_milvus_client` |
 | `app.state.ollama_client` | `ollama.Client` | `set_ollama_client` | `get_ollama_client` |
 | `app.state.nats_client` | `nats.aio.client.Client` | `set_nats_client` | `get_nats_client` |
 

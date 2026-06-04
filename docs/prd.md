@@ -57,7 +57,9 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 ### 4. Milvus 연동
 
 - pymilvus 기반 Milvus 클라이언트 생성
+- pymilvus 기반 비동기 AsyncMilvusClient 생성
 - FastAPI `app.state` 기반 Milvus 클라이언트 싱글톤 관리 (`app.state.milvus_client`)
+- FastAPI `app.state` 기반 비동기 Milvus 클라이언트 싱글톤 관리 (`app.state.async_milvus_client`)
 - 컬렉션 목록 조회 및 연결 확인 유틸리티 제공
 - 컬렉션 존재 보장 헬퍼 제공
 
@@ -107,12 +109,13 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 | `app.state.db_engine` | SQLAlchemy `Engine` | `set_db_engine(app, engine)` 또는 `set_db_engine(app, config=config)` | `get_db_engine` |
 | `app.state.minio_client` | `Minio` | `set_minio_client(app, client)` 또는 `set_minio_client(app, config=config)` | `get_minio_client` |
 | `app.state.milvus_client` | `MilvusClient` | `set_milvus_client(app, client)` 또는 `set_milvus_client(app, config=config)` | `get_milvus_client` |
+| `app.state.async_milvus_client` | `AsyncMilvusClient` | `set_async_milvus_client(app, client)` 또는 `set_async_milvus_client(app, config=config)` | `get_async_milvus_client` |
 | `app.state.ollama_client` | `ollama.Client` | `set_ollama_client(app, client)` 또는 `set_ollama_client(app, config=config)` | `get_ollama_client` |
 | `app.state.nats_client` | `nats.aio.client.Client` | `set_nats_client(app, client)` 또는 `set_nats_client(app, config=config)` | `get_nats_client` |
 
 #### 저장 함수 (state setter)
 
-- `set_auth_provider`, `set_db_engine`, `set_minio_client`, `set_milvus_client`, `set_ollama_client`, `set_nats_client`를 `dependencies` 모듈에서 제공
+- `set_auth_provider`, `set_db_engine`, `set_minio_client`, `set_milvus_client`, `set_async_milvus_client`, `set_ollama_client`, `set_nats_client`를 `dependencies` 모듈에서 제공
 - 각 함수는 **두 가지 호출 형태**를 지원한다:
   - `set_auth_provider(app, provider)` — 외부에서 생성한 객체를 직접 전달
   - `set_auth_provider(app, config=config)` — `EnvConfig`를 전달하면 내부에서 객체를 생성하여 등록
@@ -122,11 +125,11 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 
 #### 의존성 함수 (state getter)
 
-- `get_auth_provider`, `get_db_engine`, `get_minio_client`, `get_milvus_client`, `get_ollama_client`, `get_nats_client`는 `request.app.state`의 고정된 속성명에서 객체를 읽어 반환하는 함수형 `Depends` dependency다
+- `get_auth_provider`, `get_db_engine`, `get_minio_client`, `get_milvus_client`, `get_async_milvus_client`, `get_ollama_client`, `get_nats_client`는 `request.app.state`의 고정된 속성명에서 객체를 읽어 반환하는 함수형 `Depends` dependency다
 - `Get*Dependency` class와 `get_* = Get*Dependency()` 형태의 전역 인스턴스는 공개 API로 제공하지 않는다
 - 서비스 개발자는 `Depends(get_db_engine)` 형태로만 사용하며 state 속성명을 알 필요가 없다
 
-> **fallback 정책**: `app.state`에 해당 속성이 없으면 (`AttributeError`) `EnvConfig`를 읽어 생성하는 폴백을 두어 lifespan 없이도 동작하도록 한다. `auth_provider`, `db_engine`, `minio_client`, `milvus_client`, `ollama_client`, `nats_client`는 생성 후 `app.state`에 저장하여 재사용한다.
+> **fallback 정책**: `app.state`에 해당 속성이 없으면 (`AttributeError`) `EnvConfig`를 읽어 생성하는 폴백을 두어 lifespan 없이도 동작하도록 한다. `auth_provider`, `db_engine`, `minio_client`, `milvus_client`, `async_milvus_client`, `ollama_client`, `nats_client`는 생성 후 `app.state`에 저장하여 재사용한다.
 
 ---
 
@@ -148,6 +151,7 @@ fastapi_core/
 │   ├── config.py        # get_config, get_settings
 │   ├── database.py      # get_db_engine, get_db_session, set_db_engine
 │   ├── auth.py          # get_current_user, require_permissions, set_auth_provider, get_auth_provider
+│   ├── async_milvus.py  # set_async_milvus_client, get_async_milvus_client
 │   ├── milvus.py        # set_milvus_client, get_milvus_client
 │   ├── ollama.py        # set_ollama_client, get_ollama_client
 │   ├── storage.py       # set_minio_client, get_minio_client

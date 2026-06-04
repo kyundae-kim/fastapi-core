@@ -32,6 +32,8 @@ uv run pytest test_fastapi_core/core/test_security.py -v
 test_fastapi_core/
 ├── core/
 │   ├── test_config.py                  # EnvConfig, DatabaseConfig, MinIOConfig 단위 테스트
+│   ├── test_async_milvus.py            # core.async milvus mock 단위 테스트
+│   ├── test_async_milvus_integration.py # async Milvus 연동 통합 테스트
 │   ├── test_milvus.py                  # core.milvus mock 단위 테스트
 │   ├── test_milvus_integration.py      # Milvus 연동 통합 테스트
 │   ├── test_ollama.py                  # core.ollama mock 단위 테스트
@@ -44,6 +46,8 @@ test_fastapi_core/
 │   ├── test_config.py                  # get_config, get_settings Depends 단위 테스트
 │   ├── test_database.py                # get_db_engine Depends mock 단위 테스트
 │   ├── test_database_integration.py    # PostgreSQL 연동 통합 테스트
+│   ├── test_async_milvus.py            # get_async_milvus_client Depends mock 단위 테스트
+│   ├── test_async_milvus_integration.py # async Milvus 연동 통합 테스트
 │   ├── test_messaging.py               # get_nats_client Depends mock 단위 테스트
 │   ├── test_messaging_integration.py   # NATS 연동 통합 테스트
 │   ├── test_milvus.py                  # get_milvus_client Depends mock 단위 테스트
@@ -77,11 +81,13 @@ uv run pytest -q
 | `core/test_config.py` | `DatabaseConfig.sqlalchemy_database_url` 조합 로직, `trust`/`password` 인증 방식, `DB__URL` 직접 지정 케이스, DB pool 기본값 및 MinIO presigned 만료 기본값 검증 |
 | `core/test_security.py` | `extract_roles`, `extract_scopes` 순수 함수 및 `KeycloakAuthProvider` 메서드 전체 mock 테스트 (`core.auth`) |
 | `core/test_milvus.py` | `create_milvus_client`, `check_milvus_connection`, `list_collection_names`, `ensure_collection_exists` mock 테스트 |
+| `core/test_async_milvus.py` | `create_async_milvus_client`, `check_async_milvus_connection`, `list_async_collection_names`, `ensure_async_collection_exists` mock 테스트 |
 | `core/test_ollama.py` | `create_ollama_client`, `check_ollama_connection`, `list_model_names`, `generate_text` mock 테스트 |
 | `core/test_storage.py` | `create_minio_client`, `ensure_bucket_exists`, `list_buckets`, presigned GET/PUT URL 생성 mock 테스트 |
 | `dependencies/test_config.py` | `get_config`, `get_settings` Depends 반환값 검증 (`settings.health.*` 기본값 포함) |
 | `dependencies/test_database.py` | `create_db_engine`·`check_database_connection` mock 테스트, `get_db_engine`/`get_db_session` Depends mock 테스트, `run_in_transaction` commit/rollback 검증 — `app.state.db_engine` 우선 반환 및 fallback 동작 포함 |
 | `dependencies/test_milvus.py` | `create_milvus_client`·`get_milvus_client`·`set_milvus_client` mock 테스트 — `app.state.milvus_client` 우선 반환 및 fallback 동작 검증 포함 |
+| `dependencies/test_async_milvus.py` | `create_async_milvus_client`·`get_async_milvus_client`·`set_async_milvus_client` mock 테스트 — `app.state.async_milvus_client` 우선 반환 및 fallback 동작 검증 포함 |
 | `dependencies/test_ollama.py` | `create_ollama_client`·`get_ollama_client`·`set_ollama_client` mock 테스트 — `app.state.ollama_client` 우선 반환 및 fallback 동작 검증 포함 |
 | `dependencies/test_security.py` | `set_auth_provider`·`get_auth_provider`·`get_current_user`·`require_permissions` mock 테스트 — `app.state.auth_provider` 우선 반환 및 fallback 동작 검증 포함 |
 | `dependencies/test_storage.py` | `create_minio_client`·`get_minio_client`·`set_minio_client` mock 테스트 — `app.state.minio_client` 우선 반환 및 fallback 동작 검증 포함 |
@@ -122,6 +128,7 @@ def test_get_db_engine_returns_state_engine():
 | `dependencies/test_database.py` | `app.state.db_engine` | `create_db_engine` 미호출, 동일 인스턴스 반환 |
 | `dependencies/test_storage.py` | `app.state.minio_client` | `create_minio_client` 미호출, 동일 인스턴스 반환 |
 | `dependencies/test_milvus.py` | `app.state.milvus_client` | `create_milvus_client` 미호출, 동일 인스턴스 반환 |
+| `dependencies/test_async_milvus.py` | `app.state.async_milvus_client` | `create_async_milvus_client` 미호출, 동일 인스턴스 반환 |
 | `dependencies/test_ollama.py` | `app.state.ollama_client` | `create_ollama_client` 미호출, 동일 인스턴스 반환 |
 
 ### 2. fallback 동작 (state 미설정 path)
@@ -158,10 +165,12 @@ uv run pytest -q -m integration
 | --- | --- |
 | `core/test_security_integration.py` | 실제 Keycloak 토큰 발급, RS256 서명 검증, 클레임 추출 검증 |
 | `core/test_milvus_integration.py` | 실제 Milvus 클라이언트 생성, 연결 확인, 컬렉션 목록 조회, 컬렉션 생성/정리 검증 |
+| `core/test_async_milvus_integration.py` | 실제 AsyncMilvusClient 생성, 연결 확인, 컬렉션 목록 조회, 컬렉션 생성/정리 검증 |
 | `core/test_ollama_integration.py` | 실제 Ollama 클라이언트 생성, 연결 확인, 모델 목록 조회 검증 |
 | `core/test_storage_integration.py` | 실제 MinIO 클라이언트 생성, 버킷 자동 생성, 버킷 목록 조회, presigned GET/PUT URL 생성 |
 | `dependencies/test_database_integration.py` | 실제 PostgreSQL 엔진 생성, 연결 확인(SELECT 1), DB 버전 조회, `get_db_session`/`run_in_transaction` 동작, state 싱글톤 검증 |
 | `dependencies/test_milvus_integration.py` | 실제 Milvus 클라이언트로 state 싱글톤 검증, config 기반 등록, Depends 경유 연결 확인 |
+| `dependencies/test_async_milvus_integration.py` | 실제 AsyncMilvusClient로 state 싱글톤 검증, config 기반 등록, Depends 경유 연결 확인 |
 | `dependencies/test_ollama_integration.py` | 실제 Ollama 클라이언트로 state 싱글톤 검증, config 기반 등록, Depends 경유 연결 확인 |
 | `dependencies/test_security_integration.py` | 실제 Keycloak 토큰으로 RS256 검증, `get_current_user`·`require_permissions` 실환경 동작 검증 |
 | `dependencies/test_storage_integration.py` | 실제 MinIO 클라이언트로 state 싱글톤 검증, config 기반 등록, Depends 경유 버킷 접근 검증 |
