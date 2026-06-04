@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from fastapi_core.core.config import MilvusConfig
 from fastapi_core.core.milvus import (
@@ -37,41 +38,45 @@ class TestCreateAsyncMilvusClient:
 
 
 class TestListAsyncCollectionNames:
-    def test_returns_collection_names(self):
+    @pytest.mark.asyncio
+    async def test_returns_collection_names(self):
         mock_client = MagicMock()
         mock_client.list_collections = AsyncMock(return_value=["docs", "images"])
 
-        result = asyncio.run(list_async_collection_names(mock_client))
+        result = await list_async_collection_names(mock_client)
 
         assert result == ["docs", "images"]
 
 
 class TestCheckAsyncMilvusConnection:
-    def test_returns_true_when_list_succeeds(self):
+    @pytest.mark.asyncio
+    async def test_returns_true_when_list_succeeds(self):
         mock_client = MagicMock()
         mock_client.list_collections = AsyncMock(return_value=[])
 
-        result = asyncio.run(check_async_milvus_connection(mock_client))
+        result = await check_async_milvus_connection(mock_client)
 
         assert result is True
         mock_client.list_collections.assert_awaited_once_with()
 
-    def test_returns_false_when_list_raises(self):
+    @pytest.mark.asyncio
+    async def test_returns_false_when_list_raises(self):
         mock_client = MagicMock()
         mock_client.list_collections = AsyncMock(side_effect=RuntimeError("connection error"))
 
-        result = asyncio.run(check_async_milvus_connection(mock_client))
+        result = await check_async_milvus_connection(mock_client)
 
         assert result is False
 
 
 class TestEnsureAsyncCollectionExists:
-    def test_creates_collection_when_missing(self):
+    @pytest.mark.asyncio
+    async def test_creates_collection_when_missing(self):
         mock_client = MagicMock()
         mock_client.has_collection = AsyncMock(return_value=False)
         mock_client.create_collection = AsyncMock()
 
-        asyncio.run(ensure_async_collection_exists(mock_client, "documents", dimension=768))
+        await ensure_async_collection_exists(mock_client, "documents", dimension=768)
 
         mock_client.has_collection.assert_awaited_once_with("documents")
         mock_client.create_collection.assert_awaited_once_with(
@@ -81,12 +86,13 @@ class TestEnsureAsyncCollectionExists:
             auto_id=False,
         )
 
-    def test_does_not_create_when_collection_exists(self):
+    @pytest.mark.asyncio
+    async def test_does_not_create_when_collection_exists(self):
         mock_client = MagicMock()
         mock_client.has_collection = AsyncMock(return_value=True)
         mock_client.create_collection = AsyncMock()
 
-        asyncio.run(ensure_async_collection_exists(mock_client, "documents", dimension=768))
+        await ensure_async_collection_exists(mock_client, "documents", dimension=768)
 
         mock_client.has_collection.assert_awaited_once_with("documents")
         mock_client.create_collection.assert_not_awaited()

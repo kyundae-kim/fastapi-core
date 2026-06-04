@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import inspect
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import Depends, FastAPI
@@ -24,10 +23,11 @@ class TestGetAsyncMilvusClient:
         assert not hasattr(async_milvus_dependencies, "GetAsyncMilvusClientDependency")
         assert inspect.iscoroutinefunction(async_milvus_dependencies.get_async_milvus_client)
 
-    def test_returns_registered_client(self):
+    @pytest.mark.asyncio
+    async def test_returns_registered_client(self):
         app = FastAPI()
         mock_client = MagicMock(spec=AsyncMilvusClient)
-        asyncio.run(set_async_milvus_client(app, mock_client))
+        await set_async_milvus_client(app, mock_client)
 
         @app.get("/client-id")
         async def client_id(client: AsyncMilvusClient = Depends(get_async_milvus_client)):
@@ -43,7 +43,8 @@ class TestGetAsyncMilvusClient:
         assert response.status_code == 200
         assert response.json()["id"] == id(mock_client)
 
-    def test_creates_and_caches_client_when_missing(self):
+    @pytest.mark.asyncio
+    async def test_creates_and_caches_client_when_missing(self):
         app = FastAPI()
         mock_client = MagicMock(spec=AsyncMilvusClient)
         mock_config = MagicMock()
@@ -68,15 +69,17 @@ class TestGetAsyncMilvusClient:
 
 
 class TestSetAsyncMilvusClient:
-    def test_sets_direct_client(self):
+    @pytest.mark.asyncio
+    async def test_sets_direct_client(self):
         app = FastAPI()
         mock_client = MagicMock(spec=AsyncMilvusClient)
 
-        asyncio.run(set_async_milvus_client(app, client=mock_client))
+        await set_async_milvus_client(app, client=mock_client)
 
         assert app.state.async_milvus_client is mock_client
 
-    def test_creates_client_from_config(self):
+    @pytest.mark.asyncio
+    async def test_creates_client_from_config(self):
         app = FastAPI()
         mock_client = MagicMock(spec=AsyncMilvusClient)
         mock_config = MagicMock()
@@ -86,13 +89,14 @@ class TestSetAsyncMilvusClient:
             "fastapi_core.dependencies.async_milvus.create_async_milvus_client",
             return_value=mock_client,
         ) as mock_create:
-            asyncio.run(set_async_milvus_client(app, config=mock_config))
+            await set_async_milvus_client(app, config=mock_config)
 
         mock_create.assert_called_once_with(mock_config.milvus)
         assert app.state.async_milvus_client is mock_client
 
-    def test_raises_when_client_and_config_missing(self):
+    @pytest.mark.asyncio
+    async def test_raises_when_client_and_config_missing(self):
         app = FastAPI()
 
         with pytest.raises(ValueError, match="Either client or config must be provided"):
-            asyncio.run(set_async_milvus_client(app))
+            await set_async_milvus_client(app)

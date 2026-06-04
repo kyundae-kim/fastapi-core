@@ -25,7 +25,7 @@ exclude = ["test_fastapi_core*"]
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.3",
+    "pytest-asyncio>=1.4.0",
 ]
 
 [tool.fastapi]
