@@ -81,8 +81,8 @@
 | --- | --- | --- | --- |
 | `MILVUS__URI` | `str` | `http://milvus:19530` | Milvus 엔드포인트 |
 | `MILVUS__DB_NAME` | `str` | `""` | 기본 데이터베이스 이름 |
-| `MILVUS__TOKEN` | `str \| None` | `None` | 인증 토큰 (`username:password` 형식 등) |
-| `MILVUS__TIMEOUT` | `float` | `10.0` | Milvus 요청 타임아웃 (초) |
+| `MILVUS__TOKEN` | `str` | `""` | 인증 토큰 (`username:password` 형식 등), 비워두면 미사용 |
+| `MILVUS__TIMEOUT` | `float \| None` | `None` | Milvus 요청 타임아웃 (초), 비워두면 클라이언트 기본값 사용 |
 
 ### Ollama
 
@@ -154,6 +154,7 @@ auth:
 
 | 환경 | 파일 경로 |
 | --- | --- |
+| 예제 | `.env.example` |
 | 개발 | `.devcontainer/.env` |
 | 배포 | `.release/.env` |
 

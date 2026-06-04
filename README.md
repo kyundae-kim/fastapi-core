@@ -136,6 +136,7 @@ def admin_only(user: UserInfo = Depends(require_permissions("admin"))):
 - 예: `cors.origins`, `cors.credentials`, `auth.verify_jwt`, `auth.allow_insecure_jwt_decode`, `auth.use_introspection`
 
 자세한 키/기본값/예시는 `docs/config.md`를 참고하세요.
+빠르게 시작하려면 루트의 `.env.example`을 `.env`로 복사해 사용하세요.
 
 ## 테스트
 
