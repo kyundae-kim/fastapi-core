@@ -2,7 +2,7 @@
 // README at: https://github.com/devcontainers/templates/tree/main/src/postgres
 {
 	"name": "fastapi core devcontainer",
-	"dockerComposeFile": ["docker-compose.yml", "docker-compose.db.yml", "docker-compose.keycloak.yml", "docker-compose.mq.yml", "docker-compose.ollama.yml"],
+	"dockerComposeFile": ["docker-compose.yml", "docker-compose.db.yml", "docker-compose.keycloak.yml", "docker-compose.mq.yml", "docker-compose.ollama.yml", "docker-compose.milvus.yml"],
 	"service": "app",
 	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
 	"features": {
