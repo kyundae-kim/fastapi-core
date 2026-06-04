@@ -75,6 +75,14 @@
 | `MINIO__BUCKET` | `str` | `default` | 기본 버킷 이름 |
 | `MINIO__PRESIGNED_EXPIRES_SEC` | `int` | `900` | Presigned URL 기본 만료 (초) |
 
+### Ollama
+
+| 변수명 | 타입 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `OLLAMA__HOST` | `str` | `http://ollama:11434` | Ollama HTTP API 엔드포인트 |
+| `OLLAMA__MODEL` | `str` | `llama3.2` | 기본 생성 모델 이름 |
+| `OLLAMA__TIMEOUT` | `float` | `60.0` | Ollama HTTP 요청 타임아웃 (초) |
+
 ### NATS
 
 | 변수명 | 타입 | 기본값 | 설명 |
@@ -183,6 +191,11 @@ MINIO__SECRET_KEY=password
 MINIO__SECURE=false
 MINIO__BUCKET=default
 MINIO__PRESIGNED_EXPIRES_SEC=900
+
+# Ollama
+OLLAMA__HOST=http://ollama:11434
+OLLAMA__MODEL=llama3.2
+OLLAMA__TIMEOUT=60.0
 
 # NATS
 NATS__SERVERS=nats://nats:4222

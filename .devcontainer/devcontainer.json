@@ -2,7 +2,7 @@
 // README at: https://github.com/devcontainers/templates/tree/main/src/postgres
 {
 	"name": "fastapi core devcontainer",
-	"dockerComposeFile": ["docker-compose.yml", "docker-compose.db.yml", "docker-compose.keycloak.yml", "docker-compose.mq.yml"],
+	"dockerComposeFile": ["docker-compose.yml", "docker-compose.db.yml", "docker-compose.keycloak.yml", "docker-compose.mq.yml", "docker-compose.ollama.yml"],
 	"service": "app",
 	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
 	"features": {
@@ -18,20 +18,16 @@
 			]
 		}
 	},
-	
-	"mounts": [
-		"source=${localEnv:HOME}/hermes,target=/home/vscode/.hermes,type=bind"
-		],
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// This can be used to network with other containers or the host.
-	"forwardPorts": [5432, 8000, 8080]
+	"forwardPorts": [5432, 8000, 8080],
 
 	// Use 'postCreateCommand' to run commands after the container is created.
-	// "postCreateCommand": "pip install --user -r requirements.txt",
+	"postCreateCommand": "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup"
 
 	// Configure tool-specific properties.
 	// "customizations": {},

@@ -68,6 +68,12 @@ class MinIOConfig(BaseModel):
     presigned_expires_sec: int = 900
 
 
+class OllamaConfig(BaseModel):
+    host: str = "http://ollama:11434"
+    model: str = "llama3.2"
+    timeout: float = 60.0
+
+
 class NatsConfig(BaseModel):
     servers: str = "nats://nats:4222"
     name: str = "fastapi-core"
@@ -130,6 +136,7 @@ class EnvConfig(BaseSettings):
     keycloak: KeycloakConfig = Field(default_factory=KeycloakConfig)
     db: DatabaseConfig = Field(default_factory=DatabaseConfig)
     minio: MinIOConfig = Field(default_factory=MinIOConfig)
+    ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     nats: NatsConfig = Field(default_factory=NatsConfig)
 
     keycloak_username: str = "test"

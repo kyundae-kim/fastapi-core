@@ -3,11 +3,18 @@ from fastapi_core.core.config import (
     EnvConfig,
     KeycloakConfig,
     MinIOConfig,
+    OllamaConfig,
     ServiceSettings,
 )
 from fastapi_core.core.exceptions import AuthError
 from fastapi_core.core.auth import KeycloakAuthProvider, extract_roles, extract_scopes
 from fastapi_core.core.database import run_in_transaction
+from fastapi_core.core.ollama import (
+    check_ollama_connection,
+    create_ollama_client,
+    generate_text,
+    list_model_names,
+)
 from fastapi_core.core.storage import (
     generate_presigned_get_url,
     generate_presigned_put_url,
@@ -25,13 +32,18 @@ __all__ = [
     "KeycloakAuthProvider",
     "KeycloakConfig",
     "MinIOConfig",
+    "OllamaConfig",
     "ServiceSettings",
     "TokenResponse",
     "UserInfo",
+    "check_ollama_connection",
+    "create_ollama_client",
     "create_app",
     "extract_roles",
     "extract_scopes",
+    "generate_text",
     "generate_presigned_get_url",
     "generate_presigned_put_url",
+    "list_model_names",
     "run_in_transaction",
 ]

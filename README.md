@@ -1,7 +1,7 @@
 # fastapi-core
 
 DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사용하는 Python SDK입니다.
-인증/인가(Keycloak), 데이터베이스(PostgreSQL), 오브젝트 스토리지(MinIO), 설정/의존성/앱 조립을 표준화해 서비스 개발 시 중복 구현을 줄이는 것이 목적입니다.
+인증/인가(Keycloak), 데이터베이스(PostgreSQL), 오브젝트 스토리지(MinIO), 로컬 LLM(Ollama), 설정/의존성/앱 조립을 표준화해 서비스 개발 시 중복 구현을 줄이는 것이 목적입니다.
 
 ## 무엇을 제공하나요?
 
@@ -19,6 +19,10 @@ DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사
   - 버킷 존재 보장(없으면 생성)
   - 연결 확인 유틸리티
   - Presigned URL 생성 유틸리티
+- Ollama 연동
+  - Ollama 클라이언트 생성
+  - 모델 목록 조회 / 연결 확인 유틸리티
+  - 프롬프트 기반 텍스트 생성 헬퍼
 - NATS 메시징
   - `nats-py` 기반 비동기 클라이언트 연결/종료
   - Subject 기반 Publish/Subscribe 헬퍼
@@ -32,7 +36,7 @@ DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사
   - 로깅/CORS/예외 핸들러/헬스체크 라우터 기본 구성
   - readiness에 Keycloak·PostgreSQL·MinIO 종합 점검
 - FastAPI state 기반 싱글톤 패턴
-  - `app.state.auth_provider`, `app.state.db_engine`, `app.state.minio_client`, `app.state.nats_client` 사용
+  - `app.state.auth_provider`, `app.state.db_engine`, `app.state.minio_client`, `app.state.ollama_client`, `app.state.nats_client` 사용
   - `set_*`/함수형 `get_*` dependency 제공
   - `Get*Dependency` class와 `get_* = Get*Dependency()` 전역 인스턴스는 사용하지 않음
 
@@ -67,6 +71,7 @@ from fastapi_core.core.config import EnvConfig
 from fastapi_core.dependencies.auth import set_auth_provider
 from fastapi_core.dependencies.database import set_db_engine
 from fastapi_core.dependencies.storage import set_minio_client
+from fastapi_core.dependencies.ollama import set_ollama_client
 from fastapi_core.dependencies.messaging import set_nats_client
 
 config = EnvConfig()
@@ -76,6 +81,7 @@ async def lifespan(app: FastAPI):
     set_auth_provider(app, config=config)
     set_db_engine(app, config=config)
     set_minio_client(app, config=config)
+    set_ollama_client(app, config=config)
     await set_nats_client(app, config=config)
     yield
     app.state.db_engine.dispose()
@@ -115,7 +121,7 @@ def admin_only(user: UserInfo = Depends(require_permissions("admin"))):
 
 1) 환경 변수 (`EnvConfig`)
 - 외부 서비스 접속 정보, 실행 환경, 로깅 레벨
-- 예: `ENV`, `CONFIG_PATH`, `LOGGING__LEVEL`, `KEYCLOAK__*`, `DB__*`, `MINIO__*`, `NATS__*`
+- 예: `ENV`, `CONFIG_PATH`, `LOGGING__LEVEL`, `KEYCLOAK__*`, `DB__*`, `MINIO__*`, `OLLAMA__*`, `NATS__*`
 
 2) 서비스 설정 YAML (`ServiceSettings`)
 - 앱 동작 정책

@@ -7,7 +7,7 @@
 
 ## FastAPI 의존성 export 정책
 
-- `get_config`, `get_settings`, `get_auth_provider`, `get_current_user`, `get_db_engine`, `get_db_session`, `get_minio_client`, `get_nats_client`는 모두 **함수형 dependency**로 export한다.
+- `get_config`, `get_settings`, `get_auth_provider`, `get_current_user`, `get_db_engine`, `get_db_session`, `get_minio_client`, `get_ollama_client`, `get_nats_client`는 모두 **함수형 dependency**로 export한다.
 - `Get*Dependency` callable class와 `get_* = Get*Dependency()` 형태의 전역 인스턴스는 사용하지 않는다.
 - 중복 dependency alias인 `config_schema`, `settings_schema`, `auth_provider_schema`, `current_user_schema`는 제공하지 않는다.
 - 라우터와 테스트에서는 항상 `Depends(get_*)` 형태로 직접 참조한다.
@@ -337,6 +337,72 @@ def get_minio_client(
 
 ---
 
+## Ollama
+
+### `create_ollama_client` — `fastapi_core.core.ollama`
+
+```python
+def create_ollama_client(config: OllamaConfig) -> ollama.Client:
+```
+
+- `config.host`와 `config.timeout`으로 Ollama HTTP 클라이언트를 생성한다.
+
+### `check_ollama_connection` — `fastapi_core.core.ollama`
+
+```python
+def check_ollama_connection(client: ollama.Client) -> bool:
+```
+
+- `client.list()` 호출 성공 시 `True`, 예외 발생 시 `False`
+
+### `list_model_names` — `fastapi_core.core.ollama`
+
+```python
+def list_model_names(client: ollama.Client) -> list[str]:
+```
+
+- `client.list()` 응답에서 모델 이름 목록을 추출한다.
+- 응답이 dict 또는 Ollama SDK 응답 객체여도 동작한다.
+
+### `generate_text` — `fastapi_core.core.ollama`
+
+```python
+def generate_text(client: ollama.Client, *, model: str, prompt: str) -> str:
+```
+
+- `client.generate(model=model, prompt=prompt)` 호출
+- 응답의 `response` 필드를 문자열로 반환
+- `response` 필드가 없으면 `ValueError`
+
+### `set_ollama_client` — `fastapi_core.dependencies.ollama`
+
+```python
+def set_ollama_client(
+    app: FastAPI,
+    client: ollama.Client | None = None,
+    *,
+    config: EnvConfig | None = None,
+) -> None:
+```
+
+- `client` 직접 전달 → `app.state.ollama_client`에 할당
+- `config` 전달 → `create_ollama_client(config.ollama)` 내부 호출 후 할당
+- 둘 다 `None` → `ValueError`
+
+### `get_ollama_client` — `fastapi_core.dependencies.ollama`
+
+```python
+def get_ollama_client(
+    request: Request,
+    config: EnvConfig | DependsParam = Depends(get_config),
+) -> ollama.Client:
+```
+
+- `app.state.ollama_client` 존재 시 반환 (싱글톤)
+- `AttributeError` 시 `create_ollama_client(config.ollama)` 호출 후 `app.state.ollama_client`에 저장 (fallback lazy singleton)
+
+---
+
 ## 메시징 (NATS)
 
 ### `create_nats_client` — `fastapi_core.core.messaging`
@@ -522,6 +588,7 @@ class AuthError(Exception):
 | `app.state.auth_provider` | `KeycloakAuthProvider` | `set_auth_provider` | `get_auth_provider` |
 | `app.state.db_engine` | `Engine` | `set_db_engine` | `get_db_engine` |
 | `app.state.minio_client` | `Minio` | `set_minio_client` | `get_minio_client` |
+| `app.state.ollama_client` | `ollama.Client` | `set_ollama_client` | `get_ollama_client` |
 | `app.state.nats_client` | `nats.aio.client.Client` | `set_nats_client` | `get_nats_client` |
 
 속성명은 SDK 내부에 하드코딩되어 있으며 사용자가 변경할 수 없다.
@@ -538,6 +605,7 @@ from fastapi_core.core.config import EnvConfig
 from fastapi_core.dependencies.auth import set_auth_provider
 from fastapi_core.dependencies.database import set_db_engine
 from fastapi_core.dependencies.storage import set_minio_client
+from fastapi_core.dependencies.ollama import set_ollama_client
 from fastapi_core.dependencies.messaging import set_nats_client
 
 config = EnvConfig()
@@ -547,6 +615,7 @@ async def lifespan(app: FastAPI):
     set_auth_provider(app, config=config)
     set_db_engine(app, config=config)
     set_minio_client(app, config=config)
+    set_ollama_client(app, config=config)
     await set_nats_client(app, config=config)
     yield
     app.state.db_engine.dispose()
