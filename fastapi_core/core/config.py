@@ -81,6 +81,16 @@ class MilvusConfig(BaseModel):
     timeout: float | None = None
 
 
+class LangfuseConfig(BaseModel):
+    host: str = "http://langfuse-web:3000"
+    public_key: str | None = None
+    secret_key: str | None = None
+    timeout: int = 5
+    tracing_enabled: bool = True
+    environment: str | None = None
+    release: str | None = None
+
+
 class NatsConfig(BaseModel):
     servers: str = "nats://nats:4222"
     name: str = "fastapi-core"
@@ -109,6 +119,7 @@ class HealthSettings(BaseModel):
     check_keycloak: bool = True
     check_database: bool = True
     check_minio: bool = True
+    check_langfuse: bool = False
 
 
 class ServiceSettings(BaseModel):
@@ -145,6 +156,7 @@ class EnvConfig(BaseSettings):
     minio: MinIOConfig = Field(default_factory=MinIOConfig)
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     milvus: MilvusConfig = Field(default_factory=MilvusConfig)
+    langfuse: LangfuseConfig = Field(default_factory=LangfuseConfig)
     nats: NatsConfig = Field(default_factory=NatsConfig)
 
     keycloak_username: str = "test"

@@ -1,4 +1,4 @@
-from fastapi_core.core.config import DatabaseConfig, EnvConfig, MinIOConfig
+from fastapi_core.core.config import DatabaseConfig, EnvConfig, LangfuseConfig, MinIOConfig
 
 
 def test_database_config_url_with_password_auth():
@@ -88,3 +88,18 @@ def test_database_pool_defaults():
 def test_minio_presigned_default_expires():
     config = MinIOConfig()
     assert config.presigned_expires_sec == 900
+
+
+def test_langfuse_config_defaults():
+    config = LangfuseConfig()
+    assert config.host == "http://langfuse-web:3000"
+    assert config.public_key is None
+    assert config.secret_key is None
+    assert config.timeout == 5
+    assert config.tracing_enabled is True
+
+
+def test_env_config_langfuse_defaults():
+    config = EnvConfig()
+    assert config.langfuse.host == "http://langfuse-web:3000"
+    assert config.langfuse.timeout == 5

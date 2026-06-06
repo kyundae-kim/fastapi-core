@@ -92,6 +92,18 @@
 | `OLLAMA__MODEL` | `str` | `llama3.2` | 기본 생성 모델 이름 |
 | `OLLAMA__TIMEOUT` | `float` | `60.0` | Ollama HTTP 요청 타임아웃 (초) |
 
+### Langfuse
+
+| 변수명 | 타입 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `LANGFUSE__HOST` | `str` | `http://langfuse-web:3000` | Langfuse 웹/API 엔드포인트 |
+| `LANGFUSE__PUBLIC_KEY` | `str \| None` | `None` | Langfuse public API key |
+| `LANGFUSE__SECRET_KEY` | `str \| None` | `None` | Langfuse secret API key |
+| `LANGFUSE__TIMEOUT` | `int` | `5` | Langfuse health/API 요청 타임아웃 (초) |
+| `LANGFUSE__TRACING_ENABLED` | `bool` | `true` | Langfuse tracing 활성화 여부 |
+| `LANGFUSE__ENVIRONMENT` | `str \| None` | `None` | Langfuse tracing environment |
+| `LANGFUSE__RELEASE` | `str \| None` | `None` | Langfuse release/version 태그 |
+
 ### NATS
 
 | 변수명 | 타입 | 기본값 | 설명 |
@@ -133,6 +145,7 @@
 | `health.check_keycloak` | `bool` | `true` | readiness에서 Keycloak 점검 여부 |
 | `health.check_database` | `bool` | `true` | readiness에서 PostgreSQL 점검 여부 |
 | `health.check_minio` | `bool` | `true` | readiness에서 MinIO 점검 여부 |
+| `health.check_langfuse` | `bool` | `false` | readiness에서 Langfuse public health endpoint 점검 여부 |
 
 ### YAML 예시
 
@@ -212,6 +225,15 @@ MILVUS__TIMEOUT=10.0
 OLLAMA__HOST=http://ollama:11434
 OLLAMA__MODEL=llama3.2
 OLLAMA__TIMEOUT=60.0
+
+# Langfuse
+LANGFUSE__HOST=http://langfuse-web:3000
+LANGFUSE__PUBLIC_KEY=
+LANGFUSE__SECRET_KEY=
+LANGFUSE__TIMEOUT=5
+LANGFUSE__TRACING_ENABLED=true
+LANGFUSE__ENVIRONMENT=
+LANGFUSE__RELEASE=
 
 # NATS
 NATS__SERVERS=nats://nats:4222

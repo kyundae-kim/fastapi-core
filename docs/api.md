@@ -11,6 +11,7 @@
 - `Get*Dependency` callable class와 `get_* = Get*Dependency()` 형태의 전역 인스턴스는 사용하지 않는다.
 - 중복 dependency alias인 `config_schema`, `settings_schema`, `auth_provider_schema`, `current_user_schema`는 제공하지 않는다.
 - 라우터와 테스트에서는 항상 `Depends(get_*)` 형태로 직접 참조한다.
+- Langfuse는 SDK 자체 싱글톤을 사용하므로 **FastAPI dependency를 export하지 않는다**. `get_langfuse_client()`를 직접 호출한다.
 
 ---
 
@@ -543,6 +544,41 @@ def get_ollama_client(
 
 ---
 
+## Langfuse
+
+### `create_langfuse_client` — `fastapi_core.core.langfuse`
+
+```python
+def create_langfuse_client(config: LangfuseConfig) -> Langfuse:
+```
+
+- `LangfuseConfig`를 사용해 Langfuse SDK 클라이언트를 생성한다.
+- `public_key`, `secret_key`, `host`, `timeout`, `tracing_enabled`, `environment`, `release`를 SDK 생성자에 전달한다.
+- FastAPI dependency를 만들지 않고 애플리케이션 코드에서 직접 호출한다.
+
+### `get_langfuse_client` — `fastapi_core.core.langfuse`
+
+```python
+def get_langfuse_client(config: LangfuseConfig | None = None) -> Langfuse:
+```
+
+- `config`가 주어지면 먼저 `create_langfuse_client(config)`로 SDK 내부 싱글톤을 초기화한다.
+- `config.public_key`가 있으면 `langfuse.get_client(public_key=...)`로 해당 프로젝트 싱글톤을 반환한다.
+- `config`가 없으면 `langfuse.get_client()`를 그대로 반환한다.
+- 별도의 `dependencies/langfuse.py`는 제공하지 않는다.
+
+### `check_langfuse_connection` — `fastapi_core.core.langfuse`
+
+```python
+def check_langfuse_connection(config: LangfuseConfig) -> bool:
+```
+
+- `GET {config.host}/api/public/health` 호출
+- HTTP 200이면서 JSON `status == "OK"`이면 `True`
+- HTTP 오류, JSON 파싱 오류, 상태값 불일치 시 `False`
+
+---
+
 ## 메시징 (NATS)
 
 ### `create_nats_client` — `fastapi_core.core.messaging`
@@ -660,15 +696,16 @@ def create_app(
 
 ### `GET /health/readiness`
 
-Keycloak + PostgreSQL + MinIO 준비 상태를 종합 확인한다.
+Keycloak + PostgreSQL + MinIO 준비 상태를 종합 확인한다. `settings.health.check_langfuse`가 `true`이면 Langfuse public health endpoint도 함께 확인한다.
 
 | 조건 | 응답 |
 |---|---|
-| Keycloak + DB + MinIO 모두 정상 | `200 { "status": "ok" }` |
+| Keycloak + DB + MinIO (+ 선택적 Langfuse) 모두 정상 | `200 { "status": "ok" }` |
 | Keycloak 비정상 응답 | `503 { "detail": "Keycloak not ready" }` |
 | Keycloak 연결 불가 (`RequestError`) | `503 { "detail": "Keycloak unreachable: ..." }` |
 | DB 연결 실패 | `503 { "detail": "Database not ready" }` |
 | MinIO 연결 실패 | `503 { "detail": "MinIO not ready" }` |
+| Langfuse health check 실패 | `503 { "detail": "Langfuse not ready" }` |
 
 ### `POST /token`
 

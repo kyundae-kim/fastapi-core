@@ -3,7 +3,7 @@
 ## 개요
 
 `fastapi-core`는 DocMesh 프로젝트의 FastAPI 기반 마이크로서비스들이 공통으로 사용하는 Python SDK 패키지입니다.  
-Keycloak 기반 인증/인가, PostgreSQL 연동, MinIO 연동, Milvus 연동, Ollama 연동에 필요한 핵심 모듈을 제공하며, `uv` 패키지 매니저 환경에서 동작합니다.
+Keycloak 기반 인증/인가, PostgreSQL 연동, MinIO 연동, Milvus 연동, Ollama 연동, Langfuse 연동에 필요한 핵심 모듈을 제공하며, `uv` 패키지 매니저 환경에서 동작합니다.
 
 ---
 
@@ -22,7 +22,7 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 | 사용자 | 설명 |
 | --- | --- |
 | DocMesh 서비스 개발자 | `fastapi-core`를 의존성으로 추가하여 FastAPI 서비스를 개발하는 내부 팀 |
-| 인프라/DevOps 엔지니어 | Keycloak·PostgreSQL·MinIO·Milvus·Ollama 설정 및 환경 변수 관리 |
+| 인프라/DevOps 엔지니어 | Keycloak·PostgreSQL·MinIO·Milvus·Ollama·Langfuse 설정 및 환경 변수 관리 |
 
 ---
 
@@ -70,7 +70,15 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 - 모델 목록 조회 및 연결 확인 유틸리티 제공
 - 프롬프트 기반 텍스트 생성 헬퍼 제공
 
-### 6. NATS 메시징
+### 6. Langfuse 연동
+
+- Langfuse Python SDK 기반 클라이언트 생성
+- SDK가 제공하는 싱글톤 패턴(`get_client`)을 감싼 조회 헬퍼 제공
+- FastAPI dependency를 만들지 않고 애플리케이션 코드에서 직접 초기화/조회
+- public health endpoint(`/api/public/health`) 기반 연결 확인 유틸리티 제공
+- readiness에서 선택적으로 Langfuse 상태 점검 지원
+
+### 7. NATS 메시징
 
 - `nats-py` 기반 비동기 클라이언트 연결/종료 지원
 - Subject 기반 Publish/Subscribe 패턴 제공
@@ -78,24 +86,24 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 - 도메인 이벤트 발행 규칙 표준화 (`<domain>.<entity>.<action>`)
 - FastAPI `app.state` 기반 NATS 클라이언트 싱글톤 관리 (`app.state.nats_client`)
 
-### 7. 설정 관리
+### 8. 설정 관리
 
 - **환경 변수 레이어** (`EnvConfig`): 외부 서비스 접속 정보, 실행 환경, 로깅 레벨 등 배포 환경에 따라 달라지는 값
 - **서비스 설정 레이어** (`ServiceSettings`, YAML): CORS, JWT 검증 정책 등 애플리케이션 동작 값
 - `dev` / `stage` / `prod` 환경 분리 및 환경별 `.env` 파일 지원
 - `__` 구분자를 통한 중첩 모델 환경 변수 주입 (예: `KEYCLOAK__REALM`)
 
-### 8. 로깅
+### 9. 로깅
 
 - 로깅 레벨 동적 설정 (`WARNING` / `INFO` / `DEBUG`)
 
-### 9. FastAPI 앱 조립 지원
+### 10. FastAPI 앱 조립 지원
 
 - 로깅·CORS·lifespan·라우터 등록을 수행하는 `create_app` 팩토리 함수 제공
 - 헬스체크 라우터(`/health/liveness`, `/health/readiness`) 내장 제공
-- `/health/readiness`는 Keycloak뿐 아니라 PostgreSQL·MinIO 의존성까지 포함한 종합 준비 상태를 확인
+- `/health/readiness`는 Keycloak뿐 아니라 PostgreSQL·MinIO·Langfuse(옵션) 의존성까지 포함한 종합 준비 상태를 확인
 
-### 10. FastAPI State 기반 싱글톤 관리
+### 11. FastAPI State 기반 싱글톤 관리
 
 외부 서비스 접근 객체는 요청마다 새로 생성하지 않고 **애플리케이션 시작 시 단 한 번 생성**하여 `app.state`에 저장하는 싱글톤 패턴을 적용한다.
 
@@ -112,6 +120,8 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 | `app.state.async_milvus_client` | `AsyncMilvusClient` | `set_async_milvus_client(app, client)` 또는 `set_async_milvus_client(app, config=config)` | `get_async_milvus_client` |
 | `app.state.ollama_client` | `ollama.Client` | `set_ollama_client(app, client)` 또는 `set_ollama_client(app, config=config)` | `get_ollama_client` |
 | `app.state.nats_client` | `nats.aio.client.Client` | `set_nats_client(app, client)` 또는 `set_nats_client(app, config=config)` | `get_nats_client` |
+
+> Langfuse는 `app.state`가 아니라 Langfuse SDK의 싱글톤(`get_langfuse_client`)을 사용한다. 따라서 `dependencies/langfuse.py`는 만들지 않는다.
 
 #### 저장 함수 (state setter)
 
@@ -145,6 +155,7 @@ fastapi_core/
 │   ├── exceptions.py    # AuthError 및 전역 예외 핸들러
 │   ├── milvus.py        # Milvus 클라이언트 생성, 컬렉션 조회/생성
 │   ├── ollama.py        # Ollama 클라이언트 생성, 모델 조회, 텍스트 생성
+│   ├── langfuse.py      # Langfuse 클라이언트 생성/싱글톤 조회, health check
 │   ├── storage.py       # MinIO 클라이언트 생성 및 버킷 관리
 │   └── messaging.py     # NATS 클라이언트 생성, pub/sub 헬퍼
 ├── dependencies/        # FastAPI Depends 모듈
@@ -210,5 +221,6 @@ fastapi_core/
 | 벡터 데이터베이스 | Milvus (pymilvus SDK) |
 | 로컬 LLM | Ollama (ollama Python SDK) |
 | 메시징 | NATS (nats-py SDK) *(신규)* |
+| 관측/트레이싱 | Langfuse (langfuse Python SDK) |
 | 테스트 | pytest |
 | 린터 | Ruff |

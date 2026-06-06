@@ -7,6 +7,7 @@ from sqlalchemy import Engine
 
 from fastapi_core.core.config import EnvConfig, ServiceSettings
 from fastapi_core.core.database import check_database_connection
+from fastapi_core.core.langfuse import check_langfuse_connection
 from fastapi_core.core.storage import check_minio_connection
 from fastapi_core.dependencies.config import get_config, get_settings
 from fastapi_core.dependencies.database import get_db_engine
@@ -58,6 +59,12 @@ async def readiness(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="MinIO not ready",
+        )
+
+    if settings.health.check_langfuse and not check_langfuse_connection(config.langfuse):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Langfuse not ready",
         )
 
     return HealthResponse(status="ok")

@@ -18,6 +18,7 @@ def client():
             check_keycloak=True,
             check_database=True,
             check_minio=True,
+            check_langfuse=False,
         )
     )
     return TestClient(app)
@@ -149,3 +150,38 @@ def test_readiness_minio_not_ready(client):
 
     assert response.status_code == 503
     assert response.json()["detail"] == "MinIO not ready"
+
+
+def test_readiness_langfuse_not_ready():
+    app = create_app(include_auth_router=False)
+    app.dependency_overrides[get_config] = lambda: EnvConfig()
+    app.dependency_overrides[get_settings] = lambda: ServiceSettings(
+        health=HealthSettings(
+            check_keycloak=True,
+            check_database=True,
+            check_minio=True,
+            check_langfuse=True,
+        )
+    )
+    client = TestClient(app)
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+
+    with (
+        patch("fastapi_core.routers.health.httpx.AsyncClient") as mock_cls,
+        patch(
+            "fastapi_core.routers.health.check_database_connection",
+            return_value=True,
+        ),
+        patch("fastapi_core.routers.health.check_minio_connection", return_value=True),
+        patch("fastapi_core.routers.health.check_langfuse_connection", return_value=False),
+    ):
+        mock_ctx = AsyncMock()
+        mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_ctx)
+        mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.get = AsyncMock(return_value=mock_response)
+
+        response = client.get("/health/readiness")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Langfuse not ready"

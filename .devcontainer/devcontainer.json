@@ -4,6 +4,9 @@
 	"name": "fastapi core devcontainer",
 	"dockerComposeFile": ["docker-compose.yml", "docker-compose.db.yml", "docker-compose.keycloak.yml", "docker-compose.mq.yml", "docker-compose.ollama.yml", "docker-compose.milvus.yml", "docker-compose.langfuse.yml"],
 	"service": "app",
+	"mounts": [
+		"source=${localWorkspaceFolder},target=/workspaces/${localWorkspaceFolderBasename},type=bind,consistency=cached"
+	],
 	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
 	"features": {
 		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
@@ -18,6 +21,7 @@
 			]
 		}
 	},
+
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
