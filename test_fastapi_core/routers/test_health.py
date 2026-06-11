@@ -185,3 +185,49 @@ def test_readiness_langfuse_not_ready():
 
     assert response.status_code == 503
     assert response.json()["detail"] == "Langfuse not ready"
+
+
+def test_readiness_skips_database_dependency_when_check_disabled():
+    app = create_app(include_auth_router=False)
+    app.dependency_overrides[get_config] = lambda: EnvConfig()
+    app.dependency_overrides[get_settings] = lambda: ServiceSettings(
+        health=HealthSettings(
+            check_keycloak=False,
+            check_database=False,
+            check_minio=False,
+            check_langfuse=False,
+        )
+    )
+    client = TestClient(app)
+
+    with patch(
+        "fastapi_core.dependencies.database.create_db_engine",
+        side_effect=AssertionError("database engine should not be created"),
+    ):
+        response = client.get("/health/readiness")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_readiness_skips_minio_dependency_when_check_disabled():
+    app = create_app(include_auth_router=False)
+    app.dependency_overrides[get_config] = lambda: EnvConfig()
+    app.dependency_overrides[get_settings] = lambda: ServiceSettings(
+        health=HealthSettings(
+            check_keycloak=False,
+            check_database=False,
+            check_minio=False,
+            check_langfuse=False,
+        )
+    )
+    client = TestClient(app)
+
+    with patch(
+        "fastapi_core.dependencies.storage.create_minio_client",
+        side_effect=AssertionError("minio client should not be created"),
+    ):
+        response = client.get("/health/readiness")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}

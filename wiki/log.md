@@ -47,3 +47,14 @@
 - Updated: `concepts/keycloak-auth-integration.md`
 - Updated: `concepts/nats-connection-builder.md`
 - Updated: `index.md`
+
+## [2026-06-11] query | docmesh-py-core refactor review
+- Filed: `queries/docmesh-py-core-refactor-review.md`
+- Sources synthesized: `raw/articles/docmesh-py-core-sdk-2026-06-11.md`, `raw/articles/docmesh-py-core-api-2026-06-11.md`, `raw/articles/docmesh-py-core-config-2026-06-11.md`
+- Updated: `index.md`
+
+## [2026-06-11] query | fastapi-core codebase review against docmesh-py-core
+- Filed: `queries/fastapi-core-codebase-review-against-docmesh-py-core.md`
+- Code reviewed: `fastapi_core/factory.py`, `fastapi_core/core/config.py`, `fastapi_core/dependencies/*.py`, `fastapi_core/core/{auth,database,storage,messaging,langfuse,milvus,ollama}.py`
+- Findings: duplicated service bootstrap/state management, request-time lazy init, no unified registry/close_all, readiness eager dependency creation
+- Updated: `index.md`

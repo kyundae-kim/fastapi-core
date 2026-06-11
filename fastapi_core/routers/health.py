@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
-from minio import Minio
-from sqlalchemy import Engine
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from fastapi_core.core.config import EnvConfig, ServiceSettings
 from fastapi_core.core.database import check_database_connection
@@ -24,10 +22,9 @@ async def liveness() -> HealthResponse:
 
 @router.get("/readiness", response_model=HealthResponse)
 async def readiness(
+    request: Request,
     config: EnvConfig = Depends(get_config),
     settings: ServiceSettings = Depends(get_settings),
-    engine: Engine = Depends(get_db_engine),
-    minio_client: Minio = Depends(get_minio_client),
 ) -> HealthResponse:
     if settings.health.check_keycloak:
         manage_url = str(config.keycloak.manage_url).rstrip("/")
@@ -47,19 +44,21 @@ async def readiness(
                 detail=f"Keycloak unreachable: {e}",
             ) from e
 
-    if settings.health.check_database and not check_database_connection(engine):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database not ready",
-        )
+    if settings.health.check_database:
+        engine = get_db_engine(request, config)
+        if not check_database_connection(engine):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database not ready",
+            )
 
-    if settings.health.check_minio and not check_minio_connection(
-        minio_client, config.minio.bucket
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="MinIO not ready",
-        )
+    if settings.health.check_minio:
+        minio_client = get_minio_client(request, config)
+        if not check_minio_connection(minio_client, config.minio.bucket):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="MinIO not ready",
+            )
 
     if settings.health.check_langfuse and not check_langfuse_connection(config.langfuse):
         raise HTTPException(

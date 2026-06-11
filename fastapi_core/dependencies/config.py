@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import Depends, FastAPI, Request
 from fastapi.params import Depends as DependsParam
 
+from fastapi_core.bootstrap import get_or_create_state_value, set_state_value
 from fastapi_core.core.config import EnvConfig, ServiceSettings
 
 _CONFIG_STATE_KEY = "config"
@@ -10,31 +11,25 @@ _SETTINGS_STATE_KEY = "settings"
 
 
 def set_config(app: FastAPI, config: EnvConfig) -> None:
-    setattr(app.state, _CONFIG_STATE_KEY, config)
+    set_state_value(app, _CONFIG_STATE_KEY, config)
 
 
 def set_settings(app: FastAPI, settings: ServiceSettings) -> None:
-    setattr(app.state, _SETTINGS_STATE_KEY, settings)
+    set_state_value(app, _SETTINGS_STATE_KEY, settings)
 
 
 def get_config(request: Request) -> EnvConfig:
-    try:
-        return getattr(request.app.state, _CONFIG_STATE_KEY)
-    except AttributeError:
-        config = EnvConfig()
-        set_config(request.app, config)
-        return config
+    return get_or_create_state_value(request.app, _CONFIG_STATE_KEY, EnvConfig)
 
 
 def get_settings(
     request: Request,
     config: EnvConfig | DependsParam = Depends(get_config),
 ) -> ServiceSettings:
-    try:
-        return getattr(request.app.state, _SETTINGS_STATE_KEY)
-    except AttributeError:
-        if isinstance(config, DependsParam):
-            config = get_config(request)
-        settings = ServiceSettings.from_yaml(config.config_path)
-        set_settings(request.app, settings)
-        return settings
+    def factory() -> ServiceSettings:
+        resolved_config = config
+        if isinstance(resolved_config, DependsParam):
+            resolved_config = get_config(request)
+        return ServiceSettings.from_yaml(resolved_config.config_path)
+
+    return get_or_create_state_value(request.app, _SETTINGS_STATE_KEY, factory)

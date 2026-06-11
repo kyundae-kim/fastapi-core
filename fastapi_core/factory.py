@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from fastapi_core.bootstrap import set_state_value
 from fastapi_core.core.config import EnvConfig, ServiceSettings
 from fastapi_core.core.exceptions import AuthError, auth_error_handler
 from fastapi_core.core.logging import setup_logging
-from fastapi_core.dependencies.config import set_config, set_settings
+from fastapi_core.dependencies.config import _CONFIG_STATE_KEY, _SETTINGS_STATE_KEY
 from fastapi_core.routers import auth, health
 
 
@@ -27,8 +27,8 @@ def create_app(
     setup_logging(config.logging.level)
 
     app = FastAPI(root_path=config.root_path, lifespan=lifespan)
-    set_config(app, config)
-    set_settings(app, settings)
+    set_state_value(app, _CONFIG_STATE_KEY, config)
+    set_state_value(app, _SETTINGS_STATE_KEY, settings)
 
     app.add_middleware(
         CORSMiddleware,
