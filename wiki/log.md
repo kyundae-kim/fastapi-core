@@ -19,3 +19,17 @@
 - Created: `concepts/sdk-health-check-patterns.md`
 - Created: `concepts/keycloak-auth-integration.md`
 - Updated: `index.md`
+
+## [2026-06-11] ingest | docmesh-py-core API 가이드
+- Source captured: `raw/articles/docmesh-py-core-api-2026-06-11.md`
+- Created: `concepts/load-settings-and-settings-model.md`
+- Created: `concepts/service-client-wrapper.md`
+- Created: `concepts/nats-connection-builder.md`
+- Created: `concepts/check-all-services.md`
+- Created: `concepts/keycloak-provisioner.md`
+- Created: `concepts/mask-sensitive-value.md`
+- Updated: `entities/docmesh-py-core.md`
+- Updated: `concepts/service-factory-registry.md`
+- Updated: `concepts/keycloak-auth-integration.md`
+- Updated: `concepts/sdk-health-check-patterns.md`
+- Updated: `index.md`
