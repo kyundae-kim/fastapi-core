@@ -57,4 +57,6 @@
 - Filed: `queries/fastapi-core-codebase-review-against-docmesh-py-core.md`
 - Code reviewed: `fastapi_core/factory.py`, `fastapi_core/core/config.py`, `fastapi_core/dependencies/*.py`, `fastapi_core/core/{auth,database,storage,messaging,langfuse,milvus,ollama}.py`
 - Findings: duplicated service bootstrap/state management, request-time lazy init, no unified registry/close_all, readiness eager dependency creation
+- Follow-up implementation: `fastapi_core/bootstrap.py` added, readiness eager DB/MinIO acquisition removed, dependency state helpers collapsed across config/auth/database/storage/ollama/milvus/async_milvus/messaging
+- Verification: `uv run pytest -q -m 'not integration'` -> `164 passed, 44 deselected`; full integration-inclusive suite still blocked by Langfuse hostname resolution
 - Updated: `index.md`

@@ -51,3 +51,16 @@ README 의 lifespan 예시는 직접 `dispose()`, `close()`, `drain()` 을 호�
 
 ## Review Verdict
 현재 구조는 "FastAPI adapter" 라기보다 "서비스 통합 SDK를 한 번 더 구현한 패키지" 에 가깝다. 따라서 리팩터링의 핵심은 새 기능 추가보다 **docmesh-py-core 와 fastapi-core 의 역할을 다시 분리하는 것** 이다. 가장 바람직한 방향은 `fastapi-core` 를 `docmesh-py-core` 위의 얇은 FastAPI composition layer 로 재정의하는 것이다.
+
+## Refactor Progress Update
+### Implemented slice 1 — readiness conditional resource acquisition
+`routers/health.py` 의 readiness 경로는 이제 `check_database` 와 `check_minio` 플래그가 `True` 일 때만 각각 `get_db_engine()` 과 `get_minio_client()` 를 호출한다. 즉 disabled health check 가 더 이상 엔진/클라이언트 생성을 유발하지 않는다. 이는 [[check-all-services]] 와 [[optional-observability-services]] 가 요구하는 optional service semantics 에 더 가까운 구조다.
+
+### Implemented slice 2 — duplicated app.state helpers partially collapsed
+새 `fastapi_core/bootstrap.py` 에 `set_state_value()`, `get_state_value()`, `get_or_create_state_value()`, `set_state_value_async()`, `get_or_create_state_value_async()` helper 를 도입했고, `dependencies/config.py`, `database.py`, `storage.py`, `ollama.py`, `milvus.py`, `async_milvus.py`, `messaging.py`, `auth.py`, 그리고 `factory.py` 일부가 이 helper 를 사용하도록 바뀌었다. 이는 [[service-factory-registry]] 로 수렴하기 전 단계로서, 반복되는 state key / fallback / cache 로직을 공통화한 것이다.
+
+### Verified impact
+비통합 테스트 기준으로 `uv run pytest -q -m 'not integration'` 가 `164 passed, 44 deselected` 로 통과했다. 또한 bootstrap helper 전용 테스트와 각 dependency 모듈 테스트가 통과하여 동기/비동기 state caching 경로가 유지됨을 확인했다. 통합 테스트 전체는 환경 문제로 Langfuse host name resolution 이 실패해 1건이 남아 있었지만, 이는 이번 리팩터링 슬라이스의 코드 경로와는 별개였다.
+
+### Next recommended slice
+다음 단계는 startup/shutdown 을 명시하는 `initialize_app_services()` / `shutdown_app_services()` 계층을 도입해 request-time lazy init 의 비중을 더 낮추는 것이다. 그 이후 `docmesh-py-core` 의 settings/registry/health abstraction 과 직접 매핑 가능한 부분을 교체하는 편이 안전하다.

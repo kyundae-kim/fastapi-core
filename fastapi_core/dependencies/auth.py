@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.params import Depends as DependsParam
 from fastapi.security import OAuth2PasswordBearer
 
+from fastapi_core.bootstrap import get_or_create_state_value, set_state_value
 from fastapi_core.core.auth import KeycloakAuthProvider
 from fastapi_core.core.config import EnvConfig, ServiceSettings
 from fastapi_core.dependencies.config import get_config, get_settings
@@ -32,26 +33,25 @@ def set_auth_provider(
             client_id=config.keycloak.client_id,
             client_secret=config.keycloak.client_secret,
         )
-    setattr(app.state, _AUTH_PROVIDER_STATE_KEY, provider)
+    set_state_value(app, _AUTH_PROVIDER_STATE_KEY, provider)
 
 
 def get_auth_provider(
     request: Request,
     config: EnvConfig | DependsParam = Depends(get_config),
 ) -> KeycloakAuthProvider:
-    try:
-        return getattr(request.app.state, _AUTH_PROVIDER_STATE_KEY)
-    except AttributeError:
-        if isinstance(config, DependsParam):
-            config = get_config(request)
-        provider = KeycloakAuthProvider(
-            http_url=str(config.keycloak.http_url),
-            realm=config.keycloak.realm,
-            client_id=config.keycloak.client_id,
-            client_secret=config.keycloak.client_secret,
+    def factory() -> KeycloakAuthProvider:
+        resolved_config = config
+        if isinstance(resolved_config, DependsParam):
+            resolved_config = get_config(request)
+        return KeycloakAuthProvider(
+            http_url=str(resolved_config.keycloak.http_url),
+            realm=resolved_config.keycloak.realm,
+            client_id=resolved_config.keycloak.client_id,
+            client_secret=resolved_config.keycloak.client_secret,
         )
-        set_auth_provider(request.app, provider)
-        return provider
+
+    return get_or_create_state_value(request.app, _AUTH_PROVIDER_STATE_KEY, factory)
 
 
 def get_current_user(

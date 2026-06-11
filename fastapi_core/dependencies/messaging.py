@@ -4,6 +4,7 @@ import nats.aio.client
 from fastapi import Depends, FastAPI, Request
 from fastapi.params import Depends as DependsParam
 
+from fastapi_core.bootstrap import get_or_create_state_value_async, set_state_value_async
 from fastapi_core.core.config import EnvConfig
 from fastapi_core.core.messaging import create_nats_client
 from fastapi_core.dependencies.config import get_config
@@ -27,7 +28,7 @@ async def set_nats_client(
         if config is None:
             raise ValueError("Either client or config must be provided")
         client = await create_nats_client(config.nats)
-    setattr(app.state, _NATS_CLIENT_STATE_KEY, client)
+    await set_state_value_async(app, _NATS_CLIENT_STATE_KEY, client)
 
 
 async def get_nats_client(
@@ -35,11 +36,13 @@ async def get_nats_client(
     config: EnvConfig | DependsParam = Depends(get_config),
 ) -> nats.aio.client.Client:
     """app.state.nats_client를 반환한다. 미등록 시 생성 후 state에 등록한다."""
-    try:
-        return getattr(request.app.state, _NATS_CLIENT_STATE_KEY)
-    except AttributeError:
-        if isinstance(config, DependsParam):
-            config = get_config(request)
-        client = await create_nats_client(config.nats)
-        await set_nats_client(request.app, client)
-        return client
+
+    async def factory() -> nats.aio.client.Client:
+        resolved_config = config
+        if isinstance(resolved_config, DependsParam):
+            resolved_config = get_config(request)
+        return await create_nats_client(resolved_config.nats)
+
+    return await get_or_create_state_value_async(
+        request.app, _NATS_CLIENT_STATE_KEY, factory
+    )

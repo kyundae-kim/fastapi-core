@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.params import Depends as DependsParam
 from minio import Minio
 
+from fastapi_core.bootstrap import get_or_create_state_value, set_state_value
 from fastapi_core.core.config import EnvConfig
 from fastapi_core.core.storage import create_minio_client
 from fastapi_core.dependencies.config import get_config
@@ -21,18 +22,17 @@ def set_minio_client(
         if config is None:
             raise ValueError("Either client or config must be provided")
         client = create_minio_client(config.minio)
-    setattr(app.state, _MINIO_CLIENT_STATE_KEY, client)
+    set_state_value(app, _MINIO_CLIENT_STATE_KEY, client)
 
 
 def get_minio_client(
     request: Request,
     config: EnvConfig | DependsParam = Depends(get_config),
 ) -> Minio:
-    try:
-        return getattr(request.app.state, _MINIO_CLIENT_STATE_KEY)
-    except AttributeError:
-        if isinstance(config, DependsParam):
-            config = get_config(request)
-        client = create_minio_client(config.minio)
-        set_minio_client(request.app, client)
-        return client
+    def factory() -> Minio:
+        resolved_config = config
+        if isinstance(resolved_config, DependsParam):
+            resolved_config = get_config(request)
+        return create_minio_client(resolved_config.minio)
+
+    return get_or_create_state_value(request.app, _MINIO_CLIENT_STATE_KEY, factory)
