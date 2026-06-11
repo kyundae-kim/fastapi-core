@@ -33,3 +33,17 @@
 - Updated: `concepts/keycloak-auth-integration.md`
 - Updated: `concepts/sdk-health-check-patterns.md`
 - Updated: `index.md`
+
+## [2026-06-11] ingest | docmesh-py-core 설정 가이드
+- Source captured: `raw/articles/docmesh-py-core-config-2026-06-11.md`
+- Created: `concepts/configuration-principles.md`
+- Created: `concepts/keycloak-configuration-rules.md`
+- Created: `concepts/database-configuration-patterns.md`
+- Created: `concepts/optional-observability-services.md`
+- Created: `concepts/nats-configuration-and-auth-modes.md`
+- Updated: `concepts/load-settings-and-settings-model.md`
+- Updated: `concepts/mask-sensitive-value.md`
+- Updated: `concepts/environment-driven-service-selection.md`
+- Updated: `concepts/keycloak-auth-integration.md`
+- Updated: `concepts/nats-connection-builder.md`
+- Updated: `index.md`
