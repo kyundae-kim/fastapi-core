@@ -1,92 +1,100 @@
 # Wiki Schema
 
 ## Domain
-소프트웨어 개발 지식 베이스 — 프레임워크, 아키텍처 패턴, 설계 원칙, 도구, 언어, 라이브러리 등을 다룬다.
-FastAPI, Python, DevOps, 시스템 설계, 분산 시스템, 클라우드 등 실용적 개발 지식 중심.
+FastAPI 기반의 재사용 가능한 SDK 프로젝트 지식베이스. 다양한 저장소(storage/repository), LLM 연동, 외부 서비스 커넥터, Keycloak 기반 인증/인가를 중심으로 아키텍처, 설계 결정, 구현 패턴, 비교 분석, 운영 지식을 정리한다.
 
 ## Conventions
-- 파일명: 소문자, 하이픈, 공백 없음 (예: `clean-architecture.md`)
-- 모든 위키 페이지는 YAML frontmatter로 시작
-- `[[wikilinks]]` 로 페이지 간 연결 (페이지당 최소 아웃바운드 링크 2개)
-- 페이지 수정 시 `updated` 날짜 업데이트 필수
-- 새 페이지는 `index.md` 의 올바른 섹션에 추가
-- 모든 작업은 `log.md` 에 추가 (append-only)
-- 3개 이상의 소스를 합성하는 페이지에는 단락 끝에 `^[raw/articles/source.md]` 출처 마커 사용
+- 파일명: 소문자, 하이픈 사용, 공백 없음 (예: `keycloak-token-flow.md`)
+- 모든 위키 페이지는 YAML frontmatter로 시작한다.
+- 페이지 간 연결은 `[[wikilinks]]` 를 사용한다. 모든 신규 페이지는 최소 2개의 outbound link를 포함한다.
+- 페이지를 수정할 때마다 `updated` 날짜를 반드시 갱신한다.
+- 새로운 위키 페이지는 반드시 `index.md` 의 올바른 섹션에 추가한다.
+- 모든 작업은 `log.md` 에 append 한다.
+- 3개 이상의 출처를 종합하는 문단에는 문단 끝에 `^[raw/articles/source-file.md]` 형태의 provenance marker를 추가한다.
+- 원문(raw) 영역은 immutable 이다. 정정 사항은 위키 페이지에서만 다룬다.
+- 하나의 페이지가 200줄을 넘으면 하위 주제로 분리한다.
 
 ## Frontmatter
 ```yaml
 ---
-title: 페이지 제목
+title: Page Title
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 type: entity | concept | comparison | query | summary
-tags: [태그 목록]
+tags: [from taxonomy below]
 sources: [raw/articles/source-name.md]
 confidence: high | medium | low
-contested: true   # 해결되지 않은 모순이 있을 때
+contested: true
 contradictions: [other-page-slug]
 ---
 ```
 
+- `confidence`, `contested`, `contradictions` 는 필요 시에만 사용한다.
+- 단일 출처 기반이거나 빠르게 변하는 내용은 `confidence: medium` 또는 `low` 를 우선 고려한다.
+
+## raw/ Frontmatter
+```yaml
+---
+source_url: https://example.com/article
+ingested: YYYY-MM-DD
+sha256: <hex digest of the raw content below the frontmatter>
+---
+```
+
 ## Tag Taxonomy
+아래 taxonomy 에 없는 태그는 먼저 이 문서에 추가한 뒤 사용한다.
 
-### 언어/런타임
-- `python` `javascript` `typescript` `go` `rust` `java` `kotlin`
-
-### 프레임워크/라이브러리
-- `fastapi` `django` `flask` `react` `nextjs` `express`
-- `sqlalchemy` `pydantic` `celery` `redis`
-
-### 아키텍처/패턴
-- `architecture` `design-pattern` `microservices` `monolith`
-- `clean-architecture` `ddd` `cqrs` `event-sourcing`
-- `rest` `graphql` `grpc` `websocket`
-
-### 인프라/DevOps
-- `docker` `kubernetes` `ci-cd` `cloud` `aws` `gcp` `azure`
-- `database` `postgresql` `mongodb` `elasticsearch`
-- `monitoring` `observability` `logging`
-
-### 개념/원칙
-- `performance` `security` `scalability` `reliability`
-- `testing` `tdd` `bdd` `solid` `dry` `kiss`
-- `concurrency` `async` `distributed-systems`
-
-### 메타
-- `comparison` `timeline` `best-practice` `pitfall` `tutorial`
-- `tool` `person` `company` `open-source`
+- Core: sdk, fastapi, architecture, api, integration, auth
+- Security: keycloak, oauth2, oidc, rbac, token, session
+- AI/LLM: llm, prompt, embedding, reranking, inference, evaluation
+- Data/Storage: repository, database, vector-db, cache, object-storage, queue
+- Delivery/Ops: testing, observability, deployment, performance, config, migration
+- Meta: comparison, query, decision, risk, roadmap, convention
 
 ## Page Thresholds
-- **페이지 생성:** 2개 이상 소스에서 등장하거나 하나의 소스에서 핵심적 역할
-- **기존 페이지에 추가:** 소스가 이미 다루는 항목을 언급할 때
-- **페이지 생성 금지:** 단순 언급, 사소한 세부사항, 도메인 외 항목
-- **페이지 분리:** ~200줄 초과 시 하위 토픽으로 분리 후 상호 링크
-- **페이지 보관:** 내용이 완전히 대체됐을 때 `_archive/` 로 이동
+- 2개 이상의 출처에서 반복 등장하거나, 하나의 출처에서 중심 주제인 경우 새 페이지를 만든다.
+- 이미 있는 주제면 새 페이지를 만들지 말고 기존 페이지를 확장한다.
+- 스쳐 지나가는 언급, 범위 밖 세부사항, 구현과 무관한 주변 정보는 페이지를 만들지 않는다.
+- 페이지가 과도하게 커지면 하위 주제로 분리하고 상호 링크를 건다.
+- 완전히 대체된 내용은 `_archive/` 로 이동하고 인덱스에서 제거한다.
 
 ## Entity Pages
-한 페이지 = 하나의 주목할 만한 엔티티 (프레임워크, 라이브러리, 회사, 인물 등)
+주요 엔티티(예: Keycloak, Milvus, OpenSearch, 특정 SDK 모듈, 외부 서비스)에 대해 작성한다.
+포함 항목:
 - 개요 / 무엇인지
-- 핵심 사실과 날짜
-- 다른 엔티티와의 관계 ([[wikilinks]])
-- 소스 참조
+- 핵심 역할과 책임
+- 인터페이스 또는 연결 방식
+- 관련 엔티티와의 관계 (`[[wikilinks]]`)
+- 출처
 
 ## Concept Pages
-한 페이지 = 하나의 개념 또는 주제 (패턴, 원칙, 기법 등)
-- 정의/설명
-- 현재 지식 상태
-- 열린 질문 또는 논쟁
-- 관련 개념 ([[wikilinks]])
+핵심 개념(예: 인증 플로우, repository abstraction, LLM provider adapter, tenant isolation, retry policy)에 대해 작성한다.
+포함 항목:
+- 정의 / 설명
+- 설계 패턴 또는 권장 방식
+- 알려진 trade-off
+- 열린 질문 / 미해결 이슈
+- 관련 개념 (`[[wikilinks]]`)
 
 ## Comparison Pages
-나란히 비교 분석. 포함 내용:
-- 무엇을 비교하는지, 이유
-- 비교 차원 (테이블 형식 권장)
-- 결론 또는 종합
-- 소스
+대안 비교(예: provider adapter 설계, vector store 선택, sync vs async client, auth 전략 비교)를 다룬다.
+포함 항목:
+- 비교 대상과 목적
+- 비교 축 (표 권장)
+- 결론 또는 추천
+- 출처
 
 ## Update Policy
-새 정보가 기존 내용과 충돌할 때:
-1. 날짜 확인 — 최신 소스가 일반적으로 우선
-2. 진짜 모순이면 두 입장 모두 날짜와 소스와 함께 기록
-3. frontmatter에 모순 표시: `contradictions: [page-name]`
-4. 린트 보고서에서 사용자 검토 요청
+새로운 정보가 기존 내용과 충돌할 때:
+1. 날짜를 확인하고 일반적으로 더 최신 출처를 우선한다.
+2. 실제로 상충하면 두 입장을 모두 날짜와 함께 기록한다.
+3. frontmatter 에 `contradictions:` 를 추가한다.
+4. 필요 시 `contested: true` 로 표시하고 lint 결과에 포함한다.
+
+## Recommended Initial Sections
+초기에는 아래 주제를 우선 채운다.
+- 인증/인가: Keycloak, token lifecycle, service-to-service auth
+- LLM 연동: provider abstraction, prompt/runtime config, fallback/retry
+- 저장소 연동: relational DB, vector DB, cache, object storage
+- SDK 구조: package layout, client API, settings/config, error handling
+- 운영: observability, testing strategy, migration/compatibility

@@ -1,11 +1,21 @@
 # Wiki Log
 
-> 모든 위키 작업의 시간순 기록. Append-only.
-> 형식: `## [YYYY-MM-DD] action | subject`
+> Chronological record of all wiki actions. Append-only.
+> Format: `## [YYYY-MM-DD] action | subject`
 > Actions: ingest, update, query, lint, create, archive, delete
-> 이 파일이 500개 항목을 초과하면 log-YYYY.md 로 교체 후 새로 시작.
+> When this file exceeds 500 entries, rotate: rename to log-YYYY.md, start fresh.
 
-## [2026-06-01] create | Wiki initialized
-- Domain: 소프트웨어 개발 (프레임워크, 아키텍처, 패턴, 도구, 원칙)
-- Structure created: SCHEMA.md, index.md, log.md
-- Directories: raw/{articles,papers,transcripts,assets}, entities/, concepts/, comparisons/, queries/
+## [2026-06-11] create | Wiki initialized
+- Domain: FastAPI 기반 재사용 SDK 프로젝트 지식베이스
+- Scope: 다양한 저장소 연동, LLM 연동, Keycloak 기반 인증/인가
+- Structure created with SCHEMA.md, index.md, log.md
+- Directories created: raw/articles, raw/papers, raw/transcripts, raw/assets, entities, concepts, comparisons, queries
+
+## [2026-06-11] ingest | docmesh-py-core SDK 사용 가이드
+- Source captured: `raw/articles/docmesh-py-core-sdk-2026-06-11.md`
+- Created: `entities/docmesh-py-core.md`
+- Created: `concepts/service-factory-registry.md`
+- Created: `concepts/environment-driven-service-selection.md`
+- Created: `concepts/sdk-health-check-patterns.md`
+- Created: `concepts/keycloak-auth-integration.md`
+- Updated: `index.md`
