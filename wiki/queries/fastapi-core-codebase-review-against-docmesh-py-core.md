@@ -64,3 +64,9 @@ README 의 lifespan 예시는 직접 `dispose()`, `close()`, `drain()` 을 호�
 
 ### Next recommended slice
 다음 단계는 startup/shutdown 을 명시하는 `initialize_app_services()` / `shutdown_app_services()` 계층을 도입해 request-time lazy init 의 비중을 더 낮추는 것이다. 그 이후 `docmesh-py-core` 의 settings/registry/health abstraction 과 직접 매핑 가능한 부분을 교체하는 편이 안전하다.
+
+### Implemented slice 3 — managed lifecycle bootstrap
+이제 `fastapi_core/lifecycle.py` 가 `initialize_app_services()`, `shutdown_app_services()`, `create_managed_lifespan()` 을 제공한다. 기본 `create_app()` 호출은 custom lifespan 이 주어지지 않으면 이 managed lifespan 을 사용하며, startup 에서 auth/database/minio/milvus/ollama/langfuse 초기화를 수행하고 shutdown 에서 등록된 `db_engine.dispose()`, `milvus_client.close()`, `async_milvus_client.close()`, `nats_client.drain()` 을 순서대로 정리한다. NATS 는 기본적으로 startup 연결을 강제하지 않도록 `init_nats=False` 로 두어 기존 환경 의존성을 과도하게 키우지 않았다.
+
+### Verified impact after lifecycle wiring
+`uv run pytest test_fastapi_core/test_lifecycle.py -q` 와 `uv run pytest test_fastapi_core/test_factory.py -q` 가 모두 통과했고, 이어서 `uv run pytest -q -m 'not integration'` 가 `169 passed, 44 deselected` 로 통과했다. 즉 기본 app factory 가 managed lifespan 을 사용하도록 바뀐 뒤에도 비통합 회귀는 관찰되지 않았다.

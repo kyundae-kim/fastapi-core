@@ -10,6 +10,7 @@ from fastapi_core.core.config import EnvConfig, ServiceSettings
 from fastapi_core.core.exceptions import AuthError, auth_error_handler
 from fastapi_core.core.logging import setup_logging
 from fastapi_core.dependencies.config import _CONFIG_STATE_KEY, _SETTINGS_STATE_KEY
+from fastapi_core.lifecycle import create_managed_lifespan
 from fastapi_core.routers import auth, health
 
 
@@ -23,6 +24,8 @@ def create_app(
         config = EnvConfig()
     if settings is None:
         settings = ServiceSettings.from_yaml(config.config_path)
+    if lifespan is None:
+        lifespan = create_managed_lifespan(config)
 
     setup_logging(config.logging.level)
 
