@@ -59,5 +59,6 @@
 - Findings: duplicated service bootstrap/state management, request-time lazy init, no unified registry/close_all, readiness eager dependency creation
 - Follow-up implementation: `fastapi_core/bootstrap.py` added, readiness eager DB/MinIO acquisition removed, dependency state helpers collapsed across config/auth/database/storage/ollama/milvus/async_milvus/messaging
 - Follow-up implementation: `fastapi_core/lifecycle.py` added, managed app lifespan introduced, default `create_app()` wired to startup/shutdown bootstrap helpers, shutdown now disposes/drains registered resources
-- Verification: `uv run pytest -q -m 'not integration'` -> `169 passed, 44 deselected`; full integration-inclusive suite still blocked by Langfuse hostname resolution
+- Follow-up implementation: `LifecycleSettings` added, startup eager-init defaults now derive from health policy, `fastapi_core/docmesh_bridge.py` added for optional docmesh `load_settings` / `ServiceFactoryRegistry` / `check_all_services` integration, readiness can route through docmesh-style aggregated checks
+- Verification: `uv run pytest -q -m 'not integration'` -> `175 passed, 44 deselected`; full integration-inclusive suite still blocked by Langfuse hostname resolution and docmesh package is not installed in the current venv
 - Updated: `index.md`

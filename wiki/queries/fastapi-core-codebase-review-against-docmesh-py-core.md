@@ -70,3 +70,14 @@ README 의 lifespan 예시는 직접 `dispose()`, `close()`, `drain()` 을 호�
 
 ### Verified impact after lifecycle wiring
 `uv run pytest test_fastapi_core/test_lifecycle.py -q` 와 `uv run pytest test_fastapi_core/test_factory.py -q` 가 모두 통과했고, 이어서 `uv run pytest -q -m 'not integration'` 가 `169 passed, 44 deselected` 로 통과했다. 즉 기본 app factory 가 managed lifespan 을 사용하도록 바뀐 뒤에도 비통합 회귀는 관찰되지 않았다.
+
+### Implemented slice 4 — settings-driven lifecycle policy and docmesh bridge
+`fastapi_core/core/config.py` 에 `LifecycleSettings` 를 추가해 startup eager-init 정책을 `ServiceSettings.lifecycle` 로 제어할 수 있게 만들었다. `initialize_app_services()` 는 이제 `resolve_lifecycle_policy()` 를 통해 `health.check_keycloak`, `health.check_database`, `health.check_minio`, `health.check_langfuse` 값을 기본 eager-init 정책으로 사용하며, 필요하면 lifecycle 쪽 explicit flag 로 override 할 수 있다. 이로써 health 정책과 startup 정책이 완전히 분리되지 않고, 적어도 기본값 수준에서는 서로 정렬된다.
+
+또한 `fastapi_core/docmesh_bridge.py` 를 추가해 `docmesh-py-core` 가 설치된 환경에서는 `load_settings()` -> `ServiceFactoryRegistry(settings)` -> `close_all()` 흐름을 직접 연결할 수 있는 최소 통합 seam 을 만들었다. 현재 실행 환경에는 `docmesh_py_core` 모듈이 설치되어 있지 않아 bridge 는 optional no-op/fallback 경로로 동작하지만, `ServiceSettings.lifecycle.use_docmesh_registry` 와 `use_docmesh_healthchecks` 플래그를 통해 future direct integration 지점을 코드 차원에서 확보했다. 이는 [[load-settings-and-settings-model]], [[service-factory-registry]], [[check-all-services]] 개념을 현재 코드에 대응시키는 첫 단계다. ^[raw/articles/docmesh-py-core-sdk-2026-06-11.md] ^[raw/articles/docmesh-py-core-api-2026-06-11.md]
+
+### Implemented slice 5 — readiness health aggregation bridge
+`routers/health.py` 는 이제 native readiness check callable 들을 먼저 구성한 뒤, `use_docmesh_healthchecks=True` 이면 `run_docmesh_healthchecks()` 를 통해 docmesh의 `check_all_services()` 스타일 집계 경로를 우선 시도한다. bridge 가 실제로 사용 가능하고 집계 결과가 성공이면 native per-service branch 를 건너뛰고, 그렇지 않으면 기존 native readiness 로 안전하게 fallback 한다. 즉 현재 환경에서는 회귀 없이 동작하고, docmesh가 설치된 배포 환경에서는 더 직접적인 health abstraction 재사용이 가능하다.
+
+### Verified impact after policy/docmesh slices
+`uv run pytest test_fastapi_core/test_docmesh_bridge.py -q` 가 `3 passed` 로 통과했고, 관련 회귀 묶음 `uv run pytest test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/test_lifecycle.py test_fastapi_core/test_factory.py test_fastapi_core/routers/test_health.py test_fastapi_core/dependencies/test_config.py test_fastapi_core/test_bootstrap.py -q` 가 `33 passed` 로 통과했다. 전체 비통합 스위트도 `uv run pytest -q -m 'not integration'` 기준 `175 passed, 44 deselected` 로 통과했다.

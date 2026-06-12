@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import anyio
 from fastapi import FastAPI
 
-from fastapi_core.core.config import EnvConfig
+from fastapi_core.core.config import EnvConfig, HealthSettings, LifecycleSettings, ServiceSettings
 from fastapi_core.lifecycle import (
     create_managed_lifespan,
     initialize_app_services,
@@ -34,8 +34,54 @@ def test_initialize_app_services_initializes_selected_services():
     mock_set_minio_client.assert_called_once_with(app, config=config)
     mock_set_milvus_client.assert_called_once_with(app, config=config)
     mock_set_ollama_client.assert_called_once_with(app, config=config)
-    mock_get_langfuse_client.assert_called_once_with(config.langfuse)
+    mock_get_langfuse_client.assert_not_called()
     mock_set_nats_client.assert_awaited_once_with(app, config=config)
+
+
+def test_initialize_app_services_derives_policy_from_settings_health_flags():
+    app = FastAPI()
+    config = EnvConfig()
+    settings = ServiceSettings(
+        health=HealthSettings(
+            check_keycloak=False,
+            check_database=False,
+            check_minio=False,
+            check_langfuse=True,
+        )
+    )
+
+    with (
+        patch("fastapi_core.lifecycle.set_auth_provider") as mock_set_auth_provider,
+        patch("fastapi_core.lifecycle.set_db_engine") as mock_set_db_engine,
+        patch("fastapi_core.lifecycle.set_minio_client") as mock_set_minio_client,
+        patch("fastapi_core.lifecycle.set_milvus_client") as mock_set_milvus_client,
+        patch("fastapi_core.lifecycle.set_ollama_client") as mock_set_ollama_client,
+        patch("fastapi_core.lifecycle.get_langfuse_client") as mock_get_langfuse_client,
+    ):
+        anyio.run(lambda: initialize_app_services(app, config, settings=settings))
+
+    mock_set_auth_provider.assert_not_called()
+    mock_set_db_engine.assert_not_called()
+    mock_set_minio_client.assert_not_called()
+    mock_set_milvus_client.assert_called_once_with(app, config=config)
+    mock_set_ollama_client.assert_called_once_with(app, config=config)
+    mock_get_langfuse_client.assert_called_once_with(config.langfuse)
+
+
+def test_initialize_app_services_can_enable_docmesh_registry_from_settings():
+    app = FastAPI()
+    config = EnvConfig()
+    settings = ServiceSettings(
+        lifecycle=LifecycleSettings(use_docmesh_registry=True),
+    )
+
+    with patch(
+        "fastapi_core.lifecycle.initialize_docmesh_registry",
+        new=AsyncMock(),
+    ) as mock_initialize_docmesh_registry:
+        anyio.run(lambda: initialize_app_services(app, config, settings=settings))
+
+    mock_initialize_docmesh_registry.assert_awaited_once_with(app, config)
 
 
 def test_shutdown_app_services_closes_registered_resources():
@@ -44,9 +90,11 @@ def test_shutdown_app_services_closes_registered_resources():
     app.state.milvus_client = MagicMock()
     app.state.nats_client = MagicMock(drain=AsyncMock())
     app.state.async_milvus_client = MagicMock(close=AsyncMock())
+    app.state.docmesh_registry = MagicMock(close_all=MagicMock())
 
     anyio.run(lambda: shutdown_app_services(app))
 
+    app.state.docmesh_registry.close_all.assert_called_once_with()
     app.state.db_engine.dispose.assert_called_once_with()
     app.state.milvus_client.close.assert_called_once_with()
     app.state.nats_client.drain.assert_awaited_once_with()
@@ -55,17 +103,18 @@ def test_shutdown_app_services_closes_registered_resources():
 
 def test_create_managed_lifespan_runs_init_and_shutdown():
     config = EnvConfig()
+    settings = ServiceSettings()
     app = FastAPI()
 
     with (
         patch("fastapi_core.lifecycle.initialize_app_services", new=AsyncMock()) as mock_init,
         patch("fastapi_core.lifecycle.shutdown_app_services", new=AsyncMock()) as mock_shutdown,
     ):
-        lifespan = create_managed_lifespan(config, init_nats=True)
+        lifespan = create_managed_lifespan(config, settings)
 
         async def run() -> None:
             async with lifespan(app):
-                mock_init.assert_awaited_once_with(app, config, init_nats=True)
+                mock_init.assert_awaited_once_with(app, config, settings)
                 mock_shutdown.assert_not_called()
 
         anyio.run(run)

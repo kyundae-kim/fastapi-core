@@ -70,7 +70,33 @@ from fastapi_core import create_app
 app = create_app()
 ```
 
-권장 패턴(lifespan에서 state 싱글톤 등록):
+권장 패턴(기본 managed lifespan 사용):
+
+```python
+from fastapi_core import create_app
+from fastapi_core.core.config import EnvConfig, HealthSettings, LifecycleSettings, ServiceSettings
+
+config = EnvConfig()
+settings = ServiceSettings(
+    health=HealthSettings(
+        check_keycloak=True,
+        check_database=True,
+        check_minio=True,
+        check_langfuse=False,
+    ),
+    lifecycle=LifecycleSettings(
+        eager_nats=False,
+        use_docmesh_registry=False,
+        use_docmesh_healthchecks=False,
+    ),
+)
+
+app = create_app(config=config, settings=settings)
+```
+
+`create_app()` 는 custom lifespan 이 주어지지 않으면 내부의 managed lifespan 을 사용합니다. 이 기본 lifecycle 은 `settings.health` 를 eager-init 기본값으로 삼아 Keycloak/DB/MinIO/Langfuse startup 정책을 정렬하고, shutdown 시 등록된 리소스를 정리합니다.
+
+고급 사용자 정의가 필요하면 여전히 custom lifespan 을 직접 넘길 수 있습니다.
 
 ```python
 from contextlib import asynccontextmanager
@@ -140,7 +166,9 @@ def admin_only(user: UserInfo = Depends(require_permissions("admin"))):
 
 2) 서비스 설정 YAML (`ServiceSettings`)
 - 앱 동작 정책
-- 예: `cors.origins`, `cors.credentials`, `auth.verify_jwt`, `auth.allow_insecure_jwt_decode`, `auth.use_introspection`
+- 예: `cors.origins`, `cors.credentials`, `auth.verify_jwt`, `auth.allow_insecure_jwt_decode`, `auth.use_introspection`, `health.check_*`, `lifecycle.eager_*`, `lifecycle.use_docmesh_*`
+
+`lifecycle` 섹션은 startup eager-init 정책과 optional docmesh bridge 사용 여부를 제어합니다. `health.check_keycloak`, `health.check_database`, `health.check_minio`, `health.check_langfuse` 값은 기본 eager-init 정책의 fallback 으로도 사용됩니다.
 
 자세한 키/기본값/예시는 `docs/config.md`를 참고하세요.
 빠르게 시작하려면 루트의 `.env.example`을 `.env`로 복사해 사용하세요.

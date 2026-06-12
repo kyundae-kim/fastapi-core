@@ -147,6 +147,23 @@
 | `health.check_minio` | `bool` | `true` | readiness에서 MinIO 점검 여부 |
 | `health.check_langfuse` | `bool` | `false` | readiness에서 Langfuse public health endpoint 점검 여부 |
 
+### `lifecycle`
+
+| 키 | 타입 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `lifecycle.eager_keycloak` | `bool \| null` | `null` | `null`이면 `health.check_keycloak` 값을 startup eager-init 기본값으로 사용 |
+| `lifecycle.eager_database` | `bool \| null` | `null` | `null`이면 `health.check_database` 값을 startup eager-init 기본값으로 사용 |
+| `lifecycle.eager_minio` | `bool \| null` | `null` | `null`이면 `health.check_minio` 값을 startup eager-init 기본값으로 사용 |
+| `lifecycle.eager_langfuse` | `bool \| null` | `null` | `null`이면 `health.check_langfuse` 값을 startup eager-init 기본값으로 사용 |
+| `lifecycle.eager_milvus` | `bool` | `true` | startup에서 Milvus client eager-init 여부 |
+| `lifecycle.eager_async_milvus` | `bool` | `false` | startup에서 AsyncMilvus client eager-init 여부 |
+| `lifecycle.eager_ollama` | `bool` | `true` | startup에서 Ollama client eager-init 여부 |
+| `lifecycle.eager_nats` | `bool` | `false` | startup에서 NATS 연결 eager-init 여부 |
+| `lifecycle.use_docmesh_registry` | `bool` | `false` | `docmesh_py_core` 가 설치된 환경에서 `load_settings()` + `ServiceFactoryRegistry` bridge 사용 여부 |
+| `lifecycle.use_docmesh_healthchecks` | `bool` | `false` | `docmesh_py_core.check_all_services()` 스타일 aggregated readiness path 사용 여부 |
+
+> `docmesh_py_core` 브리지는 현재 환경에 패키지가 설치된 경우에만 활성화됩니다. 미설치 환경에서는 안전하게 fallback 합니다.
+
 ### YAML 예시
 
 ```yaml
@@ -159,6 +176,17 @@ auth:
   verify_jwt: true
   allow_insecure_jwt_decode: false
   use_introspection: false
+
+health:
+  check_keycloak: true
+  check_database: true
+  check_minio: true
+  check_langfuse: false
+
+lifecycle:
+  eager_nats: false
+  use_docmesh_registry: false
+  use_docmesh_healthchecks: false
 ```
 
 ---

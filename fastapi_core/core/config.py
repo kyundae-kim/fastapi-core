@@ -122,10 +122,24 @@ class HealthSettings(BaseModel):
     check_langfuse: bool = False
 
 
+class LifecycleSettings(BaseModel):
+    eager_keycloak: bool | None = None
+    eager_database: bool | None = None
+    eager_minio: bool | None = None
+    eager_langfuse: bool | None = None
+    eager_milvus: bool = True
+    eager_async_milvus: bool = False
+    eager_ollama: bool = True
+    eager_nats: bool = False
+    use_docmesh_registry: bool = False
+    use_docmesh_healthchecks: bool = False
+
+
 class ServiceSettings(BaseModel):
     cors: CORSSettings = Field(default_factory=CORSSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
     health: HealthSettings = Field(default_factory=HealthSettings)
+    lifecycle: LifecycleSettings = Field(default_factory=LifecycleSettings)
 
     @classmethod
     def from_yaml(cls, path: str) -> "ServiceSettings":

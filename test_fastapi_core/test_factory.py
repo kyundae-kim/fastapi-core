@@ -36,7 +36,7 @@ def test_create_app_uses_managed_lifespan_by_default():
         with TestClient(app):
             pass
 
-    mock_create_managed_lifespan.assert_called_once_with(config)
+    mock_create_managed_lifespan.assert_called_once_with(config, settings)
     assert calls == ["startup", "shutdown"]
 
 

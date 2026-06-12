@@ -4,7 +4,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from fastapi_core.core.config import EnvConfig, HealthSettings, ServiceSettings
+from fastapi_core.core.config import EnvConfig, HealthSettings, LifecycleSettings, ServiceSettings
 from fastapi_core.dependencies.config import get_config, get_settings
 from fastapi_core.factory import create_app
 
@@ -185,6 +185,44 @@ def test_readiness_langfuse_not_ready():
 
     assert response.status_code == 503
     assert response.json()["detail"] == "Langfuse not ready"
+
+
+def test_readiness_uses_docmesh_healthchecks_when_enabled():
+    app = create_app(include_auth_router=False)
+    app.dependency_overrides[get_config] = lambda: EnvConfig()
+    app.dependency_overrides[get_settings] = lambda: ServiceSettings(
+        health=HealthSettings(
+            check_keycloak=False,
+            check_database=True,
+            check_minio=True,
+            check_langfuse=False,
+        ),
+        lifecycle=LifecycleSettings(use_docmesh_healthchecks=True),
+    )
+    client = TestClient(app)
+
+    with (
+        patch(
+            "fastapi_core.routers.health.run_docmesh_healthchecks",
+            return_value=True,
+        ) as mock_run_docmesh_healthchecks,
+        patch(
+            "fastapi_core.routers.health.check_database_connection",
+            side_effect=AssertionError("native database readiness should not run"),
+        ),
+        patch(
+            "fastapi_core.routers.health.check_minio_connection",
+            side_effect=AssertionError("native minio readiness should not run"),
+        ),
+    ):
+        response = client.get("/health/readiness")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    service_checks = mock_run_docmesh_healthchecks.call_args.args[0]
+    required_services = mock_run_docmesh_healthchecks.call_args.kwargs["required_services"]
+    assert set(service_checks) == {"database", "minio"}
+    assert required_services == {"database", "minio"}
 
 
 def test_readiness_skips_database_dependency_when_check_disabled():

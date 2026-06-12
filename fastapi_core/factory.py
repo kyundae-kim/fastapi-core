@@ -25,7 +25,7 @@ def create_app(
     if settings is None:
         settings = ServiceSettings.from_yaml(config.config_path)
     if lifespan is None:
-        lifespan = create_managed_lifespan(config)
+        lifespan = create_managed_lifespan(config, settings)
 
     setup_logging(config.logging.level)
 
