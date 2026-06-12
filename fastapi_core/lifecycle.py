@@ -56,7 +56,7 @@ def resolve_lifecycle_policy(settings: ServiceSettings) -> LifecyclePolicy:
 
 
 async def initialize_docmesh_registry(app: FastAPI, config: EnvConfig) -> None:
-    initialized = build_docmesh_registry()
+    initialized = build_docmesh_registry(config=config)
     if initialized is None:
         return
     docmesh_settings, registry = initialized

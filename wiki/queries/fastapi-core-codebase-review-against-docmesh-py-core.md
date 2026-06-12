@@ -81,3 +81,13 @@ README 의 lifespan 예시는 직접 `dispose()`, `close()`, `drain()` 을 호�
 
 ### Verified impact after policy/docmesh slices
 `uv run pytest test_fastapi_core/test_docmesh_bridge.py -q` 가 `3 passed` 로 통과했고, 관련 회귀 묶음 `uv run pytest test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/test_lifecycle.py test_fastapi_core/test_factory.py test_fastapi_core/routers/test_health.py test_fastapi_core/dependencies/test_config.py test_fastapi_core/test_bootstrap.py -q` 가 `33 passed` 로 통과했다. 전체 비통합 스위트도 `uv run pytest -q -m 'not integration'` 기준 `175 passed, 44 deselected` 로 통과했다.
+
+### Implemented slice 6 — real docmesh package activation path
+실행 환경을 `python3` 대신 `uv run python` 기준으로 확인하자 실제 가상환경에는 `docmesh-py-core` 가 설치되어 있었고, `import docmesh_py_core` 도 성공했다. 다만 설치된 실제 버전은 `0.1.1` 이며 `uv.lock` 은 git source `5643e4c1...` 에 pin 되어 있다. 즉 `pyproject.toml` 의 `docmesh-py-core>=0.1.4` 표기와 현재 lock/runtime 상태 사이에는 불일치가 있다.
+
+코드 차원에서는 `fastapi_core/docmesh_bridge.py` 가 이제 `EnvConfig` 를 `docmesh_py_core` 가 기대하는 flat env (`DOCMESH_ENV`, `KEYCLOAK_URL`, `POSTGRES_DSN`, `OLLAMA_GENERATION_MODEL`, `NATS_CONNECT_TIMEOUT_SECONDS` 등) 로 번역한다. Langfuse key 가 없으면 `LANGFUSE_ENABLED=false` 로 낮추고, Keycloak client secret 이 없으면 `KEYCLOAK_CLIENT_PUBLIC=true` 로 바꿔 current fastapi-core 기본 설정에서도 `load_settings()` 가 실제로 통과하도록 만들었다. 그 결과 `initialize_docmesh_registry(config=EnvConfig())` 가 실제 `docmesh_py_core.Settings` 와 `ServiceFactoryRegistry` 를 생성하는 live path 가 열렸다.
+
+또한 `initialize_app_services()` 는 `use_docmesh_registry=True` 일 때 patched fake 가 아니라 실제 `docmesh_py_core` registry 를 `app.state.docmesh_settings` 와 `app.state.docmesh_registry` 에 넣는 경로를 테스트로 검증했다. 이는 최소한 settings/registry seam 이 더 이상 이론적 hook 이 아니라, 현재 런타임에서 실제 import 가능한 활성 경로임을 의미한다.
+
+### Verified impact after real activation
+`uv run pytest test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/test_lifecycle.py::test_initialize_app_services_populates_real_docmesh_registry_when_enabled -q` 가 `7 passed` 로 통과했고, 이어서 관련 회귀 묶음 `uv run pytest test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/test_lifecycle.py test_fastapi_core/test_factory.py test_fastapi_core/routers/test_health.py test_fastapi_core/dependencies/test_config.py test_fastapi_core/test_bootstrap.py -q` 가 `37 passed` 로 통과했다. 전체 비통합 스위트도 `uv run pytest -q -m 'not integration'` 기준 `179 passed, 44 deselected` 로 통과했다. 실동작 확인용으로 `uv run python` 에서 `initialize_docmesh_registry(config=EnvConfig())` 실행 결과가 `Settings ServiceFactoryRegistry` 로 출력되었고, lifecycle 경유 app state 등록도 `True True` 로 확인됐다.

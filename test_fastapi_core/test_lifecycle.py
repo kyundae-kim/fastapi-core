@@ -5,8 +5,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import anyio
 from fastapi import FastAPI
+import pytest
 
 from fastapi_core.core.config import EnvConfig, HealthSettings, LifecycleSettings, ServiceSettings
+from fastapi_core.docmesh_bridge import is_docmesh_available
 from fastapi_core.lifecycle import (
     create_managed_lifespan,
     initialize_app_services,
@@ -82,6 +84,33 @@ def test_initialize_app_services_can_enable_docmesh_registry_from_settings():
         anyio.run(lambda: initialize_app_services(app, config, settings=settings))
 
     mock_initialize_docmesh_registry.assert_awaited_once_with(app, config)
+
+
+@pytest.mark.skipif(not is_docmesh_available(), reason="docmesh_py_core is not installed")
+def test_initialize_app_services_populates_real_docmesh_registry_when_enabled():
+    app = FastAPI()
+    config = EnvConfig()
+    settings = ServiceSettings(
+        health=HealthSettings(
+            check_keycloak=False,
+            check_database=False,
+            check_minio=False,
+            check_langfuse=False,
+        ),
+        lifecycle=LifecycleSettings(
+            use_docmesh_registry=True,
+            eager_milvus=False,
+            eager_ollama=False,
+            eager_nats=False,
+        ),
+    )
+
+    anyio.run(lambda: initialize_app_services(app, config, settings=settings))
+
+    from docmesh_py_core import ServiceFactoryRegistry, Settings
+
+    assert isinstance(app.state.docmesh_settings, Settings)
+    assert isinstance(app.state.docmesh_registry, ServiceFactoryRegistry)
 
 
 def test_shutdown_app_services_closes_registered_resources():
