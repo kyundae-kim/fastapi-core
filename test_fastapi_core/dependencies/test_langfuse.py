@@ -54,7 +54,7 @@ def test_get_langfuse_client_fallback_prefers_docmesh_registry():
     assert app.state.langfuse_client is mock_client
 
 
-def test_get_langfuse_client_fallback_builds_native_client():
+def test_get_langfuse_client_initializes_docmesh_registry_when_missing():
     app = FastAPI()
     mock_client = MagicMock(name="langfuse_client")
     mock_config = MagicMock()
@@ -65,13 +65,17 @@ def test_get_langfuse_client_fallback_builds_native_client():
         return {"id": id(client)}
 
     with patch(
-        "fastapi_core.dependencies.langfuse.build_langfuse_client",
+        "fastapi_core.dependencies.langfuse.get_required_docmesh_service",
         return_value=mock_client,
-    ) as mock_build:
+    ) as mock_get_required:
         client = TestClient(app)
         response = client.get("/client-id")
-        mock_build.assert_called_once_with(mock_config.langfuse)
 
+    mock_get_required.assert_called_once_with(
+        app,
+        "langfuse_client",
+        config=mock_config,
+    )
     assert response.status_code == 200
     assert response.json()["id"] == id(mock_client)
     assert app.state.langfuse_client is mock_client

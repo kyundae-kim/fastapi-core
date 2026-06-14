@@ -60,9 +60,12 @@ def resolve_lifecycle_policy(settings: ServiceSettings) -> LifecyclePolicy:
 
 
 async def initialize_docmesh_registry(app: FastAPI, config: EnvConfig) -> None:
+    if getattr(app.state, "docmesh_registry", None) is not None:
+        return
+
     initialized = build_docmesh_registry(config=config)
     if initialized is None:
-        return
+        raise RuntimeError("docmesh registry is required for supported services")
     docmesh_settings, registry = initialized
     app.state.docmesh_settings = docmesh_settings
     app.state.docmesh_registry = registry
@@ -188,29 +191,18 @@ async def initialize_app_services(
     if use_docmesh_registry is not None:
         policy.use_docmesh_registry = use_docmesh_registry
 
-    if policy.use_docmesh_registry:
+    requires_registry_services = any(
+        _is_registry_service_enabled(policy, state_key)
+        for state_key in REGISTRY_SERVICE_SPECS
+    )
+    should_initialize_registry = policy.use_docmesh_registry or requires_registry_services
+
+    if should_initialize_registry:
         await initialize_docmesh_registry(app, config)
         await _initialize_docmesh_managed_services(app, policy)
 
-    registry = _get_docmesh_registry(app)
-    use_docmesh_registry_clients = policy.use_docmesh_registry and registry is not None
-
-    if policy.init_keycloak and not use_docmesh_registry_clients:
-        set_auth_provider(app, config=config)
-    if policy.init_database and not use_docmesh_registry_clients:
-        set_db_engine(app, config=config)
-    if policy.init_minio and not use_docmesh_registry_clients:
-        set_minio_client(app, config=config)
-    if policy.init_milvus and not use_docmesh_registry_clients:
-        set_milvus_client(app, config=config)
     if policy.init_async_milvus:
         await set_async_milvus_client(app, config=config)
-    if policy.init_ollama and not use_docmesh_registry_clients:
-        set_ollama_client(app, config=config)
-    if policy.init_langfuse and not use_docmesh_registry_clients:
-        set_langfuse_client(app, config=config)
-    if policy.init_nats and not use_docmesh_registry_clients:
-        await set_nats_client(app, config=config)
 
 
 async def _call_maybe_async(method: Callable[[], Any]) -> None:

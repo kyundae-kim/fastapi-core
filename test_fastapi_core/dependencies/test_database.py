@@ -112,8 +112,8 @@ def test_get_db_engine_fallback_prefers_docmesh_registry():
     assert app.state.db_engine is mock_engine
 
 
-def test_get_db_engine_fallback():
-    """app.state에 db_engine이 없으면 생성 후 state에 등록하여 반환한다."""
+def test_get_db_engine_initializes_docmesh_registry_when_missing():
+    """app.state에 registry와 db_engine이 없으면 docmesh registry로 생성 후 state에 등록한다."""
     app = FastAPI()
     mock_engine = MagicMock(spec=Engine)
     mock_config = MagicMock()
@@ -124,11 +124,17 @@ def test_get_db_engine_fallback():
         return {"id": id(engine)}
 
     with patch(
-        "fastapi_core.dependencies.database.create_db_engine", return_value=mock_engine
-    ) as mock_create:
+        "fastapi_core.dependencies.database.get_required_docmesh_service",
+        return_value=mock_engine,
+    ) as mock_get_required:
         client = TestClient(app)
         response = client.get("/engine-id")
-        mock_create.assert_called_once_with(mock_config.db)
+
+    mock_get_required.assert_called_once_with(
+        app,
+        "db_engine",
+        config=mock_config,
+    )
     assert response.status_code == 200
     assert response.json()["id"] == id(mock_engine)
     assert app.state.db_engine is mock_engine
@@ -144,15 +150,17 @@ def test_database_dependencies_are_functions():
 
 
 def test_set_db_engine_from_config():
-    """config를 전달하면 create_db_engine을 호출하여 state에 등록한다."""
+    """config를 전달하면 docmesh registry를 통해 engine을 state에 등록한다."""
     app = FastAPI()
     mock_engine = MagicMock(spec=Engine)
     mock_config = MagicMock()
     with patch(
-        "fastapi_core.dependencies.database.create_db_engine", return_value=mock_engine
-    ) as mock_create:
+        "fastapi_core.dependencies.database.get_required_docmesh_service",
+        return_value=mock_engine,
+    ) as mock_get_required:
         set_db_engine(app, config=mock_config)
-        mock_create.assert_called_once_with(mock_config.db)
+
+    mock_get_required.assert_called_once_with(app, "db_engine", config=mock_config)
     assert app.state.db_engine is mock_engine
 
 

@@ -152,11 +152,39 @@ def get_docmesh_registry(app: FastAPI) -> Any | None:
     return getattr(app.state, "docmesh_registry", None)
 
 
+def ensure_docmesh_registry(app: FastAPI, config: EnvConfig) -> Any:
+    registry = get_docmesh_registry(app)
+    if registry is not None:
+        return registry
+
+    initialized = initialize_docmesh_registry(config=config)
+    if initialized is None:
+        raise RuntimeError("docmesh registry is required for supported services")
+
+    settings, registry = initialized
+    app.state.docmesh_settings = settings
+    app.state.docmesh_registry = registry
+    return registry
+
+
 def get_docmesh_service(app: FastAPI, service_name: str) -> Any | None:
     registry = get_docmesh_registry(app)
     if registry is None:
         return None
     return unwrap_docmesh_client(registry.create_client(service_name))
+
+
+def get_required_docmesh_service(
+    app: FastAPI,
+    state_key: str,
+    *,
+    config: EnvConfig,
+) -> Any:
+    spec = get_registry_service_spec(state_key)
+    if spec is None:
+        raise KeyError(f"Unsupported registry-managed state key: {state_key}")
+    registry = ensure_docmesh_registry(app, config)
+    return unwrap_docmesh_client(registry.create_client(spec.registry_name))
 
 
 def check_docmesh_service_connection(app: FastAPI, state_key: str) -> bool | None:
@@ -190,6 +218,25 @@ async def get_docmesh_service_async(app: FastAPI, service_name: str) -> Any | No
     connect = getattr(service, "connect", None)
     if callable(connect):
         return await connect()
+    return unwrap_docmesh_client(service)
+
+
+async def get_required_docmesh_service_async(
+    app: FastAPI,
+    state_key: str,
+    *,
+    config: EnvConfig,
+) -> Any:
+    spec = get_registry_service_spec(state_key)
+    if spec is None:
+        raise KeyError(f"Unsupported registry-managed state key: {state_key}")
+
+    registry = ensure_docmesh_registry(app, config)
+    service = registry.create_client(spec.registry_name)
+    if spec.mode == "async_builder":
+        connect = getattr(service, "connect", None)
+        if callable(connect):
+            return await connect()
     return unwrap_docmesh_client(service)
 
 

@@ -62,7 +62,7 @@ class TestGetOllamaClient:
         assert response.json()["id"] == id(mock_client)
         assert app.state.ollama_client is mock_client
 
-    def test_creates_and_caches_client_when_missing(self):
+    def test_initializes_docmesh_registry_when_missing(self):
         app = FastAPI()
         mock_client = MagicMock()
         mock_config = MagicMock()
@@ -74,12 +74,17 @@ class TestGetOllamaClient:
             return {"id": id(client)}
 
         with patch(
-            "fastapi_core.dependencies.ollama.create_ollama_client", return_value=mock_client
-        ) as mock_create:
+            "fastapi_core.dependencies.ollama.get_required_docmesh_service",
+            return_value=mock_client,
+        ) as mock_get_required:
             client = TestClient(app)
             response = client.get("/client-id")
-            mock_create.assert_called_once_with(mock_config.ollama)
 
+        mock_get_required.assert_called_once_with(
+            app,
+            "ollama_client",
+            config=mock_config,
+        )
         assert response.status_code == 200
         assert response.json()["id"] == id(mock_client)
         assert app.state.ollama_client is mock_client
@@ -101,11 +106,12 @@ class TestSetOllamaClient:
         mock_config.ollama = OllamaConfig()
 
         with patch(
-            "fastapi_core.dependencies.ollama.create_ollama_client", return_value=mock_client
-        ) as mock_create:
+            "fastapi_core.dependencies.ollama.get_required_docmesh_service",
+            return_value=mock_client,
+        ) as mock_get_required:
             set_ollama_client(app, config=mock_config)
 
-        mock_create.assert_called_once_with(mock_config.ollama)
+        mock_get_required.assert_called_once_with(app, "ollama_client", config=mock_config)
         assert app.state.ollama_client is mock_client
 
     def test_raises_when_client_and_config_missing(self):

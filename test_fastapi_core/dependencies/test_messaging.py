@@ -28,21 +28,21 @@ class TestSetNatsClient:
         anyio.run(run)
         assert app.state.nats_client is mock_client
 
-    def test_set_with_config_calls_create(self):
+    def test_set_with_config_uses_docmesh_registry(self):
         app = FastAPI()
         mock_client = MagicMock()
         config = EnvConfig()
 
         with patch(
-            "fastapi_core.dependencies.messaging.create_nats_client",
+            "fastapi_core.dependencies.messaging.get_required_docmesh_service_async",
             new=AsyncMock(return_value=mock_client),
-        ) as mock_create:
+        ) as mock_get_required:
             async def run():
                 await set_nats_client(app, config=config)
 
             anyio.run(run)
 
-        mock_create.assert_awaited_once_with(config.nats)
+        mock_get_required.assert_awaited_once_with(app, "nats_client", config=config)
         assert app.state.nats_client is mock_client
 
     def test_raises_value_error_when_both_none(self):
@@ -112,11 +112,11 @@ class TestGetNatsClient:
             return await get_nats_client(request, config=config)
 
         with patch(
-            "fastapi_core.dependencies.messaging.create_nats_client",
+            "fastapi_core.dependencies.messaging.get_required_docmesh_service_async",
             new=AsyncMock(return_value=mock_client),
-        ) as mock_create:
+        ) as mock_get_required:
             result = anyio.run(run)
 
-        mock_create.assert_awaited_once_with(config.nats)
+        mock_get_required.assert_awaited_once_with(app, "nats_client", config=config)
         assert result is mock_client
         assert app.state.nats_client is mock_client

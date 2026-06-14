@@ -16,11 +16,39 @@ from fastapi_core.lifecycle import (
 )
 
 
-def test_initialize_app_services_initializes_selected_services():
+def test_initialize_app_services_initializes_selected_services_via_docmesh_registry():
     app = FastAPI()
     config = EnvConfig()
 
+    auth_provider = MagicMock(name="auth_provider")
+    db_engine = MagicMock(name="db_engine")
+    minio_client = MagicMock(name="minio_client")
+    milvus_client = MagicMock(name="milvus_client")
+    ollama_client = MagicMock(name="ollama_client")
+    nats_client = MagicMock(name="nats_client")
+
+    class FakeNatsBuilder:
+        async def connect(self):
+            return nats_client
+
+    registry = MagicMock()
+    registry.create_client.side_effect = lambda service_name: {
+        "keycloak": MagicMock(client=auth_provider),
+        "postgres": MagicMock(client=db_engine),
+        "minio": MagicMock(client=minio_client),
+        "milvus": MagicMock(client=milvus_client),
+        "ollama": MagicMock(client=ollama_client),
+        "nats": FakeNatsBuilder(),
+    }[service_name]
+
+    async def fake_initialize_docmesh_registry(app: FastAPI, config: EnvConfig) -> None:
+        app.state.docmesh_registry = registry
+
     with (
+        patch(
+            "fastapi_core.lifecycle.initialize_docmesh_registry",
+            new=fake_initialize_docmesh_registry,
+        ),
         patch("fastapi_core.lifecycle.set_auth_provider") as mock_set_auth_provider,
         patch("fastapi_core.lifecycle.set_db_engine") as mock_set_db_engine,
         patch("fastapi_core.lifecycle.set_minio_client") as mock_set_minio_client,
@@ -29,18 +57,26 @@ def test_initialize_app_services_initializes_selected_services():
         patch("fastapi_core.lifecycle.set_langfuse_client") as mock_set_langfuse_client,
         patch("fastapi_core.lifecycle.set_nats_client", new=AsyncMock()) as mock_set_nats_client,
     ):
-        anyio.run(lambda: initialize_app_services(app, config, init_nats=True))
+        anyio.run(lambda: initialize_app_services(app, config, init_nats=True, use_docmesh_registry=False))
 
-    mock_set_auth_provider.assert_called_once_with(app, config=config)
-    mock_set_db_engine.assert_called_once_with(app, config=config)
-    mock_set_minio_client.assert_called_once_with(app, config=config)
-    mock_set_milvus_client.assert_called_once_with(app, config=config)
-    mock_set_ollama_client.assert_called_once_with(app, config=config)
+    assert registry.create_client.call_args_list == [
+        (("keycloak",),),
+        (("postgres",),),
+        (("minio",),),
+        (("milvus",),),
+        (("ollama",),),
+        (("nats",),),
+    ]
+    mock_set_auth_provider.assert_called_once_with(app, provider=auth_provider)
+    mock_set_db_engine.assert_called_once_with(app, engine=db_engine)
+    mock_set_minio_client.assert_called_once_with(app, client=minio_client)
+    mock_set_milvus_client.assert_called_once_with(app, client=milvus_client)
+    mock_set_ollama_client.assert_called_once_with(app, client=ollama_client)
     mock_set_langfuse_client.assert_not_called()
-    mock_set_nats_client.assert_awaited_once_with(app, config=config)
+    mock_set_nats_client.assert_awaited_once_with(app, client=nats_client)
 
 
-def test_initialize_app_services_derives_policy_from_settings_health_flags():
+def test_initialize_app_services_derives_policy_from_settings_health_flags_with_registry_clients():
     app = FastAPI()
     config = EnvConfig()
     settings = ServiceSettings(
@@ -52,7 +88,24 @@ def test_initialize_app_services_derives_policy_from_settings_health_flags():
         )
     )
 
+    milvus_client = MagicMock(name="milvus_client")
+    ollama_client = MagicMock(name="ollama_client")
+    langfuse_client = MagicMock(name="langfuse_client")
+    registry = MagicMock()
+    registry.create_client.side_effect = lambda service_name: {
+        "milvus": MagicMock(client=milvus_client),
+        "ollama": MagicMock(client=ollama_client),
+        "langfuse": MagicMock(client=langfuse_client),
+    }[service_name]
+
+    async def fake_initialize_docmesh_registry(app: FastAPI, config: EnvConfig) -> None:
+        app.state.docmesh_registry = registry
+
     with (
+        patch(
+            "fastapi_core.lifecycle.initialize_docmesh_registry",
+            new=fake_initialize_docmesh_registry,
+        ),
         patch("fastapi_core.lifecycle.set_auth_provider") as mock_set_auth_provider,
         patch("fastapi_core.lifecycle.set_db_engine") as mock_set_db_engine,
         patch("fastapi_core.lifecycle.set_minio_client") as mock_set_minio_client,
@@ -60,14 +113,15 @@ def test_initialize_app_services_derives_policy_from_settings_health_flags():
         patch("fastapi_core.lifecycle.set_ollama_client") as mock_set_ollama_client,
         patch("fastapi_core.lifecycle.set_langfuse_client") as mock_set_langfuse_client,
     ):
-        anyio.run(lambda: initialize_app_services(app, config, settings=settings))
+        anyio.run(lambda: initialize_app_services(app, config, settings=settings, use_docmesh_registry=False))
 
+    assert registry.create_client.call_args_list == [(("milvus",),), (("ollama",),), (("langfuse",),)]
     mock_set_auth_provider.assert_not_called()
     mock_set_db_engine.assert_not_called()
     mock_set_minio_client.assert_not_called()
-    mock_set_milvus_client.assert_called_once_with(app, config=config)
-    mock_set_ollama_client.assert_called_once_with(app, config=config)
-    mock_set_langfuse_client.assert_called_once_with(app, config=config)
+    mock_set_milvus_client.assert_called_once_with(app, client=milvus_client)
+    mock_set_ollama_client.assert_called_once_with(app, client=ollama_client)
+    mock_set_langfuse_client.assert_called_once_with(app, client=langfuse_client)
 
 
 def test_initialize_app_services_can_enable_docmesh_registry_from_settings():
