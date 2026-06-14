@@ -113,6 +113,86 @@ def test_initialize_app_services_populates_real_docmesh_registry_when_enabled():
     assert isinstance(app.state.docmesh_registry, ServiceFactoryRegistry)
 
 
+def test_initialize_app_services_uses_docmesh_registry_clients_for_supported_services():
+    app = FastAPI()
+    config = EnvConfig()
+    settings = ServiceSettings(
+        lifecycle=LifecycleSettings(use_docmesh_registry=True),
+    )
+
+    db_engine = MagicMock(name="db_engine")
+    minio_client = MagicMock(name="minio_client")
+    milvus_client = MagicMock(name="milvus_client")
+    ollama_client = MagicMock(name="ollama_client")
+    auth_provider = MagicMock(name="auth_provider")
+    nats_client = MagicMock(name="nats_client")
+
+    class FakeNatsBuilder:
+        async def connect(self):
+            return nats_client
+
+    registry = MagicMock()
+    registry.create_client.side_effect = lambda service_name: {
+        "keycloak": MagicMock(client=auth_provider),
+        "postgres": MagicMock(client=db_engine),
+        "minio": MagicMock(client=minio_client),
+        "milvus": MagicMock(client=milvus_client),
+        "ollama": MagicMock(client=ollama_client),
+        "nats": FakeNatsBuilder(),
+    }[service_name]
+
+    async def fake_initialize_docmesh_registry(app: FastAPI, config: EnvConfig) -> None:
+        app.state.docmesh_registry = registry
+
+    with (
+        patch(
+            "fastapi_core.lifecycle.initialize_docmesh_registry",
+            new=fake_initialize_docmesh_registry,
+        ),
+        patch("fastapi_core.lifecycle.set_auth_provider") as mock_set_auth_provider,
+        patch("fastapi_core.lifecycle.set_db_engine") as mock_set_db_engine,
+        patch("fastapi_core.lifecycle.set_minio_client") as mock_set_minio_client,
+        patch("fastapi_core.lifecycle.set_milvus_client") as mock_set_milvus_client,
+        patch("fastapi_core.lifecycle.set_ollama_client") as mock_set_ollama_client,
+        patch("fastapi_core.lifecycle.set_nats_client", new=AsyncMock()) as mock_set_nats_client,
+    ):
+        anyio.run(lambda: initialize_app_services(app, config, settings=settings, init_nats=True))
+
+    assert registry.create_client.call_args_list == [
+        (("keycloak",),),
+        (("postgres",),),
+        (("minio",),),
+        (("milvus",),),
+        (("ollama",),),
+        (("nats",),),
+    ]
+    mock_set_auth_provider.assert_called_once_with(app, provider=auth_provider)
+    mock_set_db_engine.assert_called_once_with(app, engine=db_engine)
+    mock_set_minio_client.assert_called_once_with(app, client=minio_client)
+    mock_set_milvus_client.assert_called_once_with(app, client=milvus_client)
+    mock_set_ollama_client.assert_called_once_with(app, client=ollama_client)
+    mock_set_nats_client.assert_awaited_once_with(app, client=nats_client)
+    assert app.state.docmesh_managed_services == {"auth_provider", "db_engine", "minio_client", "milvus_client", "ollama_client"}
+
+
+def test_shutdown_app_services_skips_duplicate_close_for_docmesh_managed_state():
+    app = FastAPI()
+    app.state.db_engine = MagicMock()
+    app.state.milvus_client = MagicMock()
+    app.state.nats_client = MagicMock(drain=AsyncMock())
+    app.state.async_milvus_client = MagicMock(close=AsyncMock())
+    app.state.docmesh_registry = MagicMock(close_all=MagicMock())
+    app.state.docmesh_managed_services = {"db_engine", "milvus_client"}
+
+    anyio.run(lambda: shutdown_app_services(app))
+
+    app.state.docmesh_registry.close_all.assert_called_once_with()
+    app.state.db_engine.dispose.assert_not_called()
+    app.state.milvus_client.close.assert_not_called()
+    app.state.nats_client.drain.assert_awaited_once_with()
+    app.state.async_milvus_client.close.assert_awaited_once_with()
+
+
 def test_shutdown_app_services_closes_registered_resources():
     app = FastAPI()
     app.state.db_engine = MagicMock()

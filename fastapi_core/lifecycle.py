@@ -64,6 +64,56 @@ async def initialize_docmesh_registry(app: FastAPI, config: EnvConfig) -> None:
     app.state.docmesh_registry = registry
 
 
+def _unwrap_docmesh_client(client: Any) -> Any:
+    wrapped_client = getattr(client, "client", None)
+    if wrapped_client is not None:
+        return wrapped_client
+    return client
+
+
+def _get_docmesh_registry(app: FastAPI) -> Any | None:
+    return getattr(app.state, "docmesh_registry", None)
+
+
+async def _initialize_docmesh_managed_services(
+    app: FastAPI,
+    policy: LifecyclePolicy,
+) -> None:
+    registry = _get_docmesh_registry(app)
+    if registry is None:
+        return
+
+    managed_services: set[str] = set()
+
+    if policy.init_keycloak:
+        provider = _unwrap_docmesh_client(registry.create_client("keycloak"))
+        set_auth_provider(app, provider=provider)
+        managed_services.add("auth_provider")
+    if policy.init_database:
+        engine = _unwrap_docmesh_client(registry.create_client("postgres"))
+        set_db_engine(app, engine=engine)
+        managed_services.add("db_engine")
+    if policy.init_minio:
+        minio_client = _unwrap_docmesh_client(registry.create_client("minio"))
+        set_minio_client(app, client=minio_client)
+        managed_services.add("minio_client")
+    if policy.init_milvus:
+        milvus_client = _unwrap_docmesh_client(registry.create_client("milvus"))
+        set_milvus_client(app, client=milvus_client)
+        managed_services.add("milvus_client")
+    if policy.init_ollama:
+        ollama_client = _unwrap_docmesh_client(registry.create_client("ollama"))
+        set_ollama_client(app, client=ollama_client)
+        managed_services.add("ollama_client")
+    if policy.init_nats:
+        nats_builder = registry.create_client("nats")
+        connect = getattr(nats_builder, "connect", None)
+        nats_client = await connect() if callable(connect) else _unwrap_docmesh_client(nats_builder)
+        await set_nats_client(app, client=nats_client)
+
+    app.state.docmesh_managed_services = managed_services
+
+
 async def initialize_app_services(
     app: FastAPI,
     config: EnvConfig,
@@ -104,21 +154,26 @@ async def initialize_app_services(
 
     if policy.use_docmesh_registry:
         await initialize_docmesh_registry(app, config)
-    if policy.init_keycloak:
+        await _initialize_docmesh_managed_services(app, policy)
+
+    registry = _get_docmesh_registry(app)
+    use_docmesh_registry_clients = policy.use_docmesh_registry and registry is not None
+
+    if policy.init_keycloak and not use_docmesh_registry_clients:
         set_auth_provider(app, config=config)
-    if policy.init_database:
+    if policy.init_database and not use_docmesh_registry_clients:
         set_db_engine(app, config=config)
-    if policy.init_minio:
+    if policy.init_minio and not use_docmesh_registry_clients:
         set_minio_client(app, config=config)
-    if policy.init_milvus:
+    if policy.init_milvus and not use_docmesh_registry_clients:
         set_milvus_client(app, config=config)
     if policy.init_async_milvus:
         await set_async_milvus_client(app, config=config)
-    if policy.init_ollama:
+    if policy.init_ollama and not use_docmesh_registry_clients:
         set_ollama_client(app, config=config)
     if policy.init_langfuse:
         get_langfuse_client(config.langfuse)
-    if policy.init_nats:
+    if policy.init_nats and not use_docmesh_registry_clients:
         await set_nats_client(app, config=config)
 
 
@@ -129,6 +184,8 @@ async def _call_maybe_async(method: Callable[[], Any]) -> None:
 
 
 async def shutdown_app_services(app: FastAPI) -> None:
+    docmesh_managed_services: set[str] = getattr(app.state, "docmesh_managed_services", set())
+
     for state_key, method_name in (
         ("docmesh_registry", "close_all"),
         ("nats_client", "drain"),
@@ -136,6 +193,8 @@ async def shutdown_app_services(app: FastAPI) -> None:
         ("milvus_client", "close"),
         ("db_engine", "dispose"),
     ):
+        if state_key in docmesh_managed_services:
+            continue
         resource = getattr(app.state, state_key, None)
         if resource is None:
             continue
