@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 import importlib
 import os
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import FastAPI
 
@@ -12,6 +13,56 @@ if TYPE_CHECKING:
 
 
 DOCMESH_MODULE_NAME = "docmesh_py_core"
+
+
+@dataclass(frozen=True, slots=True)
+class RegistryServiceSpec:
+    registry_name: str
+    state_key: str
+    mode: Literal["sync", "async_builder"]
+
+
+REGISTRY_SERVICE_SPECS: dict[str, RegistryServiceSpec] = {
+    "auth_provider": RegistryServiceSpec(
+        registry_name="keycloak",
+        state_key="auth_provider",
+        mode="sync",
+    ),
+    "db_engine": RegistryServiceSpec(
+        registry_name="postgres",
+        state_key="db_engine",
+        mode="sync",
+    ),
+    "minio_client": RegistryServiceSpec(
+        registry_name="minio",
+        state_key="minio_client",
+        mode="sync",
+    ),
+    "milvus_client": RegistryServiceSpec(
+        registry_name="milvus",
+        state_key="milvus_client",
+        mode="sync",
+    ),
+    "ollama_client": RegistryServiceSpec(
+        registry_name="ollama",
+        state_key="ollama_client",
+        mode="sync",
+    ),
+    "langfuse_client": RegistryServiceSpec(
+        registry_name="langfuse",
+        state_key="langfuse_client",
+        mode="sync",
+    ),
+    "nats_client": RegistryServiceSpec(
+        registry_name="nats",
+        state_key="nats_client",
+        mode="async_builder",
+    ),
+}
+
+
+def get_registry_service_spec(state_key: str) -> RegistryServiceSpec | None:
+    return REGISTRY_SERVICE_SPECS.get(state_key)
 
 
 def _load_docmesh_module() -> Any:

@@ -18,7 +18,11 @@ from fastapi_core.dependencies.messaging import set_nats_client
 from fastapi_core.dependencies.milvus import set_milvus_client
 from fastapi_core.dependencies.ollama import set_ollama_client
 from fastapi_core.dependencies.storage import set_minio_client
-from fastapi_core.docmesh_bridge import initialize_docmesh_registry as build_docmesh_registry
+from fastapi_core.docmesh_bridge import (
+    REGISTRY_SERVICE_SPECS,
+    get_registry_service_spec,
+    initialize_docmesh_registry as build_docmesh_registry,
+)
 
 
 @dataclass(slots=True)
@@ -76,6 +80,53 @@ def _get_docmesh_registry(app: FastAPI) -> Any | None:
     return getattr(app.state, "docmesh_registry", None)
 
 
+def _is_registry_service_enabled(policy: LifecyclePolicy, state_key: str) -> bool:
+    return {
+        "auth_provider": policy.init_keycloak,
+        "db_engine": policy.init_database,
+        "minio_client": policy.init_minio,
+        "milvus_client": policy.init_milvus,
+        "ollama_client": policy.init_ollama,
+        "langfuse_client": policy.init_langfuse,
+        "nats_client": policy.init_nats,
+    }.get(state_key, False)
+
+
+def _set_registry_managed_service(app: FastAPI, state_key: str, client: Any) -> None:
+    if state_key == "auth_provider":
+        set_auth_provider(app, provider=client)
+        return
+    if state_key == "db_engine":
+        set_db_engine(app, engine=client)
+        return
+    if state_key == "minio_client":
+        set_minio_client(app, client=client)
+        return
+    if state_key == "milvus_client":
+        set_milvus_client(app, client=client)
+        return
+    if state_key == "ollama_client":
+        set_ollama_client(app, client=client)
+        return
+    if state_key == "langfuse_client":
+        set_state_value(app, state_key, client)
+        return
+    raise KeyError(f"Unsupported registry-managed state key: {state_key}")
+
+
+async def _resolve_registry_service(registry: Any, state_key: str) -> Any:
+    spec = get_registry_service_spec(state_key)
+    if spec is None:
+        raise KeyError(f"Unsupported registry-managed state key: {state_key}")
+
+    service = registry.create_client(spec.registry_name)
+    if spec.mode == "async_builder":
+        connect = getattr(service, "connect", None)
+        if callable(connect):
+            return await connect()
+    return _unwrap_docmesh_client(service)
+
+
 async def _initialize_docmesh_managed_services(
     app: FastAPI,
     policy: LifecyclePolicy,
@@ -86,36 +137,16 @@ async def _initialize_docmesh_managed_services(
 
     managed_services: set[str] = set()
 
-    if policy.init_keycloak:
-        provider = _unwrap_docmesh_client(registry.create_client("keycloak"))
-        set_auth_provider(app, provider=provider)
-        managed_services.add("auth_provider")
-    if policy.init_database:
-        engine = _unwrap_docmesh_client(registry.create_client("postgres"))
-        set_db_engine(app, engine=engine)
-        managed_services.add("db_engine")
-    if policy.init_minio:
-        minio_client = _unwrap_docmesh_client(registry.create_client("minio"))
-        set_minio_client(app, client=minio_client)
-        managed_services.add("minio_client")
-    if policy.init_milvus:
-        milvus_client = _unwrap_docmesh_client(registry.create_client("milvus"))
-        set_milvus_client(app, client=milvus_client)
-        managed_services.add("milvus_client")
-    if policy.init_ollama:
-        ollama_client = _unwrap_docmesh_client(registry.create_client("ollama"))
-        set_ollama_client(app, client=ollama_client)
-        managed_services.add("ollama_client")
-    if policy.init_langfuse:
-        langfuse_client = _unwrap_docmesh_client(registry.create_client("langfuse"))
-        set_state_value(app, "langfuse_client", langfuse_client)
-        managed_services.add("langfuse_client")
-    if policy.init_nats:
-        nats_builder = registry.create_client("nats")
-        connect = getattr(nats_builder, "connect", None)
-        nats_client = await connect() if callable(connect) else _unwrap_docmesh_client(nats_builder)
-        await set_nats_client(app, client=nats_client)
-        managed_services.add("nats_client")
+    for state_key, spec in REGISTRY_SERVICE_SPECS.items():
+        if not _is_registry_service_enabled(policy, state_key):
+            continue
+
+        client = await _resolve_registry_service(registry, state_key)
+        if spec.mode == "async_builder":
+            await set_nats_client(app, client=client)
+        else:
+            _set_registry_managed_service(app, state_key, client)
+        managed_services.add(state_key)
 
     app.state.docmesh_managed_services = managed_services
 

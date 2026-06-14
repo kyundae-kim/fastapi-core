@@ -7,11 +7,42 @@ import pytest
 
 from fastapi_core.core.config import EnvConfig
 from fastapi_core.docmesh_bridge import (
+    REGISTRY_SERVICE_SPECS,
+    RegistryServiceSpec,
     build_docmesh_env,
+    get_registry_service_spec,
     initialize_docmesh_registry,
     is_docmesh_available,
     run_docmesh_healthchecks,
 )
+
+
+def test_registry_service_specs_cover_supported_fastapi_state_keys():
+    assert REGISTRY_SERVICE_SPECS["auth_provider"] == RegistryServiceSpec(
+        registry_name="keycloak",
+        state_key="auth_provider",
+        mode="sync",
+    )
+    assert REGISTRY_SERVICE_SPECS["db_engine"] == RegistryServiceSpec(
+        registry_name="postgres",
+        state_key="db_engine",
+        mode="sync",
+    )
+    assert REGISTRY_SERVICE_SPECS["nats_client"] == RegistryServiceSpec(
+        registry_name="nats",
+        state_key="nats_client",
+        mode="async_builder",
+    )
+    assert REGISTRY_SERVICE_SPECS["langfuse_client"] == RegistryServiceSpec(
+        registry_name="langfuse",
+        state_key="langfuse_client",
+        mode="sync",
+    )
+
+
+def test_get_registry_service_spec_returns_none_for_unsupported_async_milvus():
+    assert get_registry_service_spec("async_milvus_client") is None
+    assert "async_milvus_client" not in REGISTRY_SERVICE_SPECS
 
 
 def test_build_docmesh_env_translates_fastapi_env_config():
