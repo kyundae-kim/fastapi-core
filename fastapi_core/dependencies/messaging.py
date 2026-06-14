@@ -8,6 +8,7 @@ from fastapi_core.bootstrap import get_or_create_state_value_async, set_state_va
 from fastapi_core.core.config import EnvConfig
 from fastapi_core.core.messaging import create_nats_client
 from fastapi_core.dependencies.config import get_config
+from fastapi_core.docmesh_bridge import get_docmesh_service_async
 
 _NATS_CLIENT_STATE_KEY = "nats_client"
 
@@ -38,6 +39,9 @@ async def get_nats_client(
     """app.state.nats_client를 반환한다. 미등록 시 생성 후 state에 등록한다."""
 
     async def factory() -> nats.aio.client.Client:
+        docmesh_client = await get_docmesh_service_async(request.app, "nats")
+        if docmesh_client is not None:
+            return docmesh_client
         resolved_config = config
         if isinstance(resolved_config, DependsParam):
             resolved_config = get_config(request)

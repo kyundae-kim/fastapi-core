@@ -11,6 +11,7 @@ from fastapi_core.bootstrap import get_or_create_state_value, set_state_value
 from fastapi_core.core.config import EnvConfig
 from fastapi_core.core.database import create_db_engine
 from fastapi_core.dependencies.config import get_config
+from fastapi_core.docmesh_bridge import get_docmesh_service
 
 _DB_ENGINE_STATE_KEY = "db_engine"
 
@@ -33,6 +34,9 @@ def get_db_engine(
     config: EnvConfig | DependsParam = Depends(get_config),
 ) -> Engine:
     def factory() -> Engine:
+        docmesh_engine = get_docmesh_service(request.app, "postgres")
+        if docmesh_engine is not None:
+            return docmesh_engine
         resolved_config = config
         if isinstance(resolved_config, DependsParam):
             resolved_config = get_config(request)

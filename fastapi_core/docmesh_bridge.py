@@ -5,6 +5,8 @@ import importlib
 import os
 from typing import TYPE_CHECKING, Any
 
+from fastapi import FastAPI
+
 if TYPE_CHECKING:
     from fastapi_core.core.config import EnvConfig
 
@@ -86,6 +88,35 @@ def build_docmesh_env(config: EnvConfig) -> dict[str, str]:
             env["LANGFUSE_RELEASE"] = config.langfuse.release
 
     return env
+
+
+def unwrap_docmesh_client(client: Any) -> Any:
+    wrapped_client = getattr(client, "client", None)
+    if wrapped_client is not None:
+        return wrapped_client
+    return client
+
+
+def get_docmesh_registry(app: FastAPI) -> Any | None:
+    return getattr(app.state, "docmesh_registry", None)
+
+
+def get_docmesh_service(app: FastAPI, service_name: str) -> Any | None:
+    registry = get_docmesh_registry(app)
+    if registry is None:
+        return None
+    return unwrap_docmesh_client(registry.create_client(service_name))
+
+
+async def get_docmesh_service_async(app: FastAPI, service_name: str) -> Any | None:
+    registry = get_docmesh_registry(app)
+    if registry is None:
+        return None
+    service = registry.create_client(service_name)
+    connect = getattr(service, "connect", None)
+    if callable(connect):
+        return await connect()
+    return unwrap_docmesh_client(service)
 
 
 def initialize_docmesh_registry(

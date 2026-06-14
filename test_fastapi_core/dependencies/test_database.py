@@ -85,6 +85,33 @@ def test_get_db_engine_from_state():
     assert app.state.db_engine is mock_engine
 
 
+def test_get_db_engine_fallback_prefers_docmesh_registry():
+    """docmesh registry가 있으면 native create 대신 registry client를 state에 등록한다."""
+    app = FastAPI()
+    mock_engine = MagicMock(spec=Engine)
+    mock_config = MagicMock()
+    mock_registry = MagicMock()
+    mock_registry.create_client.return_value = MagicMock(client=mock_engine)
+    app.state.docmesh_registry = mock_registry
+    app.dependency_overrides[get_config] = lambda: mock_config
+
+    @app.get("/engine-id")
+    def engine_id(engine: Engine = Depends(get_db_engine)):
+        return {"id": id(engine)}
+
+    with patch(
+        "fastapi_core.dependencies.database.create_db_engine", return_value=MagicMock(spec=Engine)
+    ) as mock_create:
+        client = TestClient(app)
+        response = client.get("/engine-id")
+        mock_create.assert_not_called()
+
+    mock_registry.create_client.assert_called_once_with("postgres")
+    assert response.status_code == 200
+    assert response.json()["id"] == id(mock_engine)
+    assert app.state.db_engine is mock_engine
+
+
 def test_get_db_engine_fallback():
     """app.state에 db_engine이 없으면 생성 후 state에 등록하여 반환한다."""
     app = FastAPI()

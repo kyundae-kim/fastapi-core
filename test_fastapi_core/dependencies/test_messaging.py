@@ -74,6 +74,34 @@ class TestGetNatsClient:
         result = anyio.run(run)
         assert result is mock_client
 
+    def test_prefers_docmesh_registry_when_not_initialized(self):
+        app = FastAPI()
+        mock_client = MagicMock()
+        config = EnvConfig()
+        registry = MagicMock()
+
+        class FakeNatsBuilder:
+            async def connect(self):
+                return mock_client
+
+        registry.create_client.return_value = FakeNatsBuilder()
+        app.state.docmesh_registry = registry
+
+        async def run():
+            request = _make_request(app)
+            return await get_nats_client(request, config=config)
+
+        with patch(
+            "fastapi_core.dependencies.messaging.create_nats_client",
+            new=AsyncMock(return_value=MagicMock()),
+        ) as mock_create:
+            result = anyio.run(run)
+
+        mock_create.assert_not_awaited()
+        registry.create_client.assert_called_once_with("nats")
+        assert result is mock_client
+        assert app.state.nats_client is mock_client
+
     def test_creates_and_registers_client_when_not_initialized(self):
         app = FastAPI()
         mock_client = MagicMock()

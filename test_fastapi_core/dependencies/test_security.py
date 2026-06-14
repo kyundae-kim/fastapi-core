@@ -178,6 +178,46 @@ def test_current_user_dependency_is_function():
     assert inspect.isfunction(auth_dependencies.get_current_user)
 
 
+def test_get_auth_provider_fallback_prefers_docmesh_registry():
+    """docmesh registry가 있으면 native provider 생성 대신 registry client를 state에 등록한다."""
+    from unittest.mock import MagicMock, patch
+
+    from fastapi import Depends
+
+    from fastapi_core.core.config import EnvConfig, KeycloakConfig
+    from fastapi_core.dependencies.config import get_config
+
+    app = FastAPI()
+    mock_provider = MagicMock(spec=KeycloakAuthProvider)
+    mock_config = MagicMock(spec=EnvConfig)
+    mock_config.keycloak = MagicMock(spec=KeycloakConfig)
+    mock_config.keycloak.http_url = "http://keycloak:8080"
+    mock_config.keycloak.realm = "myrealm"
+    mock_config.keycloak.client_id = "myclient"
+    mock_config.keycloak.client_secret = "secret"
+    mock_registry = MagicMock()
+    mock_registry.create_client.return_value = MagicMock(client=mock_provider)
+    app.state.docmesh_registry = mock_registry
+    app.dependency_overrides[get_config] = lambda: mock_config
+
+    @app.get("/provider-id")
+    def provider_id(provider: KeycloakAuthProvider = Depends(get_auth_provider)):
+        return {"id": id(provider)}
+
+    with patch(
+        "fastapi_core.dependencies.auth.KeycloakAuthProvider",
+        return_value=MagicMock(spec=KeycloakAuthProvider),
+    ) as mock_cls:
+        client = TestClient(app)
+        response = client.get("/provider-id")
+        mock_cls.assert_not_called()
+
+    mock_registry.create_client.assert_called_once_with("keycloak")
+    assert response.status_code == 200
+    assert response.json()["id"] == id(mock_provider)
+    assert app.state.auth_provider is mock_provider
+
+
 def test_get_auth_provider_fallback():
     """app.state에 auth_provider가 없으면 생성 후 state에 등록하여 반환한다."""
     from unittest.mock import MagicMock, patch

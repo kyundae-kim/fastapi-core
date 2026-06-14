@@ -8,6 +8,7 @@ from fastapi_core.bootstrap import get_or_create_state_value, set_state_value
 from fastapi_core.core.auth import KeycloakAuthProvider
 from fastapi_core.core.config import EnvConfig, ServiceSettings
 from fastapi_core.dependencies.config import get_config, get_settings
+from fastapi_core.docmesh_bridge import get_docmesh_service
 from fastapi_core.schemas.user import UserInfo
 
 oauth2_scheme = OAuth2PasswordBearer(
@@ -41,6 +42,9 @@ def get_auth_provider(
     config: EnvConfig | DependsParam = Depends(get_config),
 ) -> KeycloakAuthProvider:
     def factory() -> KeycloakAuthProvider:
+        docmesh_provider = get_docmesh_service(request.app, "keycloak")
+        if docmesh_provider is not None:
+            return docmesh_provider
         resolved_config = config
         if isinstance(resolved_config, DependsParam):
             resolved_config = get_config(request)
