@@ -36,6 +36,32 @@ class TestGetOllamaClient:
         assert response.status_code == 200
         assert response.json()["id"] == id(mock_client)
 
+    def test_prefers_docmesh_registry_when_missing(self):
+        app = FastAPI()
+        mock_client = MagicMock()
+        mock_config = MagicMock()
+        mock_config.ollama = OllamaConfig()
+        mock_registry = MagicMock()
+        mock_registry.create_client.return_value = MagicMock(client=mock_client)
+        app.state.docmesh_registry = mock_registry
+        app.dependency_overrides[get_config] = lambda: mock_config
+
+        @app.get("/client-id")
+        def client_id(client = Depends(get_ollama_client)):
+            return {"id": id(client)}
+
+        with patch(
+            "fastapi_core.dependencies.ollama.create_ollama_client", return_value=MagicMock()
+        ) as mock_create:
+            client = TestClient(app)
+            response = client.get("/client-id")
+            mock_create.assert_not_called()
+
+        mock_registry.create_client.assert_called_once_with("ollama")
+        assert response.status_code == 200
+        assert response.json()["id"] == id(mock_client)
+        assert app.state.ollama_client is mock_client
+
     def test_creates_and_caches_client_when_missing(self):
         app = FastAPI()
         mock_client = MagicMock()

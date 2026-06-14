@@ -37,6 +37,32 @@ class TestGetMilvusClient:
         assert response.status_code == 200
         assert response.json()["id"] == id(mock_client)
 
+    def test_prefers_docmesh_registry_when_missing(self):
+        app = FastAPI()
+        mock_client = MagicMock(spec=MilvusClient)
+        mock_config = MagicMock()
+        mock_config.milvus = MilvusConfig()
+        mock_registry = MagicMock()
+        mock_registry.create_client.return_value = MagicMock(client=mock_client)
+        app.state.docmesh_registry = mock_registry
+        app.dependency_overrides[get_config] = lambda: mock_config
+
+        @app.get("/client-id")
+        def client_id(client: MilvusClient = Depends(get_milvus_client)):
+            return {"id": id(client)}
+
+        with patch(
+            "fastapi_core.dependencies.milvus.create_milvus_client", return_value=MagicMock(spec=MilvusClient)
+        ) as mock_create:
+            client = TestClient(app)
+            response = client.get("/client-id")
+            mock_create.assert_not_called()
+
+        mock_registry.create_client.assert_called_once_with("milvus")
+        assert response.status_code == 200
+        assert response.json()["id"] == id(mock_client)
+        assert app.state.milvus_client is mock_client
+
     def test_creates_and_caches_client_when_missing(self):
         app = FastAPI()
         mock_client = MagicMock(spec=MilvusClient)
