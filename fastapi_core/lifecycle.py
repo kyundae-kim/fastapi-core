@@ -8,12 +8,11 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from fastapi_core.bootstrap import set_state_value
 from fastapi_core.core.config import EnvConfig, ServiceSettings
-from fastapi_core.core.langfuse import get_langfuse_client
 from fastapi_core.dependencies.async_milvus import set_async_milvus_client
 from fastapi_core.dependencies.auth import set_auth_provider
 from fastapi_core.dependencies.database import set_db_engine
+from fastapi_core.dependencies.langfuse import set_langfuse_client
 from fastapi_core.dependencies.messaging import set_nats_client
 from fastapi_core.dependencies.milvus import set_milvus_client
 from fastapi_core.dependencies.ollama import set_ollama_client
@@ -109,7 +108,7 @@ def _set_registry_managed_service(app: FastAPI, state_key: str, client: Any) -> 
         set_ollama_client(app, client=client)
         return
     if state_key == "langfuse_client":
-        set_state_value(app, state_key, client)
+        set_langfuse_client(app, client=client)
         return
     raise KeyError(f"Unsupported registry-managed state key: {state_key}")
 
@@ -209,7 +208,7 @@ async def initialize_app_services(
     if policy.init_ollama and not use_docmesh_registry_clients:
         set_ollama_client(app, config=config)
     if policy.init_langfuse and not use_docmesh_registry_clients:
-        set_state_value(app, "langfuse_client", get_langfuse_client(config.langfuse))
+        set_langfuse_client(app, config=config)
     if policy.init_nats and not use_docmesh_registry_clients:
         await set_nats_client(app, config=config)
 

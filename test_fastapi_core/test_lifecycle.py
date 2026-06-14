@@ -26,7 +26,7 @@ def test_initialize_app_services_initializes_selected_services():
         patch("fastapi_core.lifecycle.set_minio_client") as mock_set_minio_client,
         patch("fastapi_core.lifecycle.set_milvus_client") as mock_set_milvus_client,
         patch("fastapi_core.lifecycle.set_ollama_client") as mock_set_ollama_client,
-        patch("fastapi_core.lifecycle.get_langfuse_client") as mock_get_langfuse_client,
+        patch("fastapi_core.lifecycle.set_langfuse_client") as mock_set_langfuse_client,
         patch("fastapi_core.lifecycle.set_nats_client", new=AsyncMock()) as mock_set_nats_client,
     ):
         anyio.run(lambda: initialize_app_services(app, config, init_nats=True))
@@ -36,7 +36,7 @@ def test_initialize_app_services_initializes_selected_services():
     mock_set_minio_client.assert_called_once_with(app, config=config)
     mock_set_milvus_client.assert_called_once_with(app, config=config)
     mock_set_ollama_client.assert_called_once_with(app, config=config)
-    mock_get_langfuse_client.assert_not_called()
+    mock_set_langfuse_client.assert_not_called()
     mock_set_nats_client.assert_awaited_once_with(app, config=config)
 
 
@@ -58,7 +58,7 @@ def test_initialize_app_services_derives_policy_from_settings_health_flags():
         patch("fastapi_core.lifecycle.set_minio_client") as mock_set_minio_client,
         patch("fastapi_core.lifecycle.set_milvus_client") as mock_set_milvus_client,
         patch("fastapi_core.lifecycle.set_ollama_client") as mock_set_ollama_client,
-        patch("fastapi_core.lifecycle.get_langfuse_client") as mock_get_langfuse_client,
+        patch("fastapi_core.lifecycle.set_langfuse_client") as mock_set_langfuse_client,
     ):
         anyio.run(lambda: initialize_app_services(app, config, settings=settings))
 
@@ -67,7 +67,7 @@ def test_initialize_app_services_derives_policy_from_settings_health_flags():
     mock_set_minio_client.assert_not_called()
     mock_set_milvus_client.assert_called_once_with(app, config=config)
     mock_set_ollama_client.assert_called_once_with(app, config=config)
-    mock_get_langfuse_client.assert_called_once_with(config.langfuse)
+    mock_set_langfuse_client.assert_called_once_with(app, config=config)
 
 
 def test_initialize_app_services_can_enable_docmesh_registry_from_settings():
@@ -156,7 +156,7 @@ def test_initialize_app_services_uses_docmesh_registry_clients_for_supported_ser
         patch("fastapi_core.lifecycle.set_minio_client") as mock_set_minio_client,
         patch("fastapi_core.lifecycle.set_milvus_client") as mock_set_milvus_client,
         patch("fastapi_core.lifecycle.set_ollama_client") as mock_set_ollama_client,
-        patch("fastapi_core.lifecycle.get_langfuse_client") as mock_get_langfuse_client,
+        patch("fastapi_core.lifecycle.set_langfuse_client") as mock_set_langfuse_client,
         patch("fastapi_core.lifecycle.set_nats_client", new=AsyncMock()) as mock_set_nats_client,
     ):
         anyio.run(lambda: initialize_app_services(app, config, settings=settings, init_nats=True))
@@ -175,9 +175,8 @@ def test_initialize_app_services_uses_docmesh_registry_clients_for_supported_ser
     mock_set_minio_client.assert_called_once_with(app, client=minio_client)
     mock_set_milvus_client.assert_called_once_with(app, client=milvus_client)
     mock_set_ollama_client.assert_called_once_with(app, client=ollama_client)
-    mock_get_langfuse_client.assert_not_called()
+    mock_set_langfuse_client.assert_called_once_with(app, client=langfuse_client)
     mock_set_nats_client.assert_awaited_once_with(app, client=nats_client)
-    assert app.state.langfuse_client is langfuse_client
     assert app.state.docmesh_managed_services == {"auth_provider", "db_engine", "minio_client", "milvus_client", "ollama_client", "langfuse_client", "nats_client"}
 
 

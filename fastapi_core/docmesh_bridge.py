@@ -159,6 +159,29 @@ def get_docmesh_service(app: FastAPI, service_name: str) -> Any | None:
     return unwrap_docmesh_client(registry.create_client(service_name))
 
 
+def check_docmesh_service_connection(app: FastAPI, state_key: str) -> bool | None:
+    spec = get_registry_service_spec(state_key)
+    if spec is None:
+        return None
+
+    registry = get_docmesh_registry(app)
+    if registry is None:
+        return None
+
+    service = registry.create_client(spec.registry_name)
+    check = getattr(service, "check", None)
+    if not callable(check):
+        return None
+
+    try:
+        result = check()
+    except Exception:
+        return False
+
+    ok = getattr(result, "ok", result)
+    return bool(ok)
+
+
 async def get_docmesh_service_async(app: FastAPI, service_name: str) -> Any | None:
     registry = get_docmesh_registry(app)
     if registry is None:

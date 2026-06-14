@@ -187,6 +187,36 @@ def test_readiness_langfuse_not_ready():
     assert response.json()["detail"] == "Langfuse not ready"
 
 
+def test_readiness_prefers_docmesh_registry_for_langfuse_health():
+    app = create_app(
+        include_auth_router=False,
+        settings=ServiceSettings(
+            health=HealthSettings(
+                check_keycloak=False,
+                check_database=False,
+                check_minio=False,
+                check_langfuse=True,
+            ),
+            lifecycle=LifecycleSettings(use_docmesh_registry=True),
+        ),
+    )
+    app.dependency_overrides[get_config] = lambda: EnvConfig()
+    client = TestClient(app)
+    mock_registry = MagicMock()
+    mock_registry.create_client.return_value = MagicMock(check=MagicMock(return_value=True))
+    app.state.docmesh_registry = mock_registry
+
+    with patch(
+        "fastapi_core.routers.health.check_langfuse_connection",
+        side_effect=AssertionError("native langfuse readiness should not run"),
+    ):
+        response = client.get("/health/readiness")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    mock_registry.create_client.assert_called_once_with("langfuse")
+
+
 def test_readiness_uses_docmesh_healthchecks_when_enabled():
     app = create_app(include_auth_router=False)
     app.dependency_overrides[get_config] = lambda: EnvConfig()

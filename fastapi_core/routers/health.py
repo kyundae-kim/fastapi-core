@@ -12,7 +12,10 @@ from fastapi_core.core.storage import check_minio_connection
 from fastapi_core.dependencies.config import get_config, get_settings
 from fastapi_core.dependencies.database import get_db_engine
 from fastapi_core.dependencies.storage import get_minio_client
-from fastapi_core.docmesh_bridge import run_docmesh_healthchecks
+from fastapi_core.docmesh_bridge import (
+    check_docmesh_service_connection,
+    run_docmesh_healthchecks,
+)
 from fastapi_core.schemas.health import HealthResponse
 
 router = APIRouter(prefix="/health", tags=["health"])
@@ -98,7 +101,11 @@ async def readiness(
                 detail="MinIO not ready",
             )
 
-    if settings.health.check_langfuse and not check_langfuse_connection(config.langfuse):
+    langfuse_ready = check_docmesh_service_connection(request.app, "langfuse_client")
+    if langfuse_ready is None:
+        langfuse_ready = check_langfuse_connection(config.langfuse)
+
+    if settings.health.check_langfuse and not langfuse_ready:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Langfuse not ready",
