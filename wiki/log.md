@@ -66,3 +66,9 @@
 - Follow-up implementation: request-time fallback for `ollama` and sync `milvus` now also prefers `docmesh_registry`; `async_milvus` remains native because the current `docmesh_py_core 0.1.1` registry exposes only sync `MilvusClient`, not `AsyncMilvusClient`
 - Verification: `uv run pytest -q -m 'not integration'` -> `187 passed, 44 deselected`; A-2 RED tests for ollama/milvus now pass, the broader remaining-dependency subset passes `34` tests, and the earlier registry-first fallback subset remains green; current lock/runtime package version remains `0.1.1` despite `pyproject.toml` declaring `>=0.1.4`
 - Updated: `index.md`
+
+## [2026-06-14] query | registry full replacement plan
+- Filed: `queries/registry-full-replacement-plan.md`
+- Sources synthesized: `queries/fastapi-core-codebase-review-against-docmesh-py-core.md`, `queries/docmesh-py-core-refactor-review.md`
+- Artifact: `docs/plans/2026-06-14-registry-full-replacement.md`
+- Updated: `index.md`

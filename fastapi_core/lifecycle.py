@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from fastapi_core.bootstrap import set_state_value
 from fastapi_core.core.config import EnvConfig, ServiceSettings
 from fastapi_core.core.langfuse import get_langfuse_client
 from fastapi_core.dependencies.async_milvus import set_async_milvus_client
@@ -105,11 +106,16 @@ async def _initialize_docmesh_managed_services(
         ollama_client = _unwrap_docmesh_client(registry.create_client("ollama"))
         set_ollama_client(app, client=ollama_client)
         managed_services.add("ollama_client")
+    if policy.init_langfuse:
+        langfuse_client = _unwrap_docmesh_client(registry.create_client("langfuse"))
+        set_state_value(app, "langfuse_client", langfuse_client)
+        managed_services.add("langfuse_client")
     if policy.init_nats:
         nats_builder = registry.create_client("nats")
         connect = getattr(nats_builder, "connect", None)
         nats_client = await connect() if callable(connect) else _unwrap_docmesh_client(nats_builder)
         await set_nats_client(app, client=nats_client)
+        managed_services.add("nats_client")
 
     app.state.docmesh_managed_services = managed_services
 
@@ -171,8 +177,8 @@ async def initialize_app_services(
         await set_async_milvus_client(app, config=config)
     if policy.init_ollama and not use_docmesh_registry_clients:
         set_ollama_client(app, config=config)
-    if policy.init_langfuse:
-        get_langfuse_client(config.langfuse)
+    if policy.init_langfuse and not use_docmesh_registry_clients:
+        set_state_value(app, "langfuse_client", get_langfuse_client(config.langfuse))
     if policy.init_nats and not use_docmesh_registry_clients:
         await set_nats_client(app, config=config)
 
@@ -192,6 +198,7 @@ async def shutdown_app_services(app: FastAPI) -> None:
         ("async_milvus_client", "close"),
         ("milvus_client", "close"),
         ("db_engine", "dispose"),
+        ("langfuse_client", "flush"),
     ):
         if state_key in docmesh_managed_services:
             continue
