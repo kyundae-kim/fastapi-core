@@ -6,7 +6,6 @@ from fastapi.params import Depends as DependsParam
 
 from fastapi_core.bootstrap import get_or_create_state_value, set_state_value
 from fastapi_core.core.config import EnvConfig
-from fastapi_core.core.ollama import create_ollama_client
 from fastapi_core.dependencies.config import get_config
 from fastapi_core.docmesh_bridge import get_required_docmesh_service
 

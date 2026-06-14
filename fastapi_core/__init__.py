@@ -13,7 +13,6 @@ from fastapi_core.core.config import (
 from fastapi_core.core.exceptions import AuthError
 from fastapi_core.core.langfuse import check_langfuse_connection, get_langfuse_client
 from fastapi_core.core.milvus import create_async_milvus_client, create_milvus_client
-from fastapi_core.core.ollama import create_ollama_client
 from fastapi_core.factory import create_app
 from fastapi_core.schemas.health import HealthResponse
 from fastapi_core.schemas.token import TokenResponse
@@ -37,7 +36,6 @@ __all__ = [
     "check_langfuse_connection",
     "create_async_milvus_client",
     "create_milvus_client",
-    "create_ollama_client",
     "create_app",
     "get_langfuse_client",
 ]

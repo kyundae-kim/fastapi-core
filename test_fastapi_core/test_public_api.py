@@ -8,7 +8,6 @@ def test_public_api_exports_curated_symbols_only():
     assert "KeycloakAuthProvider" in exported
     assert "create_milvus_client" in exported
     assert "create_async_milvus_client" in exported
-    assert "create_ollama_client" in exported
     assert "get_langfuse_client" in exported
 
     removed_exports = {
