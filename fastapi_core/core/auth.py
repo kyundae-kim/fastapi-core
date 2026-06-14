@@ -8,11 +8,11 @@ import jwt
 from fastapi_core.schemas.user import UserInfo
 
 
-def extract_roles(payload: dict[str, Any]) -> list[str]:
+def _extract_roles(payload: dict[str, Any]) -> list[str]:
     return payload.get("realm_access", {}).get("roles", [])
 
 
-def extract_scopes(payload: dict[str, Any]) -> list[str]:
+def _extract_scopes(payload: dict[str, Any]) -> list[str]:
     if "scp" in payload:
         scp = payload["scp"]
         return scp if isinstance(scp, list) else [scp]
@@ -53,8 +53,8 @@ class KeycloakAuthProvider:
             username=payload.get("preferred_username", ""),
             email=payload.get("email"),
             name=payload.get("name"),
-            roles=extract_roles(payload),
-            scopes=extract_scopes(payload),
+            roles=_extract_roles(payload),
+            scopes=_extract_scopes(payload),
         )
 
     def decode_token_insecure(self, token: str) -> dict[str, Any]:

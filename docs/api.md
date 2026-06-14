@@ -11,7 +11,7 @@
 - `Get*Dependency` callable class와 `get_* = Get*Dependency()` 형태의 전역 인스턴스는 사용하지 않는다.
 - 중복 dependency alias인 `config_schema`, `settings_schema`, `auth_provider_schema`, `current_user_schema`는 제공하지 않는다.
 - 라우터와 테스트에서는 항상 `Depends(get_*)` 형태로 직접 참조한다.
-- Langfuse는 SDK 자체 싱글톤을 사용하므로 **FastAPI dependency를 export하지 않는다**. `get_langfuse_client()`를 직접 호출한다.
+- Langfuse는 SDK 자체 싱글톤을 중심으로 사용한다. 앱 코드에서는 `fastapi_core.core.langfuse.get_langfuse_client()`를 직접 호출하거나, FastAPI state가 필요하면 `fastapi_core.dependencies.langfuse.get_langfuse_client()`를 사용할 수 있다.
 
 ---
 
@@ -101,16 +101,6 @@ def to_user(self, payload: dict[str, Any]) -> UserInfo:
     """JWT payload → UserInfo 모델 변환."""
 ```
 
-#### 클레임 파싱 유틸리티
-
-```python
-def extract_roles(payload: dict[str, Any]) -> list[str]:
-    """payload['realm_access']['roles'] 추출. 키 없으면 []."""
-
-def extract_scopes(payload: dict[str, Any]) -> list[str]:
-    """'scp' 키(리스트) 또는 'scope' 키(공백 구분 문자열) 추출. 없으면 []."""
-```
-
 ---
 
 ### `set_auth_provider` — `fastapi_core.dependencies.auth`
@@ -194,13 +184,6 @@ def check_database_connection(engine: Engine) -> bool:
     """SELECT 1 실행. 성공 시 True, 예외 시 False."""
 ```
 
-### `get_database_version` — `fastapi_core.core.database`
-
-```python
-def get_database_version(engine: Engine) -> str:
-    """SELECT version() 결과 문자열 반환."""
-```
-
 ### `set_db_engine` — `fastapi_core.dependencies.database`
 
 ```python
@@ -239,18 +222,6 @@ def get_db_session(
 - SQLAlchemy `Session`을 생성해 요청 스코프에서 제공
 - 정상/예외 종료와 관계없이 `session.close()` 보장
 
-### `run_in_transaction` — `fastapi_core.core.database`
-
-```python
-def run_in_transaction(
-    engine: Engine,
-    fn: Callable[[Session], T],
-) -> T:
-```
-
-- 내부에서 세션/트랜잭션 경계를 생성해 `fn(session)` 실행
-- 성공 시 `commit`, 실패 시 `rollback` 후 예외 재전파
-
 ---
 
 ## 스토리지 (Storage / MinIO)
@@ -262,52 +233,12 @@ def create_minio_client(config: MinIOConfig) -> Minio:
     """MinIOConfig로 minio.Minio 클라이언트 생성."""
 ```
 
-### `ensure_bucket_exists` — `fastapi_core.core.storage`
-
-```python
-def ensure_bucket_exists(client: Minio, bucket: str) -> None:
-    """버킷이 없으면 생성. 이미 존재하면 아무 작업 안 함."""
-```
-
-### `list_buckets` — `fastapi_core.core.storage`
-
-```python
-def list_buckets(client: Minio) -> list[str]:
-    """버킷 이름 목록 반환."""
-```
-
 ### `check_minio_connection` — `fastapi_core.core.storage`
 
 ```python
 def check_minio_connection(client: Minio, bucket: str) -> bool:
     """bucket_exists() 호출 성공 시 True, 예외 시 False."""
 ```
-
-### `generate_presigned_get_url` — `fastapi_core.core.storage`
-
-```python
-def generate_presigned_get_url(
-    client: Minio,
-    bucket: str,
-    object_name: str,
-    expires: timedelta = timedelta(minutes=15),
-) -> str:
-```
-
-- 지정 객체 다운로드용 presigned GET URL 반환
-
-### `generate_presigned_put_url` — `fastapi_core.core.storage`
-
-```python
-def generate_presigned_put_url(
-    client: Minio,
-    bucket: str,
-    object_name: str,
-    expires: timedelta = timedelta(minutes=15),
-) -> str:
-```
-
-- 지정 객체 업로드용 presigned PUT URL 반환
 
 ### `set_minio_client` — `fastapi_core.dependencies.storage`
 
@@ -357,70 +288,6 @@ def create_async_milvus_client(config: MilvusConfig) -> AsyncMilvusClient:
 
 - `config.uri`, `config.db_name`, `config.timeout`으로 `AsyncMilvusClient`를 생성한다.
 - `config.token`이 있으면 함께 전달한다.
-
-### `check_milvus_connection` — `fastapi_core.core.milvus`
-
-```python
-def check_milvus_connection(client: MilvusClient) -> bool:
-```
-
-- `client.list_collections()` 호출 성공 시 `True`, 예외 시 `False`
-
-### `check_async_milvus_connection` — `fastapi_core.core.milvus`
-
-```python
-async def check_async_milvus_connection(client: AsyncMilvusClient) -> bool:
-```
-
-- `await client.list_collections()` 호출 성공 시 `True`, 예외 시 `False`
-
-### `list_collection_names` — `fastapi_core.core.milvus`
-
-```python
-def list_collection_names(client: MilvusClient) -> list[str]:
-```
-
-- 현재 DB의 컬렉션 이름 목록을 문자열 리스트로 반환한다.
-
-### `list_async_collection_names` — `fastapi_core.core.milvus`
-
-```python
-async def list_async_collection_names(client: AsyncMilvusClient) -> list[str]:
-```
-
-- 현재 DB의 컬렉션 이름 목록을 문자열 리스트로 반환한다.
-
-### `ensure_collection_exists` — `fastapi_core.core.milvus`
-
-```python
-def ensure_collection_exists(
-    client: MilvusClient,
-    collection_name: str,
-    *,
-    dimension: int,
-    metric_type: str = "COSINE",
-    auto_id: bool = False,
-) -> None:
-```
-
-- 컬렉션이 이미 존재하면 아무 작업도 하지 않는다.
-- 존재하지 않으면 `client.create_collection(...)`으로 생성한다.
-
-### `ensure_async_collection_exists` — `fastapi_core.core.milvus`
-
-```python
-async def ensure_async_collection_exists(
-    client: AsyncMilvusClient,
-    collection_name: str,
-    *,
-    dimension: int,
-    metric_type: str = "COSINE",
-    auto_id: bool = False,
-) -> None:
-```
-
-- 컬렉션이 이미 존재하면 아무 작업도 하지 않는다.
-- 존재하지 않으면 `await client.create_collection(...)`으로 생성한다.
 
 ### `set_milvus_client` — `fastapi_core.dependencies.milvus`
 
@@ -488,33 +355,6 @@ def create_ollama_client(config: OllamaConfig) -> ollama.Client:
 
 - `config.host`와 `config.timeout`으로 Ollama HTTP 클라이언트를 생성한다.
 
-### `check_ollama_connection` — `fastapi_core.core.ollama`
-
-```python
-def check_ollama_connection(client: ollama.Client) -> bool:
-```
-
-- `client.list()` 호출 성공 시 `True`, 예외 발생 시 `False`
-
-### `list_model_names` — `fastapi_core.core.ollama`
-
-```python
-def list_model_names(client: ollama.Client) -> list[str]:
-```
-
-- `client.list()` 응답에서 모델 이름 목록을 추출한다.
-- 응답이 dict 또는 Ollama SDK 응답 객체여도 동작한다.
-
-### `generate_text` — `fastapi_core.core.ollama`
-
-```python
-def generate_text(client: ollama.Client, *, model: str, prompt: str) -> str:
-```
-
-- `client.generate(model=model, prompt=prompt)` 호출
-- 응답의 `response` 필드를 문자열로 반환
-- `response` 필드가 없으면 `ValueError`
-
 ### `set_ollama_client` — `fastapi_core.dependencies.ollama`
 
 ```python
@@ -546,23 +386,13 @@ def get_ollama_client(
 
 ## Langfuse
 
-### `create_langfuse_client` — `fastapi_core.core.langfuse`
-
-```python
-def create_langfuse_client(config: LangfuseConfig) -> Langfuse:
-```
-
-- `LangfuseConfig`를 사용해 Langfuse SDK 클라이언트를 생성한다.
-- `public_key`, `secret_key`, `host`, `timeout`, `tracing_enabled`, `environment`, `release`를 SDK 생성자에 전달한다.
-- FastAPI dependency를 만들지 않고 애플리케이션 코드에서 직접 호출한다.
-
 ### `get_langfuse_client` — `fastapi_core.core.langfuse`
 
 ```python
 def get_langfuse_client(config: LangfuseConfig | None = None) -> Langfuse:
 ```
 
-- `config`가 주어지면 먼저 `create_langfuse_client(config)`로 SDK 내부 싱글톤을 초기화한다.
+- `config`가 주어지면 먼저 내부 초기화 helper로 SDK 싱글톤을 준비한다.
 - `config.public_key`가 있으면 `langfuse.get_client(public_key=...)`로 해당 프로젝트 싱글톤을 반환한다.
 - `config`가 없으면 `langfuse.get_client()`를 그대로 반환한다.
 - 별도의 `dependencies/langfuse.py`는 제공하지 않는다.
@@ -586,29 +416,6 @@ def check_langfuse_connection(config: LangfuseConfig) -> bool:
 ```python
 async def create_nats_client(config: NatsConfig) -> nats.aio.client.Client:
     """NATS 서버에 연결된 클라이언트를 생성한다."""
-```
-
-### `publish_json` — `fastapi_core.core.messaging`
-
-```python
-async def publish_json(
-    client: nats.aio.client.Client,
-    subject: str,
-    payload: dict[str, Any],
-) -> None:
-    """JSON payload를 UTF-8 bytes로 직렬화하여 subject로 발행한다."""
-```
-
-### `subscribe_json` — `fastapi_core.core.messaging`
-
-```python
-async def subscribe_json(
-    client: nats.aio.client.Client,
-    subject: str,
-    cb: Callable[[dict[str, Any]], Awaitable[None]],
-    queue: str | None = None,
-) -> None:
-    """subject를 구독하고 수신 메시지를 JSON으로 역직렬화하여 콜백에 전달한다."""
 ```
 
 ### `set_nats_client` — `fastapi_core.dependencies.messaging`

@@ -11,7 +11,7 @@ from fastapi_core.core.config import LangfuseConfig
 _PUBLIC_HEALTH_PATH = "/api/public/health"
 
 
-def create_langfuse_client(config: LangfuseConfig) -> Langfuse:
+def _create_langfuse_client(config: LangfuseConfig) -> Langfuse:
     kwargs: dict[str, Any] = {
         "host": config.host,
         "timeout": config.timeout,
@@ -32,7 +32,7 @@ def get_langfuse_client(config: LangfuseConfig | None = None) -> Langfuse:
     if config is None:
         return langfuse_get_client()
 
-    create_langfuse_client(config)
+    _create_langfuse_client(config)
     if config.public_key is not None:
         return langfuse_get_client(public_key=config.public_key)
     return langfuse_get_client()

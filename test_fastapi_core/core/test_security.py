@@ -3,57 +3,7 @@ from unittest.mock import MagicMock, patch
 import jwt
 import pytest
 
-from fastapi_core.core.auth import KeycloakAuthProvider, extract_roles, extract_scopes
-
-
-# ---------------------------------------------------------------------------
-# extract_roles
-# ---------------------------------------------------------------------------
-
-
-def test_extract_roles_normal():
-    payload = {"realm_access": {"roles": ["admin", "user"]}}
-    assert extract_roles(payload) == ["admin", "user"]
-
-
-def test_extract_roles_missing_realm_access():
-    assert extract_roles({}) == []
-
-
-def test_extract_roles_empty_roles():
-    assert extract_roles({"realm_access": {"roles": []}}) == []
-
-
-def test_extract_roles_missing_roles_key():
-    assert extract_roles({"realm_access": {}}) == []
-
-
-# ---------------------------------------------------------------------------
-# extract_scopes
-# ---------------------------------------------------------------------------
-
-
-def test_extract_scopes_from_scope_string():
-    payload = {"scope": "read write"}
-    assert extract_scopes(payload) == ["read", "write"]
-
-
-def test_extract_scopes_from_scp_list():
-    payload = {"scp": ["read", "write"]}
-    assert extract_scopes(payload) == ["read", "write"]
-
-
-def test_extract_scopes_from_scp_string():
-    payload = {"scp": "read"}
-    assert extract_scopes(payload) == ["read"]
-
-
-def test_extract_scopes_empty():
-    assert extract_scopes({}) == []
-
-
-def test_extract_scopes_empty_scope_string():
-    assert extract_scopes({"scope": ""}) == []
+from fastapi_core.core.auth import KeycloakAuthProvider
 
 
 # ---------------------------------------------------------------------------
@@ -66,11 +16,13 @@ def test_keycloak_auth_provider_empty_url_raises():
         KeycloakAuthProvider(http_url="", realm="realm", client_id="client")
 
 
+
 def test_keycloak_auth_provider_empty_realm_raises():
     with pytest.raises(ValueError, match="realm"):
         KeycloakAuthProvider(
             http_url="http://keycloak:8080/", realm="", client_id="client"
         )
+
 
 
 def test_keycloak_auth_provider_empty_client_id_raises():
@@ -105,7 +57,7 @@ def test_keycloak_auth_provider_url_construction():
 # ---------------------------------------------------------------------------
 
 
-def test_to_user_mapping():
+def test_to_user_mapping_extracts_roles_and_scopes():
     provider = KeycloakAuthProvider(
         http_url="http://keycloak:8080/",
         realm="realm",
@@ -128,6 +80,7 @@ def test_to_user_mapping():
     assert "openid" in user.scopes
 
 
+
 def test_to_user_minimal_payload():
     provider = KeycloakAuthProvider(
         http_url="http://keycloak:8080/",
@@ -140,6 +93,17 @@ def test_to_user_minimal_payload():
     assert user.email is None
     assert user.roles == []
     assert user.scopes == []
+
+
+
+def test_to_user_prefers_scp_claim_when_present():
+    provider = KeycloakAuthProvider(
+        http_url="http://keycloak:8080/",
+        realm="realm",
+        client_id="client",
+    )
+    user = provider.to_user({"sub": "u-1", "scp": ["read", "write"]})
+    assert user.scopes == ["read", "write"]
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +124,7 @@ def test_decode_token_insecure_valid():
     )
     decoded = provider.decode_token_insecure(token)
     assert decoded["sub"] == "user-1"
+
 
 
 def test_decode_token_insecure_invalid():
@@ -198,6 +163,7 @@ def test_authenticate_success():
 
     assert result["access_token"] == "tok"
     assert result["refresh_token"] == "ref"
+
 
 
 def test_authenticate_http_error():
@@ -246,6 +212,7 @@ def test_refresh_token_success():
     assert result["access_token"] == "new_tok"
 
 
+
 def test_refresh_token_includes_secret():
     provider = KeycloakAuthProvider(
         http_url="http://keycloak:8080/",
@@ -271,7 +238,6 @@ def test_refresh_token_includes_secret():
 
 
 def test_decode_token_valid():
-    """PyJWKClient mock을 사용한 RS256 서명 검증 성공 경로."""
     provider = KeycloakAuthProvider(
         http_url="http://keycloak:8080/",
         realm="realm",
@@ -299,8 +265,8 @@ def test_decode_token_valid():
     assert result["sub"] == "user-1"
 
 
+
 def test_decode_token_invalid():
-    """PyJWKClient에서 오류 발생 시 ValueError로 변환된다."""
     provider = KeycloakAuthProvider(
         http_url="http://keycloak:8080/",
         realm="realm",

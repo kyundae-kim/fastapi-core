@@ -6,8 +6,8 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
-from fastapi_core.core.config import DatabaseConfig, EnvConfig
-from fastapi_core.core.database import create_db_engine, run_in_transaction
+from fastapi_core.core.config import DatabaseConfig
+from fastapi_core.core.database import create_db_engine
 from fastapi_core.dependencies.config import get_config
 from fastapi_core.dependencies.database import (
     get_db_engine,
@@ -43,6 +43,7 @@ def test_get_db_engine_creates_engine():
         assert engine is mock_engine
 
 
+
 def test_check_database_connection_success():
     from fastapi_core.core.database import check_database_connection
 
@@ -50,6 +51,7 @@ def test_check_database_connection_success():
     mock_conn = MagicMock()
     mock_engine.connect.return_value.__enter__.return_value = mock_conn
     assert check_database_connection(mock_engine) is True
+
 
 
 def test_check_database_connection_failure():
@@ -66,8 +68,6 @@ def test_check_database_connection_failure():
 
 
 def test_get_db_engine_from_state():
-    """app.state에 db_engine이 등록돼 있으면 동일 인스턴스를 반환하고
-    create_db_engine을 호출하지 않는다."""
     app = FastAPI()
     mock_engine = MagicMock(spec=Engine)
     set_db_engine(app, mock_engine)
@@ -85,8 +85,8 @@ def test_get_db_engine_from_state():
     assert app.state.db_engine is mock_engine
 
 
+
 def test_get_db_engine_fallback_prefers_docmesh_registry():
-    """docmesh registry가 있으면 native create 대신 registry client를 state에 등록한다."""
     app = FastAPI()
     mock_engine = MagicMock(spec=Engine)
     mock_config = MagicMock()
@@ -112,8 +112,8 @@ def test_get_db_engine_fallback_prefers_docmesh_registry():
     assert app.state.db_engine is mock_engine
 
 
+
 def test_get_db_engine_initializes_docmesh_registry_when_missing():
-    """app.state에 registry와 db_engine이 없으면 docmesh registry로 생성 후 state에 등록한다."""
     app = FastAPI()
     mock_engine = MagicMock(spec=Engine)
     mock_config = MagicMock()
@@ -140,6 +140,7 @@ def test_get_db_engine_initializes_docmesh_registry_when_missing():
     assert app.state.db_engine is mock_engine
 
 
+
 def test_database_dependencies_are_functions():
     import fastapi_core.dependencies.database as database_dependencies
 
@@ -149,8 +150,8 @@ def test_database_dependencies_are_functions():
     assert inspect.isfunction(database_dependencies.get_db_session)
 
 
+
 def test_set_db_engine_from_config():
-    """config를 전달하면 docmesh registry를 통해 engine을 state에 등록한다."""
     app = FastAPI()
     mock_engine = MagicMock(spec=Engine)
     mock_config = MagicMock()
@@ -164,11 +165,12 @@ def test_set_db_engine_from_config():
     assert app.state.db_engine is mock_engine
 
 
+
 def test_set_db_engine_requires_engine_or_config():
-    """engine과 config 모두 생략하면 ValueError를 발생시킨다."""
     app = FastAPI()
     with pytest.raises(ValueError):
         set_db_engine(app)
+
 
 
 def test_get_db_session_closes_session():
@@ -184,39 +186,3 @@ def test_get_db_session_closes_session():
             next(gen)
 
     mock_session.close.assert_called_once()
-
-
-def test_run_in_transaction_commit_and_return_value():
-    mock_engine = MagicMock(spec=Engine)
-    mock_session = MagicMock()
-    mock_ctx = MagicMock()
-    mock_ctx.__enter__.return_value = mock_session
-    mock_ctx.__exit__.return_value = False
-
-    with patch("fastapi_core.core.database.Session", return_value=mock_ctx) as mock_cls:
-        fn = MagicMock(return_value="ok")
-        result = run_in_transaction(mock_engine, fn)
-
-    mock_cls.assert_called_once_with(mock_engine)
-    fn.assert_called_once_with(mock_session)
-    mock_session.commit.assert_called_once()
-    mock_session.rollback.assert_not_called()
-    assert result == "ok"
-
-
-def test_run_in_transaction_rollback_on_error():
-    mock_engine = MagicMock(spec=Engine)
-    mock_session = MagicMock()
-    mock_ctx = MagicMock()
-    mock_ctx.__enter__.return_value = mock_session
-    mock_ctx.__exit__.return_value = False
-
-    with patch("fastapi_core.core.database.Session", return_value=mock_ctx):
-        with pytest.raises(RuntimeError):
-            run_in_transaction(
-                mock_engine,
-                lambda _session: (_ for _ in ()).throw(RuntimeError("boom")),
-            )
-
-    mock_session.rollback.assert_called_once()
-    mock_session.commit.assert_not_called()

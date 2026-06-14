@@ -1,14 +1,12 @@
 """Unit tests for fastapi_core.core.messaging."""
 from __future__ import annotations
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import anyio
-import pytest
 
 from fastapi_core.core.config import NatsConfig
-from fastapi_core.core.messaging import create_nats_client, publish_json, subscribe_json
+from fastapi_core.core.messaging import create_nats_client
 
 
 class TestNatsConfig:
@@ -59,70 +57,3 @@ class TestCreateNatsClient:
             reconnect_time_wait=1.0,
         )
         assert result is mock_client
-
-
-class TestPublishJson:
-    def test_publishes_json_bytes(self):
-        mock_client = AsyncMock()
-        payload = {"event": "test.event", "value": 42}
-
-        async def run():
-            await publish_json(mock_client, "test.subject", payload)
-
-        anyio.run(run)
-
-        mock_client.publish.assert_awaited_once_with(
-            "test.subject",
-            json.dumps(payload).encode("utf-8"),
-        )
-
-
-class TestSubscribeJson:
-    def test_subscribe_without_queue(self):
-        mock_client = AsyncMock()
-
-        async def cb(data: dict) -> None:
-            pass
-
-        async def run():
-            await subscribe_json(mock_client, "test.subject", cb)
-
-        anyio.run(run)
-
-        mock_client.subscribe.assert_awaited_once()
-        call_kwargs = mock_client.subscribe.call_args
-        assert call_kwargs.args[0] == "test.subject"
-        assert "queue" not in call_kwargs.kwargs
-
-    def test_subscribe_with_queue(self):
-        mock_client = AsyncMock()
-
-        async def cb(data: dict) -> None:
-            pass
-
-        async def run():
-            await subscribe_json(mock_client, "test.subject", cb, queue="my-group")
-
-        anyio.run(run)
-
-        call_kwargs = mock_client.subscribe.call_args
-        assert call_kwargs.kwargs.get("queue") == "my-group"
-
-    def test_handler_deserializes_json(self):
-        """subscribe 내부 핸들러가 msg.data를 JSON으로 역직렬화해 콜백에 전달하는지 확인."""
-        received: list[dict] = []
-        mock_client = AsyncMock()
-
-        async def cb(data: dict) -> None:
-            received.append(data)
-
-        async def run():
-            await subscribe_json(mock_client, "test.subject", cb)
-            internal_handler = mock_client.subscribe.call_args.kwargs["cb"]
-            msg = MagicMock()
-            msg.data = json.dumps({"key": "value"}).encode("utf-8")
-            await internal_handler(msg)
-
-        anyio.run(run)
-
-        assert received == [{"key": "value"}]

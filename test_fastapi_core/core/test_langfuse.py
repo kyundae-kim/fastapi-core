@@ -5,39 +5,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 
 from fastapi_core.core.config import LangfuseConfig
-from fastapi_core.core.langfuse import (
-    check_langfuse_connection,
-    create_langfuse_client,
-    get_langfuse_client,
-)
-
-
-class TestCreateLangfuseClient:
-    def test_uses_config_values(self):
-        config = LangfuseConfig(
-            public_key="pk-test",
-            secret_key="sk-test",
-            host="http://localhost:3000",
-            timeout=9,
-            tracing_enabled=False,
-            environment="test",
-            release="1.2.3",
-        )
-        mock_client = MagicMock()
-
-        with patch("fastapi_core.core.langfuse.Langfuse", return_value=mock_client) as mock_cls:
-            client = create_langfuse_client(config)
-
-        mock_cls.assert_called_once_with(
-            public_key="pk-test",
-            secret_key="sk-test",
-            host="http://localhost:3000",
-            timeout=9,
-            tracing_enabled=False,
-            environment="test",
-            release="1.2.3",
-        )
-        assert client is mock_client
+from fastapi_core.core.langfuse import check_langfuse_connection, get_langfuse_client
 
 
 class TestGetLangfuseClient:
@@ -47,13 +15,12 @@ class TestGetLangfuseClient:
             secret_key="sk-test",
             host="http://localhost:3000",
         )
-        initialized_client = MagicMock()
         singleton_client = MagicMock()
 
         with (
             patch(
-                "fastapi_core.core.langfuse.create_langfuse_client",
-                return_value=initialized_client,
+                "fastapi_core.core.langfuse._create_langfuse_client",
+                return_value=MagicMock(),
             ) as mock_create,
             patch(
                 "fastapi_core.core.langfuse.langfuse_get_client",

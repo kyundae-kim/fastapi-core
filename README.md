@@ -11,32 +11,24 @@ DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사
   - 역할(role)/스코프(scope) 추출
 - PostgreSQL 연동
   - SQLAlchemy + psycopg 기반 엔진 생성
-  - 연결 확인, DB 버전 조회 유틸리티
-  - DB 세션 의존성/트랜잭션 헬퍼
+  - 연결 확인 유틸리티
+  - DB 세션 의존성
   - 커넥션 풀 파라미터 설정
 - MinIO 연동
   - 클라이언트 생성
-  - 버킷 존재 보장(없으면 생성)
   - 연결 확인 유틸리티
-  - Presigned URL 생성 유틸리티
 - Milvus 연동
   - Milvus 클라이언트 생성
   - 비동기 AsyncMilvusClient 생성
-  - 컬렉션 목록 조회 / 연결 확인 유틸리티
-  - 컬렉션 존재 보장 헬퍼
 - Ollama 연동
   - Ollama 클라이언트 생성
-  - 모델 목록 조회 / 연결 확인 유틸리티
-  - 프롬프트 기반 텍스트 생성 헬퍼
 - Langfuse 연동
-  - Langfuse SDK 싱글톤 초기화/조회 헬퍼
+  - Langfuse SDK 싱글톤 조회 헬퍼
   - public health endpoint 기반 연결 확인 유틸리티
   - FastAPI dependency 없이 직접 호출하는 패턴 제공
 - NATS 메시징
   - `nats-py` 기반 비동기 클라이언트 연결/종료
-  - Subject 기반 Publish/Subscribe 헬퍼
   - Queue Group 기반 다중 소비자 스케일아웃
-  - 도메인 이벤트 발행 패턴 (`*.created`, `*.updated`, `*.deleted`)
 - 설정 관리
   - `EnvConfig`(환경 변수/.env)
   - `ServiceSettings`(YAML)
