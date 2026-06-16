@@ -72,3 +72,13 @@
 - Sources synthesized: `queries/fastapi-core-codebase-review-against-docmesh-py-core.md`, `queries/docmesh-py-core-refactor-review.md`
 - Artifact: `docs/plans/2026-06-14-registry-full-replacement.md`
 - Updated: `index.md`
+
+## [2026-06-16] ingest | fastapi-core PRD
+- Source captured: `raw/articles/fastapi-core-prd-2026-06-16.md`
+- Source file: `docs/prd.md`
+- Created: `entities/fastapi-core.md`
+- Created: `concepts/layered-configuration-model.md`
+- Created: `concepts/fastapi-app-state-singletons.md`
+- Created: `concepts/fastapi-app-factory-and-health-routes.md`
+- Created: `queries/fastapi-core-prd-alignment-review.md`
+- Updated: `index.md`
