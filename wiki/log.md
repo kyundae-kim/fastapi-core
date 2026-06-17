@@ -110,3 +110,11 @@
 - Verification: `uv run pytest -q test_fastapi_core/dependencies/test_storage.py test_fastapi_core/core/test_storage.py` -> `15 passed`
 - Verification: `uv run pytest -q -m 'not integration'` -> `155 passed, 26 deselected`
 - Updated: `queries/fastapi-core-prd-vs-source-code-comparison.md`
+
+## [2026-06-17] update | Milvus helper surface
+- Added tests: `test_fastapi_core/core/test_milvus.py`, `test_fastapi_core/core/test_async_milvus.py`
+- Updated: `fastapi_core/core/milvus.py`
+- Verification: `uv run pytest -q test_fastapi_core/core/test_milvus.py test_fastapi_core/core/test_async_milvus.py` -> `13 passed`
+- Verification: `uv run pytest -q test_fastapi_core/dependencies/test_milvus.py test_fastapi_core/dependencies/test_async_milvus.py test_fastapi_core/core/test_milvus.py test_fastapi_core/core/test_async_milvus.py` -> `26 passed`
+- Verification: `uv run pytest -q -m 'not integration'` -> `165 passed, 26 deselected`
+- Updated: `queries/fastapi-core-prd-vs-source-code-comparison.md`

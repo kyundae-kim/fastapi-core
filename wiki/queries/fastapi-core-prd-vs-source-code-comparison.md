@@ -27,13 +27,16 @@ confidence: medium
 Keycloak 쪽은 password grant 기반 토큰 발급, JWT RS256 검증, `sub`/`preferred_username`/`email`/`name` 추출, realm role 과 scope 파싱, `get_current_user`, `require_permissions`, `/token`, `/user` 라우터가 구현돼 있다. readiness 는 Keycloak, PostgreSQL, MinIO, Langfuse(옵션) 체크를 제공한다. 이 범위는 PRD의 인증/health 최소 요구와 잘 맞는다.
 
 ### 4. Verified test baseline
-현재 코드 상태는 `uv run pytest -q -m 'not integration'` 기준 `155 passed, 26 deselected` 로 통과했다. 즉 아래 비교는 단순 추정이 아니라 실제 테스트 가능한 현재 구현 기준이다.
+현재 코드 상태는 `uv run pytest -q -m 'not integration'` 기준 `165 passed, 26 deselected` 로 통과했다. 즉 아래 비교는 단순 추정이 아니라 실제 테스트 가능한 현재 구현 기준이다.
 
 ### 5. PostgreSQL helper surface now mostly aligns
 `fastapi_core.core.database` 는 이제 `create_db_engine`, `check_database_connection(SELECT 1)`, `get_database_version(SELECT version())`, `run_in_transaction(...)` 를 제공한다. 따라서 PRD가 요구한 DB 버전 조회와 트랜잭션 helper 는 최소 형태로 구현되었다.
 
 ### 6. MinIO helper surface now mostly aligns
 `fastapi_core.core.storage` 는 이제 `create_minio_client`, `check_minio_connection`, `ensure_bucket_exists`, `list_bucket_names`, `generate_presigned_get_url`, `generate_presigned_put_url` 를 제공한다. 따라서 PRD가 요구한 버킷 자동 생성, 버킷 목록 조회, presigned URL helper 도 최소 형태로 구현되었다.
+
+### 7. Milvus helper surface now mostly aligns
+`fastapi_core.core.milvus` 는 이제 sync/async 클라이언트 생성 외에도 `check_milvus_connection`, `check_async_milvus_connection`, `list_collection_names`, `list_async_collection_names`, `ensure_collection_exists`, `ensure_async_collection_exists` 를 제공한다. 따라서 PRD가 요구한 컬렉션 목록 조회, 연결 확인, 컬렉션 존재 보장 helper 도 최소 형태로 구현되었다.
 
 ## Partially implemented or diverged
 ### 1. Langfuse architecture differs from PRD
@@ -46,19 +49,16 @@ PRD는 Langfuse를 `app.state` 가 아니라 SDK 싱글톤 `get_langfuse_client`
 이전 비교 메모와 달리 현재 구현의 `get_current_user()` 는 `settings.auth.verify_jwt` 가 꺼져 있고 `settings.auth.allow_insecure_jwt_decode` 가 켜져 있으면 `provider.decode_token_insecure()` 로 분기한다. 따라서 개발환경용 서명 검증 생략 모드는 이제 실제 런타임 경로에 연결되어 있다.
 
 ## Missing or clearly under-implemented versus PRD
-### 1. Milvus convenience helpers are missing
-PRD는 컬렉션 목록 조회, 연결 확인, 컬렉션 존재 보장 헬퍼를 요구한다. 현재 구현은 sync/async client 생성과 dependency/state 관리까지는 있으나, `list_collections`, `ensure_collection_exists` 류 helper 는 확인되지 않았다. `async_milvus` 는 여전히 native path 이며 registry 완전 대체 범위 밖에 있다.
-
-### 2. Ollama module surface is incomplete relative to PRD
+### 1. Ollama module surface is incomplete relative to PRD
 PRD는 `core/ollama.py` 에 클라이언트 생성, 모델 목록 조회, 연결 확인, 프롬프트 기반 텍스트 생성 helper 를 둔다. 현재 파일 목록에는 `dependencies/ollama.py` 는 존재하지만 `core/ollama.py` 자체가 없다. 즉 state wiring 은 있으나 PRD가 말한 핵심 helper 모듈 표면은 빠져 있다.
 
-### 3. NATS messaging feature layer is missing
-PRD는 비동기 연결/종료 외에 publish/subscribe, queue group 기반 소비, 도메인 이벤트 명명 규칙 표준화(`<domain>.<entity>.<action>`) 를 요구한다. 현재 확인된 구현은 config 모델, state getter/setter, lifecycle drain 중심이며 publish/subscribe helper 나 이벤트 규칙 강제 코드는 보이지 않는다.
+### 2. NATS messaging feature layer is missing
+PRD는 비동기 연결/종료 외에 publish/subscribe, queue group 기반 소비, 도메인 이벤트 발행 규칙 표준화(`<domain>.<entity>.<action>`) 를 요구한다. 현재 확인된 구현은 config 모델, state getter/setter, lifecycle drain 중심이며 publish/subscribe helper 나 이벤트 규칙 강제 코드는 보이지 않는다.
 
-### 4. Introspection option is declared but unused
+### 3. Introspection option is declared but unused
 PRD는 Keycloak 토큰 introspection 의 선택적 지원을 요구한다. 현재 `ServiceSettings.auth.use_introspection` 필드는 존재하지만, 실제 인증 경로에서 introspection 호출은 확인되지 않았다.
 
-### 5. PRD package structure and current source tree are not identical
+### 4. PRD package structure and current source tree are not identical
 PRD가 예시한 `core/ollama.py`, `core/messaging.py` 같은 모듈은 현재 소스 트리에 없다. 반대로 현재 구현에는 `lifecycle.py`, `docmesh_bridge.py`, `bootstrap.py`, `dependencies/langfuse.py` 같은 PRD에 직접 나오지 않는 registry/lifecycle 중심 파일이 존재한다. 즉 문서화된 구조와 실제 구조 사이에 진화 차이가 있다.
 
 ## Recommended interpretation
@@ -67,7 +67,7 @@ PRD가 예시한 `core/ollama.py`, `core/messaging.py` 같은 모듈은 현재 �
 ## Highest-priority documentation or implementation gaps
 1. `use_introspection` 의 실제 런타임 의미를 코드와 PRD 중 하나에 맞춰 정리
 2. Langfuse를 PRD대로 SDK 싱글톤만 사용할지, 현재 코드처럼 state/dependency 를 유지할지 결정
-3. Milvus/Ollama/NATS의 실제 공개 helper 표면을 문서대로 채우거나 PRD를 축소
+3. Ollama/NATS의 실제 공개 helper 표면을 문서대로 채우거나 PRD를 축소
 
 ## Related Topics
 - [[fastapi-core]] 는 비교 대상이 되는 제품 엔티티다.

@@ -3,7 +3,12 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from fastapi_core.core.config import MilvusConfig
-from fastapi_core.core.milvus import create_milvus_client
+from fastapi_core.core.milvus import (
+    check_milvus_connection,
+    create_milvus_client,
+    ensure_collection_exists,
+    list_collection_names,
+)
 
 
 class TestMilvusConfig:
@@ -35,3 +40,46 @@ class TestCreateMilvusClient:
             timeout=15.5,
         )
         assert client is mock_client
+
+
+class TestMilvusHelpers:
+    def test_check_milvus_connection_returns_true_when_list_collections_succeeds(self):
+        mock_client = MagicMock()
+        mock_client.list_collections.return_value = ["docs"]
+
+        assert check_milvus_connection(mock_client) is True
+
+    def test_check_milvus_connection_returns_false_on_error(self):
+        mock_client = MagicMock()
+        mock_client.list_collections.side_effect = RuntimeError("milvus down")
+
+        assert check_milvus_connection(mock_client) is False
+
+    def test_list_collection_names_returns_sdk_collection_names(self):
+        mock_client = MagicMock()
+        mock_client.list_collections.return_value = ["docs", "images"]
+
+        assert list_collection_names(mock_client) == ["docs", "images"]
+
+    def test_ensure_collection_exists_skips_existing_collection(self):
+        mock_client = MagicMock()
+        mock_client.has_collection.return_value = True
+
+        created = ensure_collection_exists(mock_client, "docs", dimension=384)
+
+        assert created is False
+        mock_client.has_collection.assert_called_once_with(collection_name="docs")
+        mock_client.create_collection.assert_not_called()
+
+    def test_ensure_collection_exists_creates_missing_collection(self):
+        mock_client = MagicMock()
+        mock_client.has_collection.return_value = False
+
+        created = ensure_collection_exists(mock_client, "docs", dimension=384)
+
+        assert created is True
+        mock_client.has_collection.assert_called_once_with(collection_name="docs")
+        mock_client.create_collection.assert_called_once_with(
+            collection_name="docs",
+            dimension=384,
+        )
