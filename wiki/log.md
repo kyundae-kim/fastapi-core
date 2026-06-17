@@ -172,3 +172,10 @@
 - Verification: `uv run pytest -q -m 'not integration'` -> `179 passed, 26 deselected, 5 warnings`
 - Updated: `wiki/queries/fastapi-core-prd-vs-source-code-comparison.md`
 - Result: remaining PRD/code gaps are primarily Langfuse lifecycle contract divergence and package-structure documentation drift, not missing runtime features
+
+## [2026-06-17] update | PRD/API docs sync for Langfuse and package structure
+- Updated: `docs/prd.md`, `docs/api.md`, `wiki/queries/fastapi-core-prd-vs-source-code-comparison.md`
+- Synced: Langfuse state/dependency lifecycle contract, package structure (`bootstrap.py`, `docmesh_bridge.py`, `lifecycle.py`, `dependencies/langfuse.py`), and `create_app()` managed lifespan behavior
+- Verification: `uv run pytest -q test_fastapi_core/core/test_langfuse.py test_fastapi_core/dependencies/test_langfuse.py test_fastapi_core/test_lifecycle.py` -> `17 passed, 1 warning`
+- Stale-doc search: no remaining matches for old claims about "no Langfuse dependency module" or "lifespan 없이 생성" in `docs/*.md`
+- Result: PRD/code comparison now reads as broad alignment with remaining differences mostly at documentation detail / architecture emphasis level

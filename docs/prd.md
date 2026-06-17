@@ -74,9 +74,12 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 
 - Langfuse Python SDK 기반 클라이언트 생성
 - SDK가 제공하는 싱글톤 패턴(`get_client`)을 감싼 조회 헬퍼 제공
-- FastAPI dependency를 만들지 않고 애플리케이션 코드에서 직접 초기화/조회
+- `fastapi_core.core.langfuse.get_langfuse_client()` 로 SDK singleton 조회 지원
+- 필요 시 `fastapi_core.dependencies.langfuse.{set_langfuse_client,get_langfuse_client}` 로 FastAPI `app.state.langfuse_client` 캐시 및 dependency 접근 지원
+- fallback 경로에서는 docmesh registry 기반 Langfuse client 해석을 우선 사용
 - public health endpoint(`/api/public/health`) 기반 연결 확인 유틸리티 제공
 - readiness에서 선택적으로 Langfuse 상태 점검 지원
+- shutdown 단계에서 Langfuse client의 `flush()` 호출 지원
 
 ### 7. NATS 메시징
 
@@ -120,12 +123,13 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 | `app.state.async_milvus_client` | `AsyncMilvusClient` | `set_async_milvus_client(app, client)` 또는 `set_async_milvus_client(app, config=config)` | `get_async_milvus_client` |
 | `app.state.ollama_client` | `ollama.Client` | `set_ollama_client(app, client)` 또는 `set_ollama_client(app, config=config)` | `get_ollama_client` |
 | `app.state.nats_client` | `nats.aio.client.Client` | `set_nats_client(app, client)` 또는 `set_nats_client(app, config=config)` | `get_nats_client` |
+| `app.state.langfuse_client` | `Langfuse` | `set_langfuse_client(app, client)` 또는 `set_langfuse_client(app, config=config)` | `get_langfuse_client` |
 
-> Langfuse는 `app.state`가 아니라 Langfuse SDK의 싱글톤(`get_langfuse_client`)을 사용한다. 따라서 `dependencies/langfuse.py`는 만들지 않는다.
+> Langfuse는 core 레이어에서는 SDK 싱글톤 helper(`fastapi_core.core.langfuse.get_langfuse_client`)를 제공하고, FastAPI 통합에서는 `dependencies/langfuse.py` 를 통해 `app.state.langfuse_client` 캐시와 dependency 접근도 지원한다.
 
 #### 저장 함수 (state setter)
 
-- `set_auth_provider`, `set_db_engine`, `set_minio_client`, `set_milvus_client`, `set_async_milvus_client`, `set_ollama_client`, `set_nats_client`를 `dependencies` 모듈에서 제공
+- `set_auth_provider`, `set_db_engine`, `set_minio_client`, `set_milvus_client`, `set_async_milvus_client`, `set_ollama_client`, `set_nats_client`, `set_langfuse_client`를 `dependencies` 모듈에서 제공
 - 각 함수는 **두 가지 호출 형태**를 지원한다:
   - `set_auth_provider(app, provider)` — 외부에서 생성한 객체를 직접 전달
   - `set_auth_provider(app, config=config)` — `EnvConfig`를 전달하면 내부에서 객체를 생성하여 등록
@@ -135,11 +139,11 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 
 #### 의존성 함수 (state getter)
 
-- `get_auth_provider`, `get_db_engine`, `get_minio_client`, `get_milvus_client`, `get_async_milvus_client`, `get_ollama_client`, `get_nats_client`는 `request.app.state`의 고정된 속성명에서 객체를 읽어 반환하는 함수형 `Depends` dependency다
+- `get_auth_provider`, `get_db_engine`, `get_minio_client`, `get_milvus_client`, `get_async_milvus_client`, `get_ollama_client`, `get_nats_client`, `get_langfuse_client`는 `request.app.state`의 고정된 속성명에서 객체를 읽어 반환하는 함수형 `Depends` dependency다
 - `Get*Dependency` class와 `get_* = Get*Dependency()` 형태의 전역 인스턴스는 공개 API로 제공하지 않는다
 - 서비스 개발자는 `Depends(get_db_engine)` 형태로만 사용하며 state 속성명을 알 필요가 없다
 
-> **fallback 정책**: `app.state`에 해당 속성이 없으면 (`AttributeError`) `EnvConfig`를 읽어 생성하는 폴백을 두어 lifespan 없이도 동작하도록 한다. `auth_provider`, `db_engine`, `minio_client`, `milvus_client`, `async_milvus_client`, `ollama_client`, `nats_client`는 생성 후 `app.state`에 저장하여 재사용한다.
+> **fallback 정책**: `app.state`에 해당 속성이 없으면 (`AttributeError`) `EnvConfig`를 읽어 생성하는 폴백을 두어 lifespan 없이도 동작하도록 한다. `auth_provider`, `db_engine`, `minio_client`, `milvus_client`, `async_milvus_client`, `ollama_client`, `nats_client`, `langfuse_client`는 생성 후 `app.state`에 저장하여 재사용한다. Langfuse를 포함한 일부 서비스는 이 fallback에서 docmesh registry 기반 해석을 우선 사용할 수 있다.
 
 ---
 
@@ -148,11 +152,15 @@ DocMesh 프로젝트는 다수의 FastAPI 기반 마이크로서비스로 구성
 ```
 fastapi_core/
 ├── __init__.py
+├── bootstrap.py         # app.state read/write 및 lazy singleton bootstrap 유틸리티
+├── docmesh_bridge.py    # docmesh registry 연계 및 서비스 해석 브리지
+├── lifecycle.py         # startup/shutdown 초기화 정책과 managed lifespan
 ├── core/                # 프레임워크 비의존 공통 인프라
 │   ├── config.py        # EnvConfig, ServiceSettings, 각종 설정 모델
 │   ├── auth.py          # KeycloakAuthProvider, JWT 디코드, Token/User 모델
 │   ├── logging.py       # 로깅 레벨 초기화
 │   ├── exceptions.py    # AuthError 및 전역 예외 핸들러
+│   ├── database.py      # DB engine/check/version/transaction helper
 │   ├── milvus.py        # Milvus 클라이언트 생성, 컬렉션 조회/생성
 │   ├── ollama.py        # Ollama 클라이언트 생성, 모델 조회, 텍스트 생성
 │   ├── langfuse.py      # Langfuse 클라이언트 생성/싱글톤 조회, health check
@@ -166,6 +174,7 @@ fastapi_core/
 │   ├── milvus.py        # set_milvus_client, get_milvus_client
 │   ├── ollama.py        # set_ollama_client, get_ollama_client
 │   ├── storage.py       # set_minio_client, get_minio_client
+│   ├── langfuse.py      # set_langfuse_client, get_langfuse_client
 │   └── messaging.py     # set_nats_client, get_nats_client
 ├── routers/             # 재사용 가능한 내장 라우터
 │   ├── health.py        # GET /health/liveness, GET /health/readiness
@@ -176,6 +185,8 @@ fastapi_core/
 │   └── health.py        # HealthResponse
 └── factory.py           # create_app() — FastAPI 앱 조립 팩토리
 ```
+
+> 실제 구현은 `factory.py` 단독 조립보다 `bootstrap.py` / `docmesh_bridge.py` / `lifecycle.py` 를 함께 사용해 state 캐시, registry 기반 client 해석, shutdown 정리까지 포함하는 구조다.
 
 ---
 

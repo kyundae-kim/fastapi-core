@@ -10,7 +10,7 @@ confidence: medium
 # fastapi-core PRD vs source code comparison
 
 ## Verdict
-현재 소스코드는 PRD의 큰 방향성은 상당 부분 구현했고, 서비스별 기능 표면도 이전보다 많이 따라잡았다. 특히 설정 분리, `create_app()`, health routes, `app.state` 기반 dependency 재사용, Keycloak 기본 인증 흐름, PostgreSQL/MinIO/Milvus/Ollama/Langfuse/NATS의 기본 연결 구조는 구현돼 있다. 또한 PostgreSQL/MinIO/Milvus/Ollama/NATS convenience helper 는 이제 최소 형태로 갖춰졌고, Keycloak introspection runtime wiring 도 해소됐다. 현재 남은 차이는 기능 공백보다는 **Langfuse 수명주기 계약**과 **PRD 패키지 구조 문서가 실제 소스 트리 진화를 따라가지 못한 점**에 집중된다.
+현재 소스코드는 PRD의 큰 방향성과 공개 문서 기준에서 상당 부분 정렬됐다. 특히 설정 분리, `create_app()`, health routes, `app.state` 기반 dependency 재사용, Keycloak 기본 인증 흐름, PostgreSQL/MinIO/Milvus/Ollama/Langfuse/NATS의 기본 연결 구조는 구현돼 있다. 또한 PostgreSQL/MinIO/Milvus/Ollama/NATS convenience helper 와 Keycloak introspection runtime wiring 이 반영됐고, 2026-06-17 문서 동기화로 Langfuse 수명주기 및 패키지 구조 설명도 현재 구현 기준으로 갱신됐다. 현재 남은 이슈는 기능 공백보다는 registry/lifecycle 중심 구조를 얼마나 공식 아키텍처로 강조할지에 대한 설명 수준의 선택에 가깝다.
 
 ## Implemented and aligned well
 ### 1. App assembly and configuration layering
@@ -19,7 +19,7 @@ confidence: medium
 `EnvConfig` 는 `env_nested_delimiter="__"`, `.env` 파일, `dev/stage/prod` 환경 enum, Keycloak/DB/MinIO/Milvus/Ollama/Langfuse/NATS 설정 모델을 포함한다. 따라서 설정 계층화 자체는 PRD 요구와 대체로 정렬된다.
 
 ### 2. FastAPI state-based singleton dependencies
-`set_auth_provider`, `set_db_engine`, `set_minio_client`, `set_milvus_client`, `set_async_milvus_client`, `set_ollama_client`, `set_nats_client` 와 대응되는 getter 가 존재하며, 대부분 `app.state` 캐시 + fallback 생성 패턴을 따른다. 이 구조는 [[fastapi-app-state-singletons]] 과 일치한다.
+`set_auth_provider`, `set_db_engine`, `set_minio_client`, `set_milvus_client`, `set_async_milvus_client`, `set_ollama_client`, `set_nats_client`, `set_langfuse_client` 와 대응되는 getter 가 존재하며, 대부분 `app.state` 캐시 + fallback 생성 패턴을 따른다. 이 구조는 [[fastapi-app-state-singletons]] 과 일치한다.
 
 또한 lifecycle 계층은 startup/shutdown 관리와 docmesh registry 연계를 제공한다. 이는 PRD의 "앱 시작 시 한 번 생성" 원칙을 향한 구현으로 볼 수 있다.
 
@@ -45,42 +45,33 @@ Keycloak 쪽은 password grant 기반 토큰 발급, JWT RS256 검증, `sub`/`pr
 `fastapi_core.core.messaging` 가 이제 `create_nats_client`, `build_event_subject`, `validate_event_subject`, `publish_event`, `subscribe_event`, `subscribe_queue_event` 를 제공한다. 따라서 PRD가 요구한 비동기 연결/종료를 위한 기반뿐 아니라 publish/subscribe helper, queue group 소비 패턴, `<domain>.<entity>.<action>` subject 규칙 표준화도 최소 형태로 구현되었다.
 
 ## Partially implemented or diverged
-### 1. Langfuse architecture differs from PRD
-PRD는 Langfuse를 `app.state` 가 아니라 SDK 싱글톤 `get_langfuse_client` 로 다루고, `dependencies/langfuse.py` 는 만들지 않는다고 적는다. 그러나 현재 코드는 `fastapi_core.dependencies.langfuse` 를 공개하고, `set_langfuse_client()` / `get_langfuse_client()` 로 `app.state.langfuse_client` 캐시를 관리한다. fallback 경로도 PRD의 단순 singleton helper 와 다르게 docmesh registry 를 우선 사용한다.
+### 1. Registry-backed implementation is more explicit in code than in high-level product language
+현재 구현은 docmesh registry 와 bridge 를 통해 auth/database/minio/milvus/ollama/langfuse/nats 를 startup 및 fallback 경로에서 재사용하려는 방향이 강하다. PRD와 API 문서는 2026-06-17 기준으로 이 구조를 반영하도록 갱신됐지만, 여전히 실제 코드는 문서보다 더 구체적인 운영 디테일(예: registry 우선 fallback, shutdown flush/close 순서)을 담고 있다. 즉 남은 차이는 계약 충돌이라기보다 설명 밀도의 차이다.
 
-또한 `fastapi_core.lifecycle.shutdown_app_services()` 는 `langfuse_client.flush()` 를 shutdown 단계에서 호출하며, lifecycle 테스트도 이 경로를 검증한다. 즉 현재 구현의 실제 계약은 "SDK singleton only" 가 아니라 **FastAPI state + dependency + registry + shutdown flush** 모델이다. 연결 확인 API(`check_langfuse_connection`) 자체는 PRD와 맞지만, 객체 생성/조회/종료 수명주기 모델은 PRD와 명확히 다르다.
-
-### 2. Registry-backed implementation is stronger than the PRD text
-현재 구현은 docmesh registry 와 bridge 를 통해 auth/database/minio/milvus/ollama/langfuse/nats 를 startup 및 fallback 경로에서 재사용하려는 방향이 강하다. 이는 [[registry-full-replacement-plan]] 과는 정렬되지만, PRD 자체에는 이런 registry 우선 구조가 명시적으로 드러나지 않는다. 즉 구현은 PRD보다 더 구체적이고 더 registry 중심적이다.
-
-### 3. `allow_insecure_jwt_decode` 는 이제 PRD와 정렬됨
+### 2. `allow_insecure_jwt_decode` 는 이제 PRD와 정렬됨
 이전 비교 메모와 달리 현재 구현의 `get_current_user()` 는 `settings.auth.verify_jwt` 가 꺼져 있고 `settings.auth.allow_insecure_jwt_decode` 가 켜져 있으면 `provider.decode_token_insecure()` 로 분기한다. 따라서 개발환경용 서명 검증 생략 모드는 이제 실제 런타임 경로에 연결되어 있다.
 
 ## Missing or clearly under-implemented versus PRD
-현재 재검토 기준으로 이전의 핵심 미구현 항목이던 Keycloak introspection runtime wiring 은 해소됐다. 남아 있는 차이는 기능 결손보다는 문서·아키텍처 정렬 문제에 가깝다.
+현재 재검토 기준으로 이전의 핵심 미구현 항목이던 Keycloak introspection runtime wiring 은 해소됐고, Langfuse 계약/패키지 구조에 대한 문서 차이도 2026-06-17 문서 동기화로 크게 줄었다. 남아 있는 차이는 기능 결손보다는 문서가 코드의 운영 디테일을 어디까지 공식 계약으로 끌어올릴지에 대한 표현 수준 문제에 가깝다.
 
-### 1. PRD package structure and current source tree are not identical
-PRD가 예시한 `core/messaging.py` 같은 모듈은 이제 구현되었지만, 현재 소스 트리는 PRD의 정적 예시보다 더 진화했다. 실제로 `fastapi_core/` 루트에는 `lifecycle.py`, `docmesh_bridge.py`, `bootstrap.py` 가 있고, `dependencies/` 아래에도 PRD가 금지했던 `langfuse.py` 가 존재한다. 반대로 PRD의 패키지 구조 섹션은 이 registry/lifecycle 계층을 전혀 설명하지 않는다.
+### 1. PRD package structure and current source tree are now documented more faithfully
+`docs/prd.md` 는 이제 `bootstrap.py`, `docmesh_bridge.py`, `lifecycle.py`, `dependencies/langfuse.py`, `core/database.py` 까지 포함해 현재 소스 트리의 핵심 조립 계층을 설명한다. 따라서 이전의 큰 문서 차이는 상당 부분 해소됐다.
 
-이 차이는 단순 파일명 불일치가 아니라 아키텍처 설명의 공백이다. 현재 제품의 중요한 동작—state 캐시, registry 기반 client 해석, startup/shutdown 정리—가 PRD 트리만 읽으면 보이지 않는다. 따라서 남은 작업은 새 기능 추가보다 **문서가 실제 조립 경로를 설명하도록 따라잡는 것**에 가깝다.
+남아 있는 차이는 파일 존재 여부가 아니라, registry 기반 fallback 과 shutdown 정리 같은 운영 디테일을 PRD 수준에서 얼마나 자세히 설명할지에 가깝다.
 
 ## Recommended interpretation
-이 PRD는 "제품이 장기적으로 제공해야 하는 표면" 을 설명하고, 현재 소스는 그중 공통 wiring 과 lifecycle 기반을 먼저 구현한 뒤 서비스별 helper 표면을 점진적으로 채워온 상태로 보는 것이 가장 정확하다. 이제는 Keycloak introspection 까지 런타임 경로에 연결됐고, `fastapi-core` 는 부트스트랩/상태관리/기본 health/readiness 와 PostgreSQL/MinIO/Milvus/Ollama/NATS convenience API 를 대부분 갖췄다. 남은 큰 차이는 Langfuse 수명주기 계약과 PRD/현재 패키지 구조 간 불일치다.
+이 PRD는 "제품이 장기적으로 제공해야 하는 표면" 을 설명하고, 현재 소스는 그중 공통 wiring 과 lifecycle 기반을 먼저 구현한 뒤 서비스별 helper 표면을 점진적으로 채워온 상태로 보는 것이 가장 정확하다. 이제는 Keycloak introspection 까지 런타임 경로에 연결됐고, `fastapi-core` 는 부트스트랩/상태관리/기본 health/readiness 와 PostgreSQL/MinIO/Milvus/Ollama/NATS convenience API 를 대부분 갖췄다. 2026-06-17 문서 동기화 이후 PRD/API 문서도 이 구조를 상당 부분 반영하므로, 남은 과제는 계약 충돌 해소보다는 설명 깊이와 유지보수 일관성 확보에 가깝다.
 
 ## Prioritized implementation order
-### P0 — Langfuse lifecycle contract reconciliation
-이제 최우선은 기능 공백보다는 아키텍처 불일치 정리다. 현재도 health check 와 client 조회는 가능하므로 즉시 제품 기능이 막히는 상황은 아니다. 다만 PRD/공개 API/실제 lifecycle 모델이 다르면 이후 유지보수 비용이 커진다.
+### P0 — Keep docs and implementation synchronized around registry/lifecycle details
+즉시 구현 공백은 크지 않다. 이제 중요한 것은 PRD/API 문서가 registry 기반 fallback, state 캐시, shutdown 정리 같은 운영 계약을 계속 따라가도록 유지하는 것이다. 새 기능이나 lifecycle 정책이 바뀔 때마다 PRD, API 문서, 비교 메모를 함께 갱신해야 한다.
 
-선택지:
-1. PRD를 현재 코드(state + dependency + lifecycle flush) 기준으로 갱신
-2. 또는 구현을 PRD 기준(SDK singleton helper only)으로 단순화
-
-### P1 — PRD package structure / docs refresh
-실제 구현이 더 진화해 있어 문서가 뒤처진 상태다. 현재 구조를 기준으로 PRD와 API 문서를 정리하면 이후 비교 비용이 크게 줄어든다.
+### P1 — Decide how strongly to elevate registry/lifecycle to product-level architecture
+현재 코드와 문서는 정렬됐지만, registry/lifecycle 계층을 단순 구현 세부로 둘지 아니면 제품 아키텍처의 핵심 축으로 승격할지는 여전히 선택 사항이다. 이 결정은 이후 README, 설계 문서, 외부 서비스 통합 예제의 서술 깊이에 영향을 준다.
 
 ## Highest-priority documentation or implementation gaps
-1. Langfuse를 PRD대로 SDK 싱글톤만 사용할지, 현재 코드처럼 state/dependency/registry/shutdown flush 계약을 유지할지 결정
-2. PRD의 패키지 구조 예시와 실제 source tree 차이를 문서에 반영하고, 특히 `bootstrap.py`, `docmesh_bridge.py`, `lifecycle.py`, `dependencies/langfuse.py` 의 역할을 설명
+1. registry 기반 fallback, state 캐시, shutdown flush/close 순서처럼 운영 디테일이 변경될 때 PRD/API/wiki 비교 문서가 함께 갱신되는지 지속 확인
+2. registry/lifecycle 계층을 README 및 상위 설계 문서에서 어느 정도까지 전면에 드러낼지 결정
 
 ## Related Topics
 - [[fastapi-core]] 는 비교 대상이 되는 제품 엔티티다.

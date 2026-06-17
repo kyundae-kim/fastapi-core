@@ -438,6 +438,34 @@ def get_langfuse_client(config: LangfuseConfig | None = None) -> Langfuse:
 - `config`가 없으면 `langfuse.get_client()`를 그대로 반환한다.
 - FastAPI state 기반 접근이 필요하면 `fastapi_core.dependencies.langfuse.get_langfuse_client()` 를 사용할 수 있다.
 
+### `set_langfuse_client` — `fastapi_core.dependencies.langfuse`
+
+```python
+def set_langfuse_client(
+    app: FastAPI,
+    client: Any | None = None,
+    *,
+    config: EnvConfig | None = None,
+) -> None:
+```
+
+- `client` 직접 전달 → `app.state.langfuse_client`에 할당
+- `config` 전달 → docmesh bridge의 `get_required_docmesh_service(..., "langfuse_client", config=config)` 결과를 우선 사용해 할당
+- 둘 다 `None` → `ValueError`
+
+### `get_langfuse_client` — `fastapi_core.dependencies.langfuse`
+
+```python
+def get_langfuse_client(
+    request: Request,
+    config: EnvConfig | DependsParam = Depends(get_config),
+) -> Any:
+```
+
+- `app.state.langfuse_client` 존재 시 반환 (싱글톤)
+- 미등록 시 docmesh bridge의 `get_required_docmesh_service(..., "langfuse_client", config=resolved_config)` 를 통해 fallback lazy singleton을 만든다.
+- 이 dependency 경로는 FastAPI 통합에서 state 캐시와 registry 기반 재사용을 담당한다.
+
 ### `check_langfuse_connection` — `fastapi_core.core.langfuse`
 
 ```python
@@ -587,10 +615,10 @@ def create_app(
 |---|---|
 | `config` | `None`이면 `EnvConfig()` 자동 생성 |
 | `settings` | `None`이면 `ServiceSettings.from_yaml(config.config_path)` 자동 로드 |
-| `lifespan` | FastAPI lifespan 컨텍스트 매니저. `None`이면 lifespan 없이 생성 |
+| `lifespan` | FastAPI lifespan 컨텍스트 매니저. `None`이면 `create_managed_lifespan(config, settings)` 를 사용 |
 | `include_auth_router` | `True`이면 `/token`, `/user` 라우터 포함 |
 
-**등록 순서**: `setup_logging` → `FastAPI(root_path=...)` → `CORSMiddleware` → `AuthError` 핸들러 → `/health` 라우터 → (선택) auth 라우터
+**등록 순서**: `setup_logging` → `FastAPI(root_path=..., lifespan=...)` → config/settings state 저장 → `CORSMiddleware` → `AuthError` 핸들러 → `/health` 라우터 → (선택) auth 라우터
 
 ---
 
