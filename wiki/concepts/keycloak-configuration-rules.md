@@ -1,19 +1,19 @@
 ---
 title: Keycloak configuration rules
 created: 2026-06-11
-updated: 2026-06-11
+updated: 2026-06-17
 type: concept
 tags: [keycloak, auth, config, oidc, security]
-sources: [raw/articles/docmesh-py-core-config-2026-06-11.md]
+sources: [raw/articles/docmesh-py-core-config-2026-06-11.md, raw/articles/fastapi-core-config-2026-06-17.md]
 confidence: medium
 ---
 # Keycloak configuration rules
 
 ## Definition
-이 페이지는 `docmesh-py-core` 가 Keycloak 인증, 토큰 발급, JWT 검증, 프로비저닝을 위해 요구하는 환경변수 계약을 정리한다. 런타임 인증 경로와 관리 평면 경로가 같은 Keycloak 설정 기반을 공유하지만, 조건부 필수 규칙은 서로 다르다.
+이 페이지는 `docmesh-py-core` 와 `fastapi-core` 가 Keycloak 인증, 토큰 발급, JWT 검증, 프로비저닝을 위해 요구하는 설정 계약을 정리한다. 런타임 인증 경로와 readiness/관리 평면 경로가 같은 Keycloak 설정 기반을 공유하지만, 사용되는 필드와 조건부 규칙은 제품마다 약간 다르다.
 
 ## Base Authentication Settings
-핵심 기본값은 `KEYCLOAK_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_CLIENT_ID` 이며, confidential client 인 경우 `KEYCLOAK_CLIENT_SECRET` 이 조건부로 필요하다. `KEYCLOAK_VERIFY_SSL` 은 기본 `true` 이고, `KEYCLOAK_AUDIENCE`, 요청 timeout, retry 같은 값으로 검증/통신 동작을 조절한다.
+`fastapi-core` 문서 기준 핵심 기본값은 `KEYCLOAK__HTTP_URL`, `KEYCLOAK__MANAGE_URL`, `KEYCLOAK__REALM`, `KEYCLOAK__CLIENT_ID` 이며, confidential client 인 경우 `KEYCLOAK__CLIENT_SECRET` 이 조건부로 필요하다. 여기에 `KEYCLOAK_USERNAME`, `KEYCLOAK_PASSWORD` 가 통합 테스트용 기본 자격정보로 문서화된다. readiness 경로가 관리 URL을 따로 쓰므로, 인증 URL과 health URL을 분리해 운영할 수 있다는 점이 중요하다.
 
 ## Token Grant Rules
 기본 grant type 은 `client_credentials` 다. `KEYCLOAK_TOKEN_GRANT_TYPE=password` 를 사용할 경우 `KEYCLOAK_TOKEN_USERNAME`, `KEYCLOAK_TOKEN_PASSWORD` 가 필요하며, 문서는 이를 제한된 내부/레거시 용도로만 권장한다. 이 규칙은 [[keycloak-auth-integration]] 의 `fetch_access_token()` 사용 계약을 뒷받침한다.
@@ -28,3 +28,4 @@ confidence: medium
 - [[keycloak-auth-integration]] 는 런타임 토큰/JWT 경로를 다룬다.
 - [[keycloak-provisioner]] 는 선언적 상태 조정을 다룬다.
 - [[configuration-principles]] 는 공통 환경변수 운영 철학을 설명한다.
+- [[lifecycle-policy-resolution]] 은 Keycloak readiness 설정이 eager-init 정책으로 상속될 수 있음을 설명한다.

@@ -1,7 +1,7 @@
 ---
 title: fastapi-core PRD alignment review
 created: 2026-06-16
-updated: 2026-06-16
+updated: 2026-06-17
 type: query
 tags: [query, architecture, decision, sdk, risk]
 sources: [raw/articles/fastapi-core-prd-2026-06-16.md, queries/fastapi-core-codebase-review-against-docmesh-py-core.md, queries/registry-full-replacement-plan.md]
@@ -10,24 +10,24 @@ confidence: medium
 # fastapi-core PRD alignment review
 
 ## Summary
-`docs/prd.md` 는 `fastapi-core` 를 DocMesh 계열 FastAPI 서비스용 공통 SDK로 정의하고, 인증/저장소/LLM/관측성/메시징 연동과 앱 조립 패턴을 제품 요구사항으로 명시한다. 기존 코드 리뷰 문서들과 함께 보면, 현재 코드베이스는 이 PRD의 상당 부분을 이미 향해 이동했지만 아직 완전히 수렴한 상태는 아니다.
+2026-06-17 기준 `docs/prd.md` 는 초기 제품 비전 문서라기보다 현재 `fastapi-core` 구현이 채택한 운영 모델을 상당 부분 반영한 기준 문서에 가까워졌다. 인증/저장소/벡터 DB/LLM/관측성/메시징 helper 범위뿐 아니라 managed lifespan, curated public API, registry-backed dependency 경로, 현재 패키지 구조까지 명시한다.
 
 ## Alignment Points
-PRD가 강조하는 공통화 축은 설정 분리, `app.state` singleton 관리, `create_app()` 중심 조립, health route 표준화다. 이는 [[fastapi-app-state-singletons]], [[layered-configuration-model]], [[fastapi-app-factory-and-health-routes]] 로 정리한 구조와 일관되며, 기존 [[fastapi-core-codebase-review-against-docmesh-py-core]] 에서 지적했던 startup/lifecycle 일원화 요구와도 맞물린다.
+PRD가 강조하는 공통화 축은 설정 분리, `create_app()` 중심 조립, `app.state` singleton 재사용, lifecycle 정책, readiness 표준화다. 이는 [[layered-configuration-model]], [[fastapi-app-factory-and-health-routes]], [[fastapi-app-state-singletons]] 로 정리한 구조와 일관되며, 최근 비교 메모에서 좁혀진 문서/코드 차이도 잘 반영한다.
 
-또한 registry 관련 최근 계획은 PRD의 목표를 더 얇은 composition layer 쪽으로 밀어준다. 즉 제품 요구사항은 다양한 외부 연동을 fastapi-core가 제공한다고 말하지만, 구현 수준에서는 그 책임을 전부 직접 구현하기보다 [[service-factory-registry]] 를 재사용하는 편이 더 유지보수에 유리하다.
+또한 새 PRD는 공개 루트 API가 curated subset 만 export 한다는 점과 주요 dependency 가 registry-backed 경로를 따른다는 점을 문서 수준으로 끌어올렸다. 그래서 예전처럼 "문서가 단순 helper 중심이고 코드는 registry/lifecycle 중심" 이라고 보기보다는, 이제 문서도 [[curated-public-api-surface]] 와 [[registry-backed-dependency-resolution]] 수준의 구조를 공식 계약 일부로 받아들이기 시작했다고 보는 편이 정확하다.
 
-## Gaps and Tensions
-PRD는 `app.state` fallback 생성 정책을 허용하면서도, 동시에 애플리케이션 시작 시 단 한 번 생성하는 singleton 패턴을 핵심 원칙으로 적는다. 이 둘은 공존 가능하지만 운영적으로는 startup 실패 조기 노출과 request-time lazy init 사이의 긴장을 만든다. 이 부분은 기존 리뷰 문서가 이미 위험지점으로 식별한 영역이다.
-
-또 하나의 긴장은 Milvus 비동기 경로다. PRD는 sync/async 둘 다 state singleton으로 다루라고 요구하지만, [[registry-full-replacement-plan]] 기준 현재 registry가 완전 대체 가능한 범위에는 `async_milvus` 가 포함되지 않는다. 따라서 제품 문서와 현재 통합 추상화의 범위를 명시적으로 연결해 둘 필요가 있다.
+## Remaining Tensions
+남은 긴장은 기능 미구현보다는 설명 수준의 선택에 가깝다. startup eager-init 과 request-time fallback 을 동시에 허용하는 구조는 여전히 운영 상 trade-off 를 만든다. 또한 async milvus 는 registry 완전 위임 범위 밖에 남아 있으므로, 모든 서비스가 동일한 소유 모델을 따르는 것은 아니다.
 
 ## Recommended Use
-이 PRD는 앞으로 위키 내 `fastapi-core` 관련 문서들의 기준 출처로 삼기에 적합하다. 특히 제품 책임 범위, 공개 API 기대치, 서비스별 통합 범위를 설명하는 기준선으로 쓰고, 실제 구현 세부사항과 차이가 나는 지점은 [[fastapi-core-codebase-review-against-docmesh-py-core]] 와 함께 읽는 것이 좋다.
+이 PRD는 앞으로 `fastapi-core` 관련 위키 문서의 기준 출처로 계속 사용하기 적합하다. 다만 운영 디테일이 변할 때는 [[fastapi-core-prd-vs-source-code-comparison]] 과 함께 다시 읽어, registry/lifecycle 실제 구현이 문서보다 더 앞서가거나 뒤처지지 않았는지 주기적으로 확인해야 한다.
 
 ## Related Topics
 - [[fastapi-core]] 는 PRD가 설명하는 제품 엔티티다.
 - [[fastapi-app-state-singletons]] 은 PRD의 lifecycle/state 규칙을 구조화한다.
 - [[layered-configuration-model]] 은 설정 분리 요구를 정리한다.
 - [[fastapi-app-factory-and-health-routes]] 는 앱 조립 및 readiness 요구를 정리한다.
+- [[curated-public-api-surface]] 는 루트 공개 표면의 경계를 설명한다.
+- [[registry-backed-dependency-resolution]] 은 PRD가 반영하기 시작한 현재 구현의 운영 해석 경로를 설명한다.
 - [[registry-full-replacement-plan]] 은 PRD 목표를 구현적으로 어디까지 registry에 위임할지 판단한 문서다.

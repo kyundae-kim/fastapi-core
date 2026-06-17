@@ -179,3 +179,39 @@
 - Verification: `uv run pytest -q test_fastapi_core/core/test_langfuse.py test_fastapi_core/dependencies/test_langfuse.py test_fastapi_core/test_lifecycle.py` -> `17 passed, 1 warning`
 - Stale-doc search: no remaining matches for old claims about "no Langfuse dependency module" or "lifespan 없이 생성" in `docs/*.md`
 - Result: PRD/code comparison now reads as broad alignment with remaining differences mostly at documentation detail / architecture emphasis level
+
+## [2026-06-17] ingest | fastapi-core PRD refresh
+- Source re-ingested with drift: `raw/articles/fastapi-core-prd-2026-06-16.md`
+- Source file: `docs/prd.md`
+- Updated: `entities/fastapi-core.md`
+- Updated: `concepts/layered-configuration-model.md`
+- Updated: `concepts/fastapi-app-state-singletons.md`
+- Updated: `concepts/fastapi-app-factory-and-health-routes.md`
+- Created: `concepts/curated-public-api-surface.md`
+- Created: `concepts/registry-backed-dependency-resolution.md`
+- Updated: `queries/fastapi-core-prd-alignment-review.md`
+- Updated: `index.md`
+
+## [2026-06-17] ingest | fastapi-core API docs
+- Source captured: `raw/articles/fastapi-core-api-2026-06-17.md`
+- Source file: `docs/api.md`
+- Updated: `entities/fastapi-core.md`
+- Updated: `concepts/curated-public-api-surface.md`
+- Updated: `concepts/registry-backed-dependency-resolution.md`
+- Updated: `concepts/fastapi-app-state-singletons.md`
+- Created: `concepts/function-style-fastapi-dependencies.md`
+- Updated: `index.md`
+
+## [2026-06-17] ingest | fastapi-core config docs
+- Source captured: `raw/articles/fastapi-core-config-2026-06-17.md`
+- Source file: `docs/config.md`
+- Updated: `entities/fastapi-core.md`
+- Updated: `concepts/layered-configuration-model.md`
+- Updated: `concepts/configuration-principles.md`
+- Updated: `concepts/database-configuration-patterns.md`
+- Updated: `concepts/keycloak-configuration-rules.md`
+- Updated: `concepts/nats-configuration-and-auth-modes.md`
+- Updated: `concepts/optional-observability-services.md`
+- Updated: `concepts/load-settings-and-settings-model.md`
+- Created: `concepts/lifecycle-policy-resolution.md`
+- Updated: `index.md`
