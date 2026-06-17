@@ -88,3 +88,17 @@
 - Sources synthesized: `raw/articles/fastapi-core-prd-2026-06-16.md`, `queries/fastapi-core-prd-alignment-review.md`, `queries/fastapi-core-codebase-review-against-docmesh-py-core.md`
 - Verification: `uv run pytest -q -m 'not integration'` -> `146 passed, 26 deselected`
 - Updated: `index.md`
+
+## [2026-06-17] query | PRD gaps re-check
+- Re-read: `raw/articles/fastapi-core-prd-2026-06-16.md`, `queries/fastapi-core-prd-vs-source-code-comparison.md`, `queries/fastapi-core-prd-alignment-review.md`
+- Code verified: `fastapi_core/core/{auth,database,storage,milvus,langfuse}.py`, `fastapi_core/dependencies/{auth,messaging,ollama}.py`
+- Verification: `uv run pytest -q -m 'not integration'` -> `146 passed, 26 deselected`
+- Updated: `queries/fastapi-core-prd-vs-source-code-comparison.md`
+
+## [2026-06-17] update | PostgreSQL helper surface
+- Added tests: `test_fastapi_core/core/test_database.py`
+- Updated: `fastapi_core/core/database.py`
+- Verification: `uv run pytest -q test_fastapi_core/core/test_database.py` -> `4 passed`
+- Verification: `uv run pytest -q test_fastapi_core/dependencies/test_database.py test_fastapi_core/core/test_database.py` -> `14 passed`
+- Verification: `uv run pytest -q -m 'not integration'` -> `150 passed, 26 deselected`
+- Updated: `queries/fastapi-core-prd-vs-source-code-comparison.md`

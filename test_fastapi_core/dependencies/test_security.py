@@ -55,7 +55,10 @@ def mock_provider() -> KeycloakAuthProvider:
 @pytest.fixture
 def insecure_settings() -> ServiceSettings:
     settings = ServiceSettings()
-    settings.auth = AuthSettings(verify_jwt=False)
+    settings.auth = AuthSettings(
+        verify_jwt=False,
+        allow_insecure_jwt_decode=True,
+    )
     return settings
 
 

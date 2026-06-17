@@ -1,7 +1,7 @@
 ---
 title: fastapi-core PRD vs source code comparison
 created: 2026-06-16
-updated: 2026-06-16
+updated: 2026-06-17
 type: query
 tags: [query, architecture, decision, sdk, risk]
 sources: [raw/articles/fastapi-core-prd-2026-06-16.md, queries/fastapi-core-prd-alignment-review.md, queries/fastapi-core-codebase-review-against-docmesh-py-core.md]
@@ -27,49 +27,48 @@ confidence: medium
 Keycloak 쪽은 password grant 기반 토큰 발급, JWT RS256 검증, `sub`/`preferred_username`/`email`/`name` 추출, realm role 과 scope 파싱, `get_current_user`, `require_permissions`, `/token`, `/user` 라우터가 구현돼 있다. readiness 는 Keycloak, PostgreSQL, MinIO, Langfuse(옵션) 체크를 제공한다. 이 범위는 PRD의 인증/health 최소 요구와 잘 맞는다.
 
 ### 4. Verified test baseline
-현재 코드 상태는 `uv run pytest -q -m 'not integration'` 기준 `146 passed, 26 deselected` 로 통과했다. 즉 아래 비교는 단순 추정이 아니라 실제 테스트 가능한 현재 구현 기준이다.
+현재 코드 상태는 `uv run pytest -q -m 'not integration'` 기준 `150 passed, 26 deselected` 로 통과했다. 즉 아래 비교는 단순 추정이 아니라 실제 테스트 가능한 현재 구현 기준이다.
+
+### 5. PostgreSQL helper surface now mostly aligns
+`fastapi_core.core.database` 는 이제 `create_db_engine`, `check_database_connection(SELECT 1)`, `get_database_version(SELECT version())`, `run_in_transaction(...)` 를 제공한다. 따라서 PRD가 요구한 DB 버전 조회와 트랜잭션 helper 는 최소 형태로 구현되었다.
 
 ## Partially implemented or diverged
-### 1. Insecure JWT decode option exists in config but not in the PRD form
-PRD는 `allow_insecure_jwt_decode` 지원을 명시하지만, 현재 런타임 분기는 `settings.auth.verify_jwt` 만 사용한다. 즉 insecure decode 자체는 provider 메서드로 존재하지만, PRD가 암시하는 전용 토글이 직접 사용되지는 않는다. 설정 필드는 존재하나 실제 분기 조건은 다른 이름의 플래그다.
-
-### 2. Langfuse architecture differs from PRD
+### 1. Langfuse architecture differs from PRD
 PRD는 Langfuse를 `app.state` 가 아니라 SDK 싱글톤 `get_langfuse_client` 로 다루고, `dependencies/langfuse.py` 는 만들지 않는다고 적는다. 그러나 현재 코드는 `dependencies/langfuse.py` 를 가지고 있고, lifecycle/shutdown 에서 `app.state.langfuse_client` 와 `flush()` 를 다룬다. 즉 연결 확인 API는 맞지만 객체 수명주기 모델은 PRD와 다르다.
 
-### 3. Registry-backed implementation is stronger than the PRD text
+### 2. Registry-backed implementation is stronger than the PRD text
 현재 구현은 docmesh registry 와 bridge 를 통해 auth/database/minio/milvus/ollama/langfuse/nats 를 startup 및 fallback 경로에서 재사용하려는 방향이 강하다. 이는 [[registry-full-replacement-plan]] 과는 정렬되지만, PRD 자체에는 이런 registry 우선 구조가 명시적으로 드러나지 않는다. 즉 구현은 PRD보다 더 구체적이고 더 registry 중심적이다.
 
-## Missing or clearly under-implemented versus PRD
-### 1. PostgreSQL helper surface is narrower than PRD
-PRD는 DB 버전 조회 유틸리티, 트랜잭션 헬퍼(`run_in_transaction` 또는 컨텍스트 매니저)를 요구한다. 현재 확인된 구현은 `create_db_engine`, `check_database_connection(SELECT 1)`, `get_db_session` 까지이며, 버전 조회 및 트랜잭션 헬퍼는 없다.
+### 3. `allow_insecure_jwt_decode` 는 이제 PRD와 정렬됨
+이전 비교 메모와 달리 현재 구현의 `get_current_user()` 는 `settings.auth.verify_jwt` 가 꺼져 있고 `settings.auth.allow_insecure_jwt_decode` 가 켜져 있으면 `provider.decode_token_insecure()` 로 분기한다. 따라서 개발환경용 서명 검증 생략 모드는 이제 실제 런타임 경로에 연결되어 있다.
 
-### 2. MinIO feature helpers are missing
+## Missing or clearly under-implemented versus PRD
+### 1. MinIO feature helpers are missing
 PRD는 버킷 자동 생성(`ensure_bucket_exists`), 버킷 목록 조회, presigned GET/PUT URL 유틸리티를 요구한다. 현재 구현은 `create_minio_client` 와 `check_minio_connection(bucket_exists)` 정도만 확인되며, 해당 helper 함수들은 없다. 테스트의 공개 API 점검도 presigned helper 가 현재 export되지 않음을 보여준다.
 
-### 3. Milvus convenience helpers are missing
+### 2. Milvus convenience helpers are missing
 PRD는 컬렉션 목록 조회, 연결 확인, 컬렉션 존재 보장 헬퍼를 요구한다. 현재 구현은 sync/async client 생성과 dependency/state 관리까지는 있으나, `list_collections`, `ensure_collection_exists` 류 helper 는 확인되지 않았다. `async_milvus` 는 여전히 native path 이며 registry 완전 대체 범위 밖에 있다.
 
-### 4. Ollama module surface is incomplete relative to PRD
+### 3. Ollama module surface is incomplete relative to PRD
 PRD는 `core/ollama.py` 에 클라이언트 생성, 모델 목록 조회, 연결 확인, 프롬프트 기반 텍스트 생성 helper 를 둔다. 현재 파일 목록에는 `dependencies/ollama.py` 는 존재하지만 `core/ollama.py` 자체가 없다. 즉 state wiring 은 있으나 PRD가 말한 핵심 helper 모듈 표면은 빠져 있다.
 
-### 5. NATS messaging feature layer is missing
+### 4. NATS messaging feature layer is missing
 PRD는 비동기 연결/종료 외에 publish/subscribe, queue group 기반 소비, 도메인 이벤트 명명 규칙 표준화(`<domain>.<entity>.<action>`) 를 요구한다. 현재 확인된 구현은 config 모델, state getter/setter, lifecycle drain 중심이며 publish/subscribe helper 나 이벤트 규칙 강제 코드는 보이지 않는다.
 
-### 6. Introspection option is declared but unused
+### 5. Introspection option is declared but unused
 PRD는 Keycloak 토큰 introspection 의 선택적 지원을 요구한다. 현재 `ServiceSettings.auth.use_introspection` 필드는 존재하지만, 실제 인증 경로에서 introspection 호출은 확인되지 않았다.
 
-### 7. PRD package structure and current source tree are not identical
+### 6. PRD package structure and current source tree are not identical
 PRD가 예시한 `core/ollama.py`, `core/messaging.py` 같은 모듈은 현재 소스 트리에 없다. 반대로 현재 구현에는 `lifecycle.py`, `docmesh_bridge.py`, `bootstrap.py`, `dependencies/langfuse.py` 같은 PRD에 직접 나오지 않는 registry/lifecycle 중심 파일이 존재한다. 즉 문서화된 구조와 실제 구조 사이에 진화 차이가 있다.
 
 ## Recommended interpretation
 이 PRD는 "제품이 장기적으로 제공해야 하는 표면" 을 설명하고, 현재 소스는 그중 공통 wiring 과 lifecycle 기반을 먼저 구현한 상태로 보는 것이 가장 정확하다. 다시 말해 `fastapi-core` 는 부트스트랩/상태관리/기본 health/readiness 는 많이 구현됐지만, 서비스별 convenience API 는 아직 PRD 수준까지 채워지지 않았다.
 
 ## Highest-priority documentation or implementation gaps
-1. `allow_insecure_jwt_decode` 와 `use_introspection` 의 실제 런타임 의미를 코드와 PRD 중 하나에 맞춰 정리
+1. `use_introspection` 의 실제 런타임 의미를 코드와 PRD 중 하나에 맞춰 정리
 2. Langfuse를 PRD대로 SDK 싱글톤만 사용할지, 현재 코드처럼 state/dependency 를 유지할지 결정
 3. MinIO presigned URL / ensure-bucket helper 추가 여부 결정
-4. PostgreSQL transaction helper / DB version helper 추가 여부 결정
-5. Ollama/NATS의 실제 공개 helper 표면을 문서대로 채우거나 PRD를 축소
+4. Ollama/NATS의 실제 공개 helper 표면을 문서대로 채우거나 PRD를 축소
 
 ## Related Topics
 - [[fastapi-core]] 는 비교 대상이 되는 제품 엔티티다.

@@ -22,7 +22,7 @@ def app(mock_provider):
     _app.include_router(router)
     _app.dependency_overrides[get_auth_provider] = lambda: mock_provider
     _app.dependency_overrides[get_settings] = lambda: ServiceSettings(
-        auth=AuthSettings(verify_jwt=False)
+        auth=AuthSettings(verify_jwt=False, allow_insecure_jwt_decode=True)
     )
     return _app
 

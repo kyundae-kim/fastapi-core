@@ -142,8 +142,12 @@ def get_current_user(
     try:
         if settings.auth.verify_jwt:
             payload = provider.decode_token(token)
-        else:
+        elif settings.auth.allow_insecure_jwt_decode:
             payload = provider.decode_token_insecure(token)
+        else:
+            raise ValueError(
+                "JWT verification is disabled but insecure decode is not allowed"
+            )
         return provider.to_user(payload)
     except ValueError as e:
         raise HTTPException(
