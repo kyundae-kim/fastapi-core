@@ -107,31 +107,38 @@ async def publish_event(
 
 ### 3.2 이벤트 발행
 
+`fastapi-core`는 subject 형식 표준화와 JSON 직렬화를 돕는 helper를 제공합니다.
+
 ```python
-import json
+from fastapi_core.core.messaging import build_event_subject, publish_event
 
 async def publish_order_created(nc, order_id: str, user_id: str) -> None:
-    subject = "orders.created"
+    subject = build_event_subject("orders", "order", "created")
     payload = {
-        "event": "orders.created",
+        "event_id": f"order-created:{order_id}",
+        "event": subject,
         "order_id": order_id,
         "user_id": user_id,
     }
-    await nc.publish(subject, json.dumps(payload).encode("utf-8"))
+    await publish_event(nc, subject, payload)
 ```
 
 ### 3.3 이벤트 구독
 
 ```python
-import json
+from fastapi_core.core.messaging import subscribe_queue_event
 
 async def subscribe_orders_created(nc):
-    async def handler(msg):
-        data = json.loads(msg.data.decode("utf-8"))
+    async def handler(subject: str, payload: dict[str, object]) -> None:
         # 후속 처리 (예: 알림 발송, 인덱싱, 집계)
-        print("received:", msg.subject, data)
+        print("received:", subject, payload)
 
-    await nc.subscribe("orders.created", queue="docmesh-workers", cb=handler)
+    await subscribe_queue_event(
+        nc,
+        "orders.order.created",
+        "docmesh-workers",
+        handler,
+    )
 ```
 
 ---

@@ -28,7 +28,10 @@ DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사
   - FastAPI dependency 없이 직접 호출하는 패턴 제공
 - NATS 메시징
   - `nats-py` 기반 비동기 클라이언트 연결/종료
-  - Queue Group 기반 다중 소비자 스케일아웃
+  - compact JSON publish helper (`publish_event`)
+  - JSON decode subscribe helper (`subscribe_event`)
+  - Queue Group 기반 다중 소비자 스케일아웃 (`subscribe_queue_event`)
+  - `<domain>.<entity>.<action>` subject builder/validator
 - 설정 관리
   - `EnvConfig`(환경 변수/.env)
   - `ServiceSettings`(YAML)

@@ -451,6 +451,67 @@ async def create_nats_client(config: NatsConfig) -> nats.aio.client.Client:
     """NATS 서버에 연결된 클라이언트를 생성한다."""
 ```
 
+- `config.server_list`를 `servers=[...]`로 전달한다.
+- `config.reconnect_time_wait_ms`는 초 단위 float로 변환해 `reconnect_time_wait`에 전달한다.
+
+### `build_event_subject` — `fastapi_core.core.messaging`
+
+```python
+def build_event_subject(domain: str, entity: str, action: str) -> str:
+```
+
+- `<domain>.<entity>.<action>` 형식의 subject를 만든다.
+- 각 segment는 소문자 영문/숫자와 하이픈만 허용한다.
+- 형식이 맞지 않으면 `ValueError`를 발생시킨다.
+
+### `validate_event_subject` — `fastapi_core.core.messaging`
+
+```python
+def validate_event_subject(subject: str) -> bool:
+```
+
+- 정확히 3개 segment를 가진 subject만 `True`
+- 대문자, 빈 segment, 4단계 이상 subject는 `False`
+
+### `publish_event` — `fastapi_core.core.messaging`
+
+```python
+async def publish_event(
+    client: nats.aio.client.Client,
+    subject: str,
+    payload: Mapping[str, Any],
+) -> None:
+```
+
+- 유효한 event subject인지 검증한다. 아니면 `ValueError`.
+- payload를 compact JSON UTF-8 bytes로 인코딩해 `client.publish(...)` 한다.
+
+### `subscribe_event` — `fastapi_core.core.messaging`
+
+```python
+async def subscribe_event(
+    client: nats.aio.client.Client,
+    subject: str,
+    handler: Callable[[str, dict[str, Any]], Awaitable[None] | None],
+) -> Any:
+```
+
+- `client.subscribe(subject, cb=...)`로 구독한다.
+- 수신 메시지의 JSON payload를 decode한 뒤 `handler(subject, payload)` 형태로 전달한다.
+
+### `subscribe_queue_event` — `fastapi_core.core.messaging`
+
+```python
+async def subscribe_queue_event(
+    client: nats.aio.client.Client,
+    subject: str,
+    queue: str,
+    handler: Callable[[str, dict[str, Any]], Awaitable[None] | None],
+) -> Any:
+```
+
+- `subscribe_event`와 동일하되, `queue=`를 명시해 queue group 소비자를 등록한다.
+
 ### `set_nats_client` — `fastapi_core.dependencies.messaging`
 
 ```python
@@ -463,7 +524,7 @@ async def set_nats_client(
 ```
 
 - `client` 직접 전달 → `app.state.nats_client`에 할당
-- `config` 전달 → `create_nats_client(config.nats)` 내부 호출 후 할당
+- `config` 전달 → docmesh bridge의 `get_required_docmesh_service_async(..., "nats_client", config=config)` 결과를 할당
 - 둘 다 `None` → `ValueError`
 
 ### `get_nats_client` — `fastapi_core.dependencies.messaging`
@@ -476,7 +537,7 @@ async def get_nats_client(
 ```
 
 - `app.state.nats_client` 존재 시 반환 (싱글톤)
-- 미등록 시 `create_nats_client(config.nats)` 호출 후 `app.state.nats_client`에 저장 (fallback lazy singleton)
+- 미등록 시 docmesh bridge의 `get_required_docmesh_service_async(..., "nats_client", config=resolved_config)` 를 통해 fallback lazy singleton을 만든다.
 
 ---
 

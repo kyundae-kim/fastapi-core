@@ -126,3 +126,23 @@
 - Verification: `uv run pytest -q test_fastapi_core/dependencies/test_ollama.py test_fastapi_core/core/test_ollama.py` -> `11 passed`
 - Verification: `uv run pytest -q -m 'not integration'` -> `171 passed, 26 deselected`
 - Updated: `docs/api.md`, `queries/fastapi-core-prd-vs-source-code-comparison.md`
+
+## [2026-06-17] query | PRD gaps quick answer
+- Re-read: `docs/prd.md`, `queries/fastapi-core-prd-vs-source-code-comparison.md`, `queries/fastapi-core-prd-alignment-review.md`
+- Code verified: `fastapi_core/dependencies/{auth,messaging,langfuse}.py`, `fastapi_core/core/{config,langfuse}.py`, `fastapi_core/{factory,__init__}.py`, `fastapi_core/routers/health.py`
+- Verification: `uv run pytest -q -m 'not integration'` -> `171 passed, 26 deselected`
+- Result: no new gaps beyond previously filed NATS feature layer, unused introspection setting, and Langfuse lifecycle divergence
+
+## [2026-06-17] update | PRD gap prioritization
+- Updated: `queries/fastapi-core-prd-vs-source-code-comparison.md`
+- Added: prioritized order P0(NATS), P1(introspection), P2(Langfuse contract), P3(PRD/docs refresh)
+- Basis: code review of `fastapi_core/dependencies/{messaging,auth,langfuse}.py`, `fastapi_core/core/{config,langfuse}.py`
+
+## [2026-06-17] update | NATS feature layer
+- Added: `fastapi_core/core/messaging.py`
+- Added tests: `test_fastapi_core/core/test_messaging.py`
+- Updated: `docs/api.md`, `docs/messaging.md`, `README.md`, `queries/fastapi-core-prd-vs-source-code-comparison.md`
+- RED verification: `uv run pytest -q test_fastapi_core/core/test_messaging.py::test_build_event_subject_formats_domain_entity_action` -> `ModuleNotFoundError: No module named 'fastapi_core.core.messaging'`
+- Verification: `uv run pytest -q test_fastapi_core/core/test_messaging.py` -> `6 passed`
+- Verification: `uv run pytest -q test_fastapi_core/core/test_messaging.py test_fastapi_core/dependencies/test_messaging.py test_fastapi_core/test_public_api.py` -> `13 passed`
+- Verification: `uv run pytest -q -m 'not integration'` -> `177 passed, 26 deselected`
