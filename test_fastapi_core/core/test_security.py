@@ -137,6 +137,31 @@ def test_decode_token_insecure_invalid():
         provider.decode_token_insecure("not.a.valid.token.here")
 
 
+def test_introspect_token_returns_payload_for_active_token():
+    provider = KeycloakAuthProvider(
+        http_url="http://keycloak:8080/",
+        realm="realm",
+        client_id="client",
+    )
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "active": True,
+        "sub": "user-1",
+        "preferred_username": "john",
+    }
+
+    with patch("fastapi_core.core.auth.httpx.Client") as mock_cls:
+        mock_client = MagicMock()
+        mock_cls.return_value.__enter__.return_value = mock_client
+        mock_client.post.return_value = mock_response
+        result = provider.introspect_token("opaque-token")
+
+    _, kwargs = mock_client.post.call_args
+    assert kwargs["data"] == {"token": "opaque-token", "client_id": "client"}
+    assert result["active"] is True
+    assert result["sub"] == "user-1"
+
+
 # ---------------------------------------------------------------------------
 # KeycloakAuthProvider — authenticate
 # ---------------------------------------------------------------------------

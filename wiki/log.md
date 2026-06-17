@@ -146,3 +146,20 @@
 - Verification: `uv run pytest -q test_fastapi_core/core/test_messaging.py` -> `6 passed`
 - Verification: `uv run pytest -q test_fastapi_core/core/test_messaging.py test_fastapi_core/dependencies/test_messaging.py test_fastapi_core/test_public_api.py` -> `13 passed`
 - Verification: `uv run pytest -q -m 'not integration'` -> `177 passed, 26 deselected`
+
+## [2026-06-17] query | PRD vs code re-check
+- Re-read: `docs/prd.md`, `queries/fastapi-core-prd-vs-source-code-comparison.md`, `queries/fastapi-core-prd-alignment-review.md`
+- Code verified: `fastapi_core/dependencies/auth.py`, `fastapi_core/core/config.py`, `fastapi_core/dependencies/langfuse.py`, `fastapi_core/core/langfuse.py`, `fastapi_core/lifecycle.py`, `fastapi_core/core/messaging.py`, `fastapi_core/dependencies/messaging.py`, `fastapi_core/factory.py`, `fastapi_core/routers/health.py`, `fastapi_core/__init__.py`
+- Verification: `uv run pytest -q -m 'not integration'` -> `177 passed, 26 deselected`
+- Result: broad alignment remains good; remaining gaps are Keycloak introspection runtime wiring and PRD/code divergence around Langfuse and package structure
+
+## [2026-06-17] update | Keycloak introspection runtime wiring
+- Added tests first: `test_fastapi_core/dependencies/test_security.py::test_get_current_user_uses_introspection_when_enabled`, `test_fastapi_core/core/test_security.py::test_introspect_token_returns_payload_for_active_token`
+- RED verification: `uv run pytest -q test_fastapi_core/dependencies/test_security.py::test_get_current_user_uses_introspection_when_enabled` -> `401 != 200`
+- RED verification: `uv run pytest -q test_fastapi_core/core/test_security.py::test_introspect_token_returns_payload_for_active_token` -> `AttributeError: 'KeycloakAuthProvider' object has no attribute 'introspect_token'`
+- Updated: `fastapi_core/core/auth.py`, `fastapi_core/dependencies/auth.py`, `docs/api.md`, `wiki/queries/fastapi-core-prd-vs-source-code-comparison.md`
+- Verification: `uv run pytest -q test_fastapi_core/core/test_security.py::test_introspect_token_returns_payload_for_active_token` -> `1 passed`
+- Verification: `uv run pytest -q test_fastapi_core/dependencies/test_security.py::test_get_current_user_uses_introspection_when_enabled` -> `1 passed`
+- Verification: `uv run pytest -q test_fastapi_core/core/test_security.py test_fastapi_core/dependencies/test_security.py` -> `29 passed`
+- Verification: `uv run pytest -q -m 'not integration'` -> `179 passed, 26 deselected`
+- Updated: `wiki/queries/fastapi-core-prd-vs-source-code-comparison.md` now treats introspection gap as closed and reprioritizes remaining doc/architecture differences

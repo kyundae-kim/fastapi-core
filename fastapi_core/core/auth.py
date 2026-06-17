@@ -42,6 +42,7 @@ class KeycloakAuthProvider:
         self.token_url = (
             f"{base}/realms/{realm}/protocol/openid-connect/token"
         )
+        self.introspection_url = f"{self.token_url}/introspect"
         self.jwks_url = (
             f"{base}/realms/{realm}/protocol/openid-connect/certs"
         )
@@ -80,6 +81,19 @@ class KeycloakAuthProvider:
             )
         except jwt.PyJWTError as e:
             raise ValueError(f"Invalid token: {e}") from e
+
+    def introspect_token(self, token: str) -> dict[str, Any]:
+        data: dict[str, str] = {
+            "token": token,
+            "client_id": self.client_id,
+        }
+        if self.client_secret:
+            data["client_secret"] = self.client_secret
+
+        with httpx.Client() as client:
+            response = client.post(self.introspection_url, data=data)
+        response.raise_for_status()
+        return response.json()
 
     def authenticate(self, username: str, password: str) -> dict[str, Any]:
         data: dict[str, str] = {

@@ -111,6 +111,63 @@ def test_get_current_user_valid(test_app, mock_provider):
     assert response.json()["username"] == "alice"
 
 
+def test_get_current_user_uses_introspection_when_enabled():
+    class IntrospectionProvider:
+        def __init__(self) -> None:
+            self.introspected_tokens: list[str] = []
+
+        def introspect_token(self, token: str) -> dict[str, object]:
+            self.introspected_tokens.append(token)
+            return {
+                "active": True,
+                "sub": "u-1",
+                "preferred_username": "alice",
+                "realm_access": {"roles": ["admin"]},
+            }
+
+        def to_user(self, payload: dict[str, object]) -> UserInfo:
+            realm_access = payload.get("realm_access")
+            roles = realm_access.get("roles", []) if isinstance(realm_access, dict) else []
+            return UserInfo(
+                sub=str(payload["sub"]),
+                username=str(payload["preferred_username"]),
+                roles=list(roles),
+            )
+
+        def decode_token(self, token: str) -> dict[str, object]:
+            raise AssertionError("decode_token should not be used when introspection is enabled")
+
+        def decode_token_insecure(self, token: str) -> dict[str, object]:
+            raise AssertionError(
+                "decode_token_insecure should not be used when introspection is enabled"
+            )
+
+    provider = IntrospectionProvider()
+    settings = ServiceSettings(
+        auth=AuthSettings(
+            verify_jwt=False,
+            allow_insecure_jwt_decode=False,
+            use_introspection=True,
+        )
+    )
+
+    app = FastAPI()
+
+    @app.get("/me")
+    def me(user: UserInfo = __import__("fastapi").Depends(get_current_user)):  # noqa: F811
+        return user.model_dump()
+
+    app.dependency_overrides[get_auth_provider] = lambda: provider
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.get("/me", headers={"Authorization": "Bearer opaque-token"})
+
+    assert response.status_code == 200
+    assert response.json()["username"] == "alice"
+    assert provider.introspected_tokens == ["opaque-token"]
+
+
 def test_require_permissions_allowed(test_app, mock_provider):
     expected_user = UserInfo(sub="u-1", username="alice", roles=["admin"])
     mock_provider.decode_token_insecure.return_value = {"sub": "u-1"}

@@ -55,38 +55,28 @@ PRD는 Langfuse를 `app.state` 가 아니라 SDK 싱글톤 `get_langfuse_client`
 이전 비교 메모와 달리 현재 구현의 `get_current_user()` 는 `settings.auth.verify_jwt` 가 꺼져 있고 `settings.auth.allow_insecure_jwt_decode` 가 켜져 있으면 `provider.decode_token_insecure()` 로 분기한다. 따라서 개발환경용 서명 검증 생략 모드는 이제 실제 런타임 경로에 연결되어 있다.
 
 ## Missing or clearly under-implemented versus PRD
-### 1. Introspection option is declared but unused
-PRD는 Keycloak 토큰 introspection 의 선택적 지원을 요구한다. 현재 `ServiceSettings.auth.use_introspection` 필드는 존재하지만, 실제 인증 경로에서 introspection 호출은 확인되지 않았다.
+현재 재검토 기준으로 이전의 핵심 미구현 항목이던 Keycloak introspection runtime wiring 은 해소됐다. 남아 있는 차이는 기능 결손보다는 문서·아키텍처 정렬 문제에 가깝다.
 
-### 2. PRD package structure and current source tree are not identical
+### 1. PRD package structure and current source tree are not identical
 PRD가 예시한 `core/messaging.py` 같은 모듈은 이제 구현되었지만, 다른 한편 현재 소스 트리에는 `lifecycle.py`, `docmesh_bridge.py`, `bootstrap.py`, `dependencies/langfuse.py` 같은 registry/lifecycle 중심 파일이 추가로 존재한다. 즉 문서화된 구조와 실제 구조 사이에는 여전히 진화 차이가 있다.
 
 ## Recommended interpretation
-이 PRD는 "제품이 장기적으로 제공해야 하는 표면" 을 설명하고, 현재 소스는 그중 공통 wiring 과 lifecycle 기반을 먼저 구현한 뒤 서비스별 helper 표면을 점진적으로 채워온 상태로 보는 것이 가장 정확하다. 다시 말해 `fastapi-core` 는 부트스트랩/상태관리/기본 health/readiness 와 PostgreSQL/MinIO/Milvus/Ollama/NATS convenience API 는 많이 구현됐고, 이제 남은 큰 갭은 introspection 같은 일부 확장 요구와 PRD/현재 아키텍처 간 불일치다.
+이 PRD는 "제품이 장기적으로 제공해야 하는 표면" 을 설명하고, 현재 소스는 그중 공통 wiring 과 lifecycle 기반을 먼저 구현한 뒤 서비스별 helper 표면을 점진적으로 채워온 상태로 보는 것이 가장 정확하다. 이제는 Keycloak introspection 까지 런타임 경로에 연결됐고, `fastapi-core` 는 부트스트랩/상태관리/기본 health/readiness 와 PostgreSQL/MinIO/Milvus/Ollama/NATS convenience API 를 대부분 갖췄다. 남은 큰 차이는 Langfuse 수명주기 계약과 PRD/현재 패키지 구조 간 불일치다.
 
 ## Prioritized implementation order
-### P0 — Keycloak introspection runtime wiring
-가장 먼저 채워야 할 남은 갭이다. 이미 `use_introspection` 설정 필드가 공개 모델에 존재하므로, 사용자는 이 옵션이 동작한다고 기대할 가능성이 높다. 지금은 설정만 있고 런타임 분기가 없어서 "문서상 지원" 과 "실제 지원" 이 어긋나 있다.
-
-권장 범위:
-1. `dependencies/auth.py` 의 `get_current_user()` 또는 provider 계층에 introspection 분기 추가
-2. introspection 성공/실패/timeout/fallback 정책 명시
-3. 기존 JWT decode 경로와의 우선순위 규칙 테스트 추가
-
-### P1 — Langfuse lifecycle contract reconciliation
-두 번째 우선순위다. 기능 공백보다는 아키텍처 불일치 문제라서, introspection보다는 긴급도가 낮다. 현재도 health check 와 client 조회는 가능하므로 즉시 제품 기능이 막히는 상황은 아니다. 다만 PRD/공개 API/실제 lifecycle 모델이 다르면 이후 유지보수 비용이 커진다.
+### P0 — Langfuse lifecycle contract reconciliation
+이제 최우선은 기능 공백보다는 아키텍처 불일치 정리다. 현재도 health check 와 client 조회는 가능하므로 즉시 제품 기능이 막히는 상황은 아니다. 다만 PRD/공개 API/실제 lifecycle 모델이 다르면 이후 유지보수 비용이 커진다.
 
 선택지:
 1. PRD를 현재 코드(state + dependency + lifecycle flush) 기준으로 갱신
 2. 또는 구현을 PRD 기준(SDK singleton helper only)으로 단순화
 
-### P2 — PRD package structure / docs refresh
-마지막 우선순위다. 실제 구현이 더 진화해 있어 문서가 뒤처진 상태지만, 이 문제는 대체로 개발자 혼란 비용의 문제이지 즉각적인 런타임 기능 결손은 아니다. 따라서 기능 갭을 메운 뒤 문서를 현재 구조에 맞게 정리하는 것이 효율적이다.
+### P1 — PRD package structure / docs refresh
+실제 구현이 더 진화해 있어 문서가 뒤처진 상태다. 현재 구조를 기준으로 PRD와 API 문서를 정리하면 이후 비교 비용이 크게 줄어든다.
 
 ## Highest-priority documentation or implementation gaps
-1. `use_introspection` 의 실제 런타임 의미를 코드와 PRD 중 하나에 맞춰 정리
-2. Langfuse를 PRD대로 SDK 싱글톤만 사용할지, 현재 코드처럼 state/dependency 를 유지할지 결정
-3. PRD의 패키지 구조 예시와 실제 source tree 차이를 문서에 반영
+1. Langfuse를 PRD대로 SDK 싱글톤만 사용할지, 현재 코드처럼 state/dependency 를 유지할지 결정
+2. PRD의 패키지 구조 예시와 실제 source tree 차이를 문서에 반영
 
 ## Related Topics
 - [[fastapi-core]] 는 비교 대상이 되는 제품 엔티티다.

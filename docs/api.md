@@ -71,6 +71,7 @@ class KeycloakAuthProvider:
 | 속성 | 값 |
 |---|---|
 | `token_url` | `{http_url}/realms/{realm}/protocol/openid-connect/token` |
+| `introspection_url` | `{http_url}/realms/{realm}/protocol/openid-connect/token/introspect` |
 | `jwks_url` | `{http_url}/realms/{realm}/protocol/openid-connect/certs` |
 | `issuer` | `{http_url}/realms/{realm}` |
 
@@ -94,6 +95,11 @@ def decode_token(self, token: str) -> dict[str, Any]:
 ```python
 def decode_token_insecure(self, token: str) -> dict[str, Any]:
     """서명 검증 없이 JWT payload 반환 (개발 환경용). 파싱 실패 시 ValueError."""
+```
+
+```python
+def introspect_token(self, token: str) -> dict[str, Any]:
+    """Keycloak token introspection endpoint 호출 결과를 반환. HTTP 오류 시 httpx.HTTPStatusError."""
 ```
 
 ```python
@@ -142,10 +148,12 @@ def get_current_user(
 
 | 조건 | 결과 |
 |---|---|
-| `Authorization: Bearer <token>` 헤더 없음 | `401 Not authenticated` |
+| `Authorization: Bearer ***` 헤더 없음 | `401 Not authenticated` |
 | 토큰 검증 실패 (`ValueError`) | `401 <오류 메시지>` |
-| `settings.auth.verify_jwt = True` | `provider.decode_token()` (RS256 서명 검증) |
-| `settings.auth.verify_jwt = False` | `provider.decode_token_insecure()` (서명 검증 생략) |
+| `settings.auth.use_introspection = True` | `provider.introspect_token()` |
+| `settings.auth.use_introspection = False` 이고 `settings.auth.verify_jwt = True` | `provider.decode_token()` (RS256 서명 검증) |
+| `settings.auth.use_introspection = False`, `settings.auth.verify_jwt = False`, `settings.auth.allow_insecure_jwt_decode = True` | `provider.decode_token_insecure()` (서명 검증 생략) |
+| 위 세 조건 모두 아니면 | `401 JWT verification is disabled but insecure decode is not allowed` |
 
 ### `require_permissions` — `fastapi_core.dependencies.auth`
 
@@ -428,7 +436,7 @@ def get_langfuse_client(config: LangfuseConfig | None = None) -> Langfuse:
 - `config`가 주어지면 먼저 내부 초기화 helper로 SDK 싱글톤을 준비한다.
 - `config.public_key`가 있으면 `langfuse.get_client(public_key=...)`로 해당 프로젝트 싱글톤을 반환한다.
 - `config`가 없으면 `langfuse.get_client()`를 그대로 반환한다.
-- 별도의 `dependencies/langfuse.py`는 제공하지 않는다.
+- FastAPI state 기반 접근이 필요하면 `fastapi_core.dependencies.langfuse.get_langfuse_client()` 를 사용할 수 있다.
 
 ### `check_langfuse_connection` — `fastapi_core.core.langfuse`
 

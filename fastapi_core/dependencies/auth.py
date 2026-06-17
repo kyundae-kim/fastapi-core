@@ -36,6 +36,44 @@ class _RegistryKeycloakAuthAdapter:
     def decode_token_insecure(self, token: str) -> dict[str, object]:
         return KeycloakAuthProvider.decode_token_insecure(self, token)
 
+    def introspect_token(self, token: str) -> dict[str, object]:
+        introspect = getattr(self._service, "introspect_token", None)
+        if callable(introspect):
+            introspected_payload = introspect(token)
+            if not isinstance(introspected_payload, dict):
+                raise ValueError("Registry auth service returned invalid introspection payload")
+            return introspected_payload
+
+        token_endpoint = getattr(self._service, "token_endpoint", None)
+        http_client = getattr(self._service, "http_client", None)
+        settings = getattr(self._service, "settings", None)
+        keycloak_settings = getattr(settings, "keycloak", None)
+        if not isinstance(token_endpoint, str) or http_client is None or keycloak_settings is None:
+            raise ValueError("Registry auth service does not support token introspection")
+
+        payload: dict[str, object] = {
+            "token": token,
+            "client_id": keycloak_settings.client_id,
+        }
+        if getattr(keycloak_settings, "client_secret", None):
+            payload["client_secret"] = keycloak_settings.client_secret
+
+        response = http_client.post(
+            f"{token_endpoint}/introspect",
+            data=payload,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=keycloak_settings.request_timeout_seconds,
+            verify_ssl=keycloak_settings.verify_ssl,
+        )
+        status_code = int(response.get("status_code", 0))
+        body = response.get("json")
+        if not isinstance(body, dict):
+            body = {}
+        if 200 <= status_code < 300:
+            return body
+        detail = body.get("error_description") or body.get("error") or response.get("text") or "token introspection failed"
+        raise ValueError(str(detail))
+
     def authenticate(self, username: str, password: str) -> dict[str, object]:
         settings = self._service.settings.keycloak
         payload: dict[str, str] = {
@@ -140,7 +178,9 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     try:
-        if settings.auth.verify_jwt:
+        if settings.auth.use_introspection:
+            payload = provider.introspect_token(token)
+        elif settings.auth.verify_jwt:
             payload = provider.decode_token(token)
         elif settings.auth.allow_insecure_jwt_decode:
             payload = provider.decode_token_insecure(token)
