@@ -102,3 +102,11 @@
 - Verification: `uv run pytest -q test_fastapi_core/dependencies/test_database.py test_fastapi_core/core/test_database.py` -> `14 passed`
 - Verification: `uv run pytest -q -m 'not integration'` -> `150 passed, 26 deselected`
 - Updated: `queries/fastapi-core-prd-vs-source-code-comparison.md`
+
+## [2026-06-17] update | MinIO helper surface
+- Added tests: `test_fastapi_core/core/test_storage.py`
+- Updated: `fastapi_core/core/storage.py`
+- Verification: `uv run pytest -q test_fastapi_core/core/test_storage.py` -> `8 passed`
+- Verification: `uv run pytest -q test_fastapi_core/dependencies/test_storage.py test_fastapi_core/core/test_storage.py` -> `15 passed`
+- Verification: `uv run pytest -q -m 'not integration'` -> `155 passed, 26 deselected`
+- Updated: `queries/fastapi-core-prd-vs-source-code-comparison.md`
