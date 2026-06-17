@@ -1,32 +1,85 @@
-# 공개 API 명세 (Public Interface)
+# 공개 API 명세
 
-> 이 문서는 `fastapi-core` SDK가 외부에 공개하는 모든 심볼의 시그니처, 동작, 에러 처리를 정의합니다.  
-> 설정 값(환경 변수, YAML 키)은 [config.md](config.md)를 참조하세요.
-
----
-
-## FastAPI 의존성 export 정책
-
-- `get_config`, `get_settings`, `get_auth_provider`, `get_current_user`, `get_db_engine`, `get_db_session`, `get_minio_client`, `get_milvus_client`, `get_ollama_client`, `get_nats_client`는 모두 **함수형 dependency**로 export한다.
-- `Get*Dependency` callable class와 `get_* = Get*Dependency()` 형태의 전역 인스턴스는 사용하지 않는다.
-- 중복 dependency alias인 `config_schema`, `settings_schema`, `auth_provider_schema`, `current_user_schema`는 제공하지 않는다.
-- 라우터와 테스트에서는 항상 `Depends(get_*)` 형태로 직접 참조한다.
-- Langfuse는 SDK 자체 싱글톤을 중심으로 사용한다. 앱 코드에서는 `fastapi_core.core.langfuse.get_langfuse_client()`를 직접 호출하거나, FastAPI state가 필요하면 `fastapi_core.dependencies.langfuse.get_langfuse_client()`를 사용할 수 있다.
+> 이 문서는 현재 소스코드 기준의 공개 인터페이스를 정리합니다.
+> 설정 키와 기본값은 [config.md](config.md)를, 테스트 구성은 [test.md](test.md)를 참조하세요.
 
 ---
 
-## 스키마 (Pydantic 모델)
+## 패키지 루트 재수출(`fastapi_core.__all__`)
+
+패키지 루트는 **curated subset만** 재수출합니다.
+
+```python
+from fastapi_core import (
+    AuthError,
+    DatabaseConfig,
+    EnvConfig,
+    HealthResponse,
+    KeycloakAuthProvider,
+    KeycloakConfig,
+    LangfuseConfig,
+    LifecycleSettings,
+    MilvusConfig,
+    MinIOConfig,
+    OllamaConfig,
+    ServiceSettings,
+    TokenResponse,
+    UserInfo,
+    check_langfuse_connection,
+    create_async_milvus_client,
+    create_app,
+    create_milvus_client,
+    get_langfuse_client,
+)
+```
+
+다음 helper는 모듈 경로로는 존재하지만 루트에서는 재수출되지 않습니다.
+
+- `run_in_transaction`
+- `check_milvus_connection`, `check_async_milvus_connection`
+- `list_collection_names`, `list_async_collection_names`
+- `ensure_collection_exists`, `ensure_async_collection_exists`
+- `check_ollama_connection`, `list_model_names`, `generate_text`
+- `generate_presigned_get_url`, `generate_presigned_put_url`
+
+---
+
+## FastAPI dependency 정책
+
+- dependency는 모두 **함수형 API**입니다.
+- `Get*Dependency` callable class와 `get_* = Get*Dependency()` 형태의 alias는 공개 API가 아닙니다.
+- 대부분의 FastAPI dependency getter/setter는 `docmesh_bridge`를 통해 registry-backed 서비스 해석을 사용합니다.
+- 예외적으로 `async_milvus_client`는 dependency 계층에서도 `create_async_milvus_client(config.milvus)`를 직접 사용합니다.
+
+주요 state 키:
+
+| state 키 | 타입 | 등록 함수 | 조회 함수 |
+| --- | --- | --- | --- |
+| `app.state.config` | `EnvConfig` | `set_config` | `get_config` |
+| `app.state.settings` | `ServiceSettings` | `set_settings` | `get_settings` |
+| `app.state.auth_provider` | Keycloak provider/adapter | `set_auth_provider` | `get_auth_provider` |
+| `app.state.db_engine` | `Engine` | `set_db_engine` | `get_db_engine` |
+| `app.state.minio_client` | `Minio` | `set_minio_client` | `get_minio_client` |
+| `app.state.milvus_client` | `MilvusClient` | `set_milvus_client` | `get_milvus_client` |
+| `app.state.async_milvus_client` | `AsyncMilvusClient` | `set_async_milvus_client` | `get_async_milvus_client` |
+| `app.state.ollama_client` | `ollama.Client` | `set_ollama_client` | `get_ollama_client` |
+| `app.state.langfuse_client` | `Any` | `set_langfuse_client` | `get_langfuse_client` |
+| `app.state.nats_client` | `nats.aio.client.Client` | `set_nats_client` | `get_nats_client` |
+
+---
+
+## 스키마
 
 ### `UserInfo` — `fastapi_core.schemas.user`
 
 ```python
 class UserInfo(BaseModel):
-    sub: str                        # JWT subject (Keycloak user ID)
-    username: str                   # preferred_username 클레임
-    email: str | None = None        # email 클레임
-    name: str | None = None         # name 클레임
-    roles: list[str] = []           # realm_access.roles 클레임
-    scopes: list[str] = []          # scope 문자열 또는 scp 리스트
+    sub: str
+    username: str
+    email: str | None = None
+    name: str | None = None
+    roles: list[str] = []
+    scopes: list[str] = []
 ```
 
 ### `TokenResponse` — `fastapi_core.schemas.token`
@@ -42,72 +95,75 @@ class TokenResponse(BaseModel):
 
 ```python
 class HealthResponse(BaseModel):
-    status: str    # "ok"
+    status: str
 ```
 
 ---
 
-## 인증 (Authentication)
+## 인증
 
 ### `KeycloakAuthProvider` — `fastapi_core.core.auth`
-
-Keycloak과 통신하는 인증 프로바이더. 직접 생성하거나 `set_auth_provider(app, config=config)`를 통해 등록한다.
 
 ```python
 class KeycloakAuthProvider:
     def __init__(
         self,
-        http_url: str,       # Keycloak base URL (예: "http://keycloak:8080/"), 반드시 "/" 로 끝나야 함
-        realm: str,          # Realm 이름
-        client_id: str,      # client_id (JWT audience)
-        client_secret: str | None = None,  # Confidential 클라이언트 secret
+        http_url: str,
+        realm: str,
+        client_id: str,
+        client_secret: str | None = None,
     ) -> None: ...
 ```
 
-**생성 시 ValueError 조건**: `http_url`, `realm`, `client_id` 중 하나라도 빈 문자열이면 `ValueError`.
+생성 시 검증:
 
-내부에서 다음 URL을 자동 조합한다:
+- `http_url`이 비어 있으면 `ValueError("http_url must not be empty")`
+- `realm`이 비어 있으면 `ValueError("realm must not be empty")`
+- `client_id`가 비어 있으면 `ValueError("client_id must not be empty")`
+
+파생 속성:
 
 | 속성 | 값 |
-|---|---|
-| `token_url` | `{http_url}/realms/{realm}/protocol/openid-connect/token` |
-| `introspection_url` | `{http_url}/realms/{realm}/protocol/openid-connect/token/introspect` |
-| `jwks_url` | `{http_url}/realms/{realm}/protocol/openid-connect/certs` |
-| `issuer` | `{http_url}/realms/{realm}` |
+| --- | --- |
+| `token_url` | `{base}/realms/{realm}/protocol/openid-connect/token` |
+| `introspection_url` | `{token_url}/introspect` |
+| `jwks_url` | `{base}/realms/{realm}/protocol/openid-connect/certs` |
+| `issuer` | `{base}/realms/{realm}` |
 
 #### 메서드
 
 ```python
 def authenticate(self, username: str, password: str) -> dict[str, Any]:
-    """Password Grant로 Keycloak에서 토큰 발급. HTTP 오류 시 httpx.HTTPStatusError."""
 ```
+
+- password grant 토큰 발급
+- 실패 시 내부 `httpx` 예외(`HTTPStatusError`)가 그대로 전파될 수 있음
 
 ```python
 def refresh_access_token(self, refresh_token: str) -> dict[str, Any]:
-    """Refresh Token Grant로 액세스 토큰 갱신. HTTP 오류 시 httpx.HTTPStatusError."""
 ```
 
 ```python
 def decode_token(self, token: str) -> dict[str, Any]:
-    """RS256 서명 검증 후 JWT payload 반환. 검증 실패 시 ValueError."""
 ```
+
+- RS256 + audience + issuer 검증
+- 실패 시 `ValueError("Invalid token: ...")`
 
 ```python
 def decode_token_insecure(self, token: str) -> dict[str, Any]:
-    """서명 검증 없이 JWT payload 반환 (개발 환경용). 파싱 실패 시 ValueError."""
 ```
+
+- 서명 검증 없이 decode
+- 실패 시 `ValueError("Invalid token: ...")`
 
 ```python
 def introspect_token(self, token: str) -> dict[str, Any]:
-    """Keycloak token introspection endpoint 호출 결과를 반환. HTTP 오류 시 httpx.HTTPStatusError."""
 ```
 
 ```python
 def to_user(self, payload: dict[str, Any]) -> UserInfo:
-    """JWT payload → UserInfo 모델 변환."""
 ```
-
----
 
 ### `set_auth_provider` — `fastapi_core.dependencies.auth`
 
@@ -120,11 +176,13 @@ def set_auth_provider(
 ) -> None:
 ```
 
-- `provider` 직접 전달 → `app.state.auth_provider`에 할당
-- `config` 전달 → `KeycloakAuthProvider` 내부 생성 후 할당
-- 둘 다 `None` → `ValueError`
+동작:
 
-### `get_auth_provider` — `fastapi_core.dependencies.auth`
+- `provider=` 직접 전달 시 그대로 저장
+- `config=` 전달 시 `get_required_docmesh_service(app, "auth_provider", config=config)` 결과를 adapter로 감싸 저장
+- 둘 다 없으면 `ValueError("Either provider or config must be provided")`
+
+### `get_auth_provider`
 
 ```python
 def get_auth_provider(
@@ -133,10 +191,10 @@ def get_auth_provider(
 ) -> KeycloakAuthProvider:
 ```
 
-- `app.state.auth_provider` 존재 시 반환 (싱글톤)
-- `AttributeError` 시 `EnvConfig`로 생성 후 `app.state.auth_provider`에 저장 (fallback lazy singleton)
+- state 캐시 우선
+- 없으면 registry-backed 서비스 해석 후 state에 저장
 
-### `get_current_user` — `fastapi_core.dependencies.auth`
+### `get_current_user`
 
 ```python
 def get_current_user(
@@ -146,53 +204,97 @@ def get_current_user(
 ) -> UserInfo:
 ```
 
-| 조건 | 결과 |
-|---|---|
-| `Authorization: Bearer ***` 헤더 없음 | `401 Not authenticated` |
-| 토큰 검증 실패 (`ValueError`) | `401 <오류 메시지>` |
-| `settings.auth.use_introspection = True` | `provider.introspect_token()` |
-| `settings.auth.use_introspection = False` 이고 `settings.auth.verify_jwt = True` | `provider.decode_token()` (RS256 서명 검증) |
-| `settings.auth.use_introspection = False`, `settings.auth.verify_jwt = False`, `settings.auth.allow_insecure_jwt_decode = True` | `provider.decode_token_insecure()` (서명 검증 생략) |
-| 위 세 조건 모두 아니면 | `401 JWT verification is disabled but insecure decode is not allowed` |
+분기 규칙:
 
-### `require_permissions` — `fastapi_core.dependencies.auth`
+| 조건 | 동작 |
+| --- | --- |
+| 토큰 없음 | `401 Not authenticated` |
+| `settings.auth.use_introspection` | `provider.introspect_token()` |
+| `settings.auth.verify_jwt` | `provider.decode_token()` |
+| `settings.auth.allow_insecure_jwt_decode` | `provider.decode_token_insecure()` |
+| 모두 아니면 | `401 JWT verification is disabled but insecure decode is not allowed` |
 
-```python
-def require_permissions(*roles: str) -> Callable:
-    """지정한 역할을 모두 보유해야 통과하는 Depends 팩토리."""
-```
+예외는 `HTTPException(401, detail=..., WWW-Authenticate=Bearer)`로 변환됩니다.
+
+### `require_permissions`
 
 ```python
-# 사용 예
-@router.get("/admin")
-def admin_only(user: UserInfo = Depends(require_permissions("admin"))):
-    ...
+def require_permissions(*roles: str):
 ```
 
-| 조건 | 결과 |
-|---|---|
-| 필요 역할 중 하나라도 `user.roles`에 없음 | `403 Missing required role: {role}` |
-| 모든 역할 보유 | `UserInfo` 반환 |
+- 반환값은 내부 dependency 함수
+- 지정 역할이 하나라도 없으면 `403 Missing required role: {role}`
 
 ---
 
-## 데이터베이스 (Database)
+## 설정 dependency
 
-### `create_db_engine` — `fastapi_core.core.database`
+### `set_config` / `set_settings` — `fastapi_core.dependencies.config`
+
+```python
+def set_config(app: FastAPI, config: EnvConfig) -> None:
+def set_settings(app: FastAPI, settings: ServiceSettings) -> None:
+```
+
+### `get_config`
+
+```python
+def get_config(request: Request) -> EnvConfig:
+```
+
+- `app.state.config`가 없으면 `EnvConfig()`를 생성 후 저장
+
+### `get_settings`
+
+```python
+def get_settings(
+    request: Request,
+    config: EnvConfig | DependsParam = Depends(get_config),
+) -> ServiceSettings:
+```
+
+- `app.state.settings`가 없으면 `ServiceSettings.from_yaml(config.config_path)` 결과를 저장
+
+---
+
+## 데이터베이스
+
+### Core helper — `fastapi_core.core.database`
 
 ```python
 def create_db_engine(config: DatabaseConfig) -> Engine:
-    """SQLAlchemy Engine 생성. config.sqlalchemy_database_url 과 config.echo 사용."""
 ```
 
-### `check_database_connection` — `fastapi_core.core.database`
+- `config.sqlalchemy_database_url`
+- `echo`, `pool_size`, `max_overflow`, `pool_timeout`, `pool_recycle`
 
 ```python
 def check_database_connection(engine: Engine) -> bool:
-    """SELECT 1 실행. 성공 시 True, 예외 시 False."""
 ```
 
-### `set_db_engine` — `fastapi_core.dependencies.database`
+- `SELECT 1` 성공 시 `True`, 예외 시 `False`
+
+```python
+def get_database_version(engine: Engine) -> str | None:
+```
+
+- `SELECT version()` 결과 문자열
+- 실패 시 `None`
+
+```python
+@contextmanager
+def run_in_transaction(
+    engine: Engine,
+    *,
+    session_factory: Callable[[Engine], Session] = Session,
+) -> Iterator[Session]:
+```
+
+- 성공 시 `commit()`
+- 예외 시 `rollback()` 후 재전파
+- 항상 `close()` 보장
+
+### FastAPI dependency — `fastapi_core.dependencies.database`
 
 ```python
 def set_db_engine(
@@ -203,11 +305,7 @@ def set_db_engine(
 ) -> None:
 ```
 
-- `engine` 직접 전달 → `app.state.db_engine`에 할당
-- `config` 전달 → `create_db_engine(config.db)` 내부 호출 후 할당
-- 둘 다 `None` → `ValueError`
-
-### `get_db_engine` — `fastapi_core.dependencies.database`
+- `config=` 사용 시 현재 구현은 `create_db_engine()`이 아니라 registry-backed `get_required_docmesh_service(..., "db_engine", ...)` 경로를 사용
 
 ```python
 def get_db_engine(
@@ -216,39 +314,61 @@ def get_db_engine(
 ) -> Engine:
 ```
 
-- `app.state.db_engine` 존재 시 반환 (싱글톤)
-- `AttributeError` 시 `create_db_engine(config.db)` 호출 후 `app.state.db_engine`에 저장 (fallback lazy singleton)
-
-### `get_db_session` — `fastapi_core.dependencies.database`
-
 ```python
-def get_db_session(
-    engine: Engine = Depends(get_db_engine),
-) -> Iterator[Session]:
+def get_db_session(engine: Engine = Depends(get_db_engine)) -> Iterator[Session]:
 ```
 
-- SQLAlchemy `Session`을 생성해 요청 스코프에서 제공
-- 정상/예외 종료와 관계없이 `session.close()` 보장
+- 요청 범위 세션 제공
+- 종료 시 `session.close()` 보장
 
 ---
 
-## 스토리지 (Storage / MinIO)
+## MinIO
 
-### `create_minio_client` — `fastapi_core.core.storage`
+### Core helper — `fastapi_core.core.storage`
 
 ```python
 def create_minio_client(config: MinIOConfig) -> Minio:
-    """MinIOConfig로 minio.Minio 클라이언트 생성."""
 ```
-
-### `check_minio_connection` — `fastapi_core.core.storage`
 
 ```python
 def check_minio_connection(client: Minio, bucket: str) -> bool:
-    """bucket_exists() 호출 성공 시 True, 예외 시 False."""
 ```
 
-### `set_minio_client` — `fastapi_core.dependencies.storage`
+- `bucket_exists(bucket)` 성공 시 `True`
+
+```python
+def ensure_bucket_exists(client: Minio, bucket: str) -> bool:
+```
+
+- 이미 있으면 `False`
+- 새로 만들면 `True`
+
+```python
+def list_bucket_names(client: Minio) -> list[str]:
+```
+
+```python
+def generate_presigned_get_url(
+    client: Minio,
+    config: MinIOConfig,
+    bucket: str,
+    object_name: str,
+) -> str:
+```
+
+```python
+def generate_presigned_put_url(
+    client: Minio,
+    config: MinIOConfig,
+    bucket: str,
+    object_name: str,
+) -> str:
+```
+
+- 둘 다 `config.presigned_expires_sec`를 `timedelta(seconds=...)`로 변환
+
+### FastAPI dependency — `fastapi_core.dependencies.storage`
 
 ```python
 def set_minio_client(
@@ -259,12 +379,6 @@ def set_minio_client(
 ) -> None:
 ```
 
-- `client` 직접 전달 → `app.state.minio_client`에 할당
-- `config` 전달 → `create_minio_client(config.minio)` 내부 호출 후 할당
-- 둘 다 `None` → `ValueError`
-
-### `get_minio_client` — `fastapi_core.dependencies.storage`
-
 ```python
 def get_minio_client(
     request: Request,
@@ -272,115 +386,83 @@ def get_minio_client(
 ) -> Minio:
 ```
 
-- `app.state.minio_client` 존재 시 반환 (싱글톤)
-- `AttributeError` 시 `create_minio_client(config.minio)` 호출 후 `app.state.minio_client`에 저장 (fallback lazy singleton)
+- `config=` 경로는 registry-backed `minio_client` 해석 사용
 
 ---
 
-## 벡터 데이터베이스 (Milvus)
+## Milvus
 
-### `create_milvus_client` — `fastapi_core.core.milvus`
+### Core helper — `fastapi_core.core.milvus`
 
 ```python
 def create_milvus_client(config: MilvusConfig) -> MilvusClient:
-```
-
-- `config.uri`, `config.db_name`, `config.timeout`으로 `MilvusClient`를 생성한다.
-- `config.token`이 있으면 함께 전달한다.
-
-### `create_async_milvus_client` — `fastapi_core.core.milvus`
-
-```python
 def create_async_milvus_client(config: MilvusConfig) -> AsyncMilvusClient:
 ```
 
-- `config.uri`, `config.db_name`, `config.timeout`으로 `AsyncMilvusClient`를 생성한다.
-- `config.token`이 있으면 함께 전달한다.
+전달 파라미터:
 
-### `set_milvus_client` — `fastapi_core.dependencies.milvus`
+- `uri`
+- `db_name`
+- `timeout`
+- `token` (`config.token is not None`이면 포함)
 
 ```python
-def set_milvus_client(
-    app: FastAPI,
-    client: MilvusClient | None = None,
+def check_milvus_connection(client: MilvusClient) -> bool:
+async def check_async_milvus_connection(client: AsyncMilvusClient) -> bool:
+```
+
+```python
+def list_collection_names(client: MilvusClient) -> list[str]:
+async def list_async_collection_names(client: AsyncMilvusClient) -> list[str]:
+```
+
+```python
+def ensure_collection_exists(
+    client: MilvusClient,
+    collection_name: str,
     *,
-    config: EnvConfig | None = None,
-) -> None:
+    dimension: int,
+) -> bool:
 ```
 
-- `client` 직접 전달 → `app.state.milvus_client`에 할당
-- `config` 전달 → `create_milvus_client(config.milvus)` 내부 호출 후 할당
-- 둘 다 `None` → `ValueError`
-
-### `get_milvus_client` — `fastapi_core.dependencies.milvus`
-
 ```python
-def get_milvus_client(
-    request: Request,
-    config: EnvConfig | DependsParam = Depends(get_config),
-) -> MilvusClient:
-```
-
-- `app.state.milvus_client` 존재 시 반환 (싱글톤)
-- `AttributeError` 시 `create_milvus_client(config.milvus)` 호출 후 `app.state.milvus_client`에 저장 (fallback lazy singleton)
-
-### `set_async_milvus_client` — `fastapi_core.dependencies.async_milvus`
-
-```python
-async def set_async_milvus_client(
-    app: FastAPI,
-    client: AsyncMilvusClient | None = None,
+async def ensure_async_collection_exists(
+    client: AsyncMilvusClient,
+    collection_name: str,
     *,
-    config: EnvConfig | None = None,
-) -> None:
+    dimension: int,
+) -> bool:
 ```
 
-- `client` 직접 전달 → `app.state.async_milvus_client`에 할당
-- `config` 전달 → `create_async_milvus_client(config.milvus)` 내부 호출 후 할당
-- 둘 다 `None` → `ValueError`
+- 존재하면 `False`, 새로 만들면 `True`
 
-### `get_async_milvus_client` — `fastapi_core.dependencies.async_milvus`
+### FastAPI dependency
 
 ```python
-async def get_async_milvus_client(
-    request: Request,
-    config: EnvConfig | DependsParam = Depends(get_config),
-) -> AsyncMilvusClient:
+def set_milvus_client(...): ...
+def get_milvus_client(...): ...
 ```
 
-- `app.state.async_milvus_client` 존재 시 반환 (싱글톤)
-- `AttributeError` 시 `create_async_milvus_client(config.milvus)` 호출 후 `app.state.async_milvus_client`에 저장 (fallback lazy singleton)
+- sync Milvus는 registry-backed `milvus_client` 해석 사용
+
+```python
+async def set_async_milvus_client(...): ...
+async def get_async_milvus_client(...): ...
+```
+
+- async Milvus는 `create_async_milvus_client(config.milvus)` 직접 사용
 
 ---
 
 ## Ollama
 
-### `create_ollama_client` — `fastapi_core.core.ollama`
+### Core helper — `fastapi_core.core.ollama`
 
 ```python
 def create_ollama_client(config: OllamaConfig) -> ollama.Client:
-```
-
-- `config.host`와 `config.timeout`으로 Ollama HTTP 클라이언트를 생성한다.
-
-### `check_ollama_connection` — `fastapi_core.core.ollama`
-
-```python
 def check_ollama_connection(client: ollama.Client) -> bool:
-```
-
-- `client.list()` 호출이 성공하면 `True`
-- 예외가 발생하면 `False`
-
-### `list_model_names` — `fastapi_core.core.ollama`
-
-```python
 def list_model_names(client: ollama.Client) -> list[str]:
 ```
-
-- `client.list()` 응답의 `models[*].model` 값을 추출해 모델 이름 목록을 반환한다.
-
-### `generate_text` — `fastapi_core.core.ollama`
 
 ```python
 def generate_text(
@@ -392,124 +474,74 @@ def generate_text(
 ) -> str:
 ```
 
-- 기본적으로 `config.model`을 사용해 `client.generate(model=..., prompt=...)` 를 호출한다.
-- `model=` 인자를 주면 기본 모델 대신 override 한다.
-- SDK 응답의 `response` 문자열을 반환한다.
+- 기본 모델은 `config.model`
+- `model=`이 주어지면 override
+- 응답의 `response` 문자열 반환
 
-### `set_ollama_client` — `fastapi_core.dependencies.ollama`
-
-```python
-def set_ollama_client(
-    app: FastAPI,
-    client: ollama.Client | None = None,
-    *,
-    config: EnvConfig | None = None,
-) -> None:
-```
-
-- `client` 직접 전달 → `app.state.ollama_client`에 할당
-- `config` 전달 → docmesh bridge의 `get_required_docmesh_service(..., "ollama_client", config=config)` 결과를 할당
-- 둘 다 `None` → `ValueError`
-
-### `get_ollama_client` — `fastapi_core.dependencies.ollama`
+### FastAPI dependency — `fastapi_core.dependencies.ollama`
 
 ```python
-def get_ollama_client(
-    request: Request,
-    config: EnvConfig | DependsParam = Depends(get_config),
-) -> ollama.Client:
+def set_ollama_client(...): ...
+def get_ollama_client(...): ...
 ```
 
-- `app.state.ollama_client` 존재 시 반환 (싱글톤)
-- 없으면 docmesh bridge의 `get_required_docmesh_service(..., "ollama_client", config=resolved_config)` 를 통해 fallback lazy singleton을 만든다.
+- registry-backed `ollama_client` 해석 사용
 
 ---
 
 ## Langfuse
 
-### `get_langfuse_client` — `fastapi_core.core.langfuse`
+### Core helper — `fastapi_core.core.langfuse`
 
 ```python
 def get_langfuse_client(config: LangfuseConfig | None = None) -> Langfuse:
 ```
 
-- `config`가 주어지면 먼저 내부 초기화 helper로 SDK 싱글톤을 준비한다.
-- `config.public_key`가 있으면 `langfuse.get_client(public_key=...)`로 해당 프로젝트 싱글톤을 반환한다.
-- `config`가 없으면 `langfuse.get_client()`를 그대로 반환한다.
-- FastAPI state 기반 접근이 필요하면 `fastapi_core.dependencies.langfuse.get_langfuse_client()` 를 사용할 수 있다.
+동작:
 
-### `set_langfuse_client` — `fastapi_core.dependencies.langfuse`
-
-```python
-def set_langfuse_client(
-    app: FastAPI,
-    client: Any | None = None,
-    *,
-    config: EnvConfig | None = None,
-) -> None:
-```
-
-- `client` 직접 전달 → `app.state.langfuse_client`에 할당
-- `config` 전달 → docmesh bridge의 `get_required_docmesh_service(..., "langfuse_client", config=config)` 결과를 우선 사용해 할당
-- 둘 다 `None` → `ValueError`
-
-### `get_langfuse_client` — `fastapi_core.dependencies.langfuse`
-
-```python
-def get_langfuse_client(
-    request: Request,
-    config: EnvConfig | DependsParam = Depends(get_config),
-) -> Any:
-```
-
-- `app.state.langfuse_client` 존재 시 반환 (싱글톤)
-- 미등록 시 docmesh bridge의 `get_required_docmesh_service(..., "langfuse_client", config=resolved_config)` 를 통해 fallback lazy singleton을 만든다.
-- 이 dependency 경로는 FastAPI 통합에서 state 캐시와 registry 기반 재사용을 담당한다.
-
-### `check_langfuse_connection` — `fastapi_core.core.langfuse`
+- `config is None` → `langfuse.get_client()`
+- `config`가 있으면 내부 `_create_langfuse_client(config)` 호출 후
+  - `config.public_key`가 있으면 `langfuse.get_client(public_key=...)`
+  - 없으면 `langfuse.get_client()`
 
 ```python
 def check_langfuse_connection(config: LangfuseConfig) -> bool:
 ```
 
-- `GET {config.host}/api/public/health` 호출
-- HTTP 200이면서 JSON `status == "OK"`이면 `True`
-- HTTP 오류, JSON 파싱 오류, 상태값 불일치 시 `False`
+- `GET {host}/api/public/health`
+- HTTP 성공 + JSON `status == "OK"`면 `True`
+- 그 외 `False`
+
+### FastAPI dependency — `fastapi_core.dependencies.langfuse`
+
+```python
+def set_langfuse_client(...): ...
+def get_langfuse_client(...): ...
+```
+
+- registry-backed `langfuse_client` 해석 사용
 
 ---
 
-## 메시징 (NATS)
+## NATS 메시징
 
-### `create_nats_client` — `fastapi_core.core.messaging`
+### Core helper — `fastapi_core.core.messaging`
 
 ```python
 async def create_nats_client(config: NatsConfig) -> nats.aio.client.Client:
-    """NATS 서버에 연결된 클라이언트를 생성한다."""
 ```
 
-- `config.server_list`를 `servers=[...]`로 전달한다.
-- `config.reconnect_time_wait_ms`는 초 단위 float로 변환해 `reconnect_time_wait`에 전달한다.
-
-### `build_event_subject` — `fastapi_core.core.messaging`
-
-```python
-def build_event_subject(domain: str, entity: str, action: str) -> str:
-```
-
-- `<domain>.<entity>.<action>` 형식의 subject를 만든다.
-- 각 segment는 소문자 영문/숫자와 하이픈만 허용한다.
-- 형식이 맞지 않으면 `ValueError`를 발생시킨다.
-
-### `validate_event_subject` — `fastapi_core.core.messaging`
+- `servers=config.server_list`
+- `reconnect_time_wait=config.reconnect_time_wait_ms / 1000`
 
 ```python
 def validate_event_subject(subject: str) -> bool:
+def build_event_subject(domain: str, entity: str, action: str) -> str:
 ```
 
-- 정확히 3개 segment를 가진 subject만 `True`
-- 대문자, 빈 segment, 4단계 이상 subject는 `False`
-
-### `publish_event` — `fastapi_core.core.messaging`
+- 형식: `<domain>.<entity>.<action>`
+- 각 segment는 소문자/숫자/하이픈만 허용
+- `build_event_subject()`는 실패 시 `ValueError`
 
 ```python
 async def publish_event(
@@ -519,10 +551,7 @@ async def publish_event(
 ) -> None:
 ```
 
-- 유효한 event subject인지 검증한다. 아니면 `ValueError`.
-- payload를 compact JSON UTF-8 bytes로 인코딩해 `client.publish(...)` 한다.
-
-### `subscribe_event` — `fastapi_core.core.messaging`
+- payload를 compact JSON UTF-8 bytes로 인코딩하여 publish
 
 ```python
 async def subscribe_event(
@@ -531,11 +560,6 @@ async def subscribe_event(
     handler: Callable[[str, dict[str, Any]], Awaitable[None] | None],
 ) -> Any:
 ```
-
-- `client.subscribe(subject, cb=...)`로 구독한다.
-- 수신 메시지의 JSON payload를 decode한 뒤 `handler(subject, payload)` 형태로 전달한다.
-
-### `subscribe_queue_event` — `fastapi_core.core.messaging`
 
 ```python
 async def subscribe_queue_event(
@@ -546,59 +570,75 @@ async def subscribe_queue_event(
 ) -> Any:
 ```
 
-- `subscribe_event`와 동일하되, `queue=`를 명시해 queue group 소비자를 등록한다.
-
-### `set_nats_client` — `fastapi_core.dependencies.messaging`
+### FastAPI dependency — `fastapi_core.dependencies.messaging`
 
 ```python
-async def set_nats_client(
+async def set_nats_client(...): ...
+async def get_nats_client(...): ...
+```
+
+- registry-backed `nats_client` 해석 사용
+- 함수형 dependency 정책 유지
+
+---
+
+## lifecycle / factory
+
+### `resolve_lifecycle_policy` — `fastapi_core.lifecycle`
+
+```python
+def resolve_lifecycle_policy(settings: ServiceSettings) -> LifecyclePolicy:
+```
+
+- `eager_keycloak/database/minio/langfuse`가 `None`이면 대응 `health.check_*` 값을 상속
+
+### `initialize_app_services`
+
+```python
+async def initialize_app_services(
     app: FastAPI,
-    client: nats.aio.client.Client | None = None,
+    config: EnvConfig,
+    settings: ServiceSettings | None = None,
     *,
-    config: EnvConfig | None = None,
+    init_auth: bool | None = None,
+    init_database: bool | None = None,
+    init_minio: bool | None = None,
+    init_milvus: bool | None = None,
+    init_async_milvus: bool | None = None,
+    init_ollama: bool | None = None,
+    init_langfuse: bool | None = None,
+    init_nats: bool | None = None,
+    use_docmesh_registry: bool | None = None,
 ) -> None:
 ```
 
-- `client` 직접 전달 → `app.state.nats_client`에 할당
-- `config` 전달 → docmesh bridge의 `get_required_docmesh_service_async(..., "nats_client", config=config)` 결과를 할당
-- 둘 다 `None` → `ValueError`
+- 정책에 따라 docmesh registry bootstrap
+- registry-managed 서비스 eager init
+- `async_milvus_client` 직접 초기화
 
-### `get_nats_client` — `fastapi_core.dependencies.messaging`
-
-```python
-async def get_nats_client(
-    request: Request,
-    config: EnvConfig | DependsParam = Depends(get_config),
-) -> nats.aio.client.Client:
-```
-
-- `app.state.nats_client` 존재 시 반환 (싱글톤)
-- 미등록 시 docmesh bridge의 `get_required_docmesh_service_async(..., "nats_client", config=resolved_config)` 를 통해 fallback lazy singleton을 만든다.
-
----
-
-## 설정 (Config)
-
-### `get_config` — `fastapi_core.dependencies.config`
+### `shutdown_app_services`
 
 ```python
-def get_config(request: Request) -> EnvConfig:
-    """app.state.config 반환. 미등록 시 EnvConfig() 생성 후 app.state에 저장."""
+async def shutdown_app_services(app: FastAPI) -> None:
 ```
 
-### `get_settings` — `fastapi_core.dependencies.config`
+종료 시도 대상:
+
+- `docmesh_registry.close_all()`
+- `nats_client.drain()`
+- `async_milvus_client.close()`
+- `milvus_client.close()`
+- `db_engine.dispose()`
+- `langfuse_client.flush()`
+
+### `create_managed_lifespan`
 
 ```python
-def get_settings(
-    request: Request,
-    config: EnvConfig | DependsParam = Depends(get_config),
-) -> ServiceSettings:
-    """app.state.settings 반환. 미등록 시 YAML에서 로드 후 app.state에 저장."""
+def create_managed_lifespan(
+    config: EnvConfig,
+    settings: ServiceSettings,
+) -> Callable[[FastAPI], AsyncIterator[None]]:
 ```
-
----
-
-## 앱 팩토리 (Factory)
 
 ### `create_app` — `fastapi_core.factory`
 
@@ -611,14 +651,18 @@ def create_app(
 ) -> FastAPI:
 ```
 
-| 인자 | 설명 |
-|---|---|
-| `config` | `None`이면 `EnvConfig()` 자동 생성 |
-| `settings` | `None`이면 `ServiceSettings.from_yaml(config.config_path)` 자동 로드 |
-| `lifespan` | FastAPI lifespan 컨텍스트 매니저. `None`이면 `create_managed_lifespan(config, settings)` 를 사용 |
-| `include_auth_router` | `True`이면 `/token`, `/user` 라우터 포함 |
+동작 순서:
 
-**등록 순서**: `setup_logging` → `FastAPI(root_path=..., lifespan=...)` → config/settings state 저장 → `CORSMiddleware` → `AuthError` 핸들러 → `/health` 라우터 → (선택) auth 라우터
+1. `config` 기본값 보정
+2. `settings` 기본값 보정 (`ServiceSettings.from_yaml(config.config_path)`)
+3. `lifespan` 기본값 보정 (`create_managed_lifespan(config, settings)`)
+4. `setup_logging(config.logging.level)`
+5. `FastAPI(root_path=config.root_path, lifespan=lifespan)` 생성
+6. `config`, `settings`를 state에 저장
+7. `CORSMiddleware` 등록
+8. `AuthError` handler 등록
+9. `health.router` 등록
+10. `include_auth_router=True`면 `auth.router` 등록
 
 ---
 
@@ -626,43 +670,54 @@ def create_app(
 
 ### `GET /health/liveness`
 
-응답 `200 OK`:
+응답:
+
 ```json
 { "status": "ok" }
 ```
 
 ### `GET /health/readiness`
 
-Keycloak + PostgreSQL + MinIO 준비 상태를 종합 확인한다. `settings.health.check_langfuse`가 `true`이면 Langfuse public health endpoint도 함께 확인한다.
+입력 dependency:
+
+- `config = Depends(get_config)`
+- `settings = Depends(get_settings)`
+
+검사 규칙:
+
+- `health.check_keycloak`가 켜져 있으면 `GET {manage_url}/health/ready`
+- `health.check_database`가 켜져 있으면 `check_database_connection(get_db_engine(...))`
+- `health.check_minio`가 켜져 있으면 `check_minio_connection(get_minio_client(...), config.minio.bucket)`
+- `health.check_langfuse`가 켜져 있으면 registry check 또는 `check_langfuse_connection(config.langfuse)`
+- `lifecycle.use_docmesh_healthchecks`가 켜져 있고 native checks가 있으면 `run_docmesh_healthchecks(...)`를 시도
+
+주요 실패 응답:
 
 | 조건 | 응답 |
-|---|---|
-| Keycloak + DB + MinIO (+ 선택적 Langfuse) 모두 정상 | `200 { "status": "ok" }` |
-| Keycloak 비정상 응답 | `503 { "detail": "Keycloak not ready" }` |
-| Keycloak 연결 불가 (`RequestError`) | `503 { "detail": "Keycloak unreachable: ..." }` |
-| DB 연결 실패 | `503 { "detail": "Database not ready" }` |
-| MinIO 연결 실패 | `503 { "detail": "MinIO not ready" }` |
-| Langfuse health check 실패 | `503 { "detail": "Langfuse not ready" }` |
+| --- | --- |
+| Keycloak not ready | `503 {"detail": "Keycloak not ready"}` |
+| Keycloak unreachable | `503 {"detail": "Keycloak unreachable: ..."}` |
+| Database not ready | `503 {"detail": "Database not ready"}` |
+| MinIO not ready | `503 {"detail": "MinIO not ready"}` |
+| Langfuse not ready | `503 {"detail": "Langfuse not ready"}` |
 
 ### `POST /token`
 
-**요청**: `application/x-www-form-urlencoded` (OAuth2PasswordRequestForm)
+```python
+@router.post("/token", response_model=TokenResponse)
+```
 
-| 필드 | 설명 |
-|---|---|
-| `username` | Keycloak 사용자명 |
-| `password` | 비밀번호 |
-| `grant_type` | `"password"` (자동) |
-
-**응답 `200`**: `TokenResponse`  
-**응답 `401`**: `{ "detail": "<Keycloak 오류 메시지>" }` + `WWW-Authenticate: Bearer`
+- `OAuth2PasswordRequestForm` 입력
+- `provider.authenticate(form.username, form.password)` 호출
+- 실패 시 `401` + `WWW-Authenticate: Bearer`
 
 ### `GET /user`
 
-**요청**: `Authorization: Bearer <access_token>` 헤더 필요
+```python
+@router.get("/user", response_model=UserInfo)
+```
 
-**응답 `200`**: `UserInfo`  
-**응답 `401`**: `{ "detail": "Not authenticated" }` 또는 `{ "detail": "<토큰 오류>" }` + `WWW-Authenticate: Bearer`
+- `Depends(get_current_user)` 결과 반환
 
 ---
 
@@ -675,70 +730,9 @@ class AuthError(Exception):
     def __init__(self, message: str, status_code: int = 401) -> None: ...
 ```
 
-`create_app()`에 자동으로 전역 핸들러가 등록되며, 다음 형식으로 응답한다:
+`create_app()`는 `auth_error_handler`를 전역 handler로 등록합니다.
+기본 응답 형식:
 
 ```json
 { "detail": "<message>" }
-```
-
-### HTTP 에러 응답 형식 요약
-
-| 상황 | 상태 코드 | 응답 바디 |
-|---|---|---|
-| 토큰 없음 | `401` | `{"detail": "Not authenticated"}` |
-| 토큰 검증 실패 | `401` | `{"detail": "<오류 메시지>"}` |
-| 역할 부족 | `403` | `{"detail": "Missing required role: {role}"}` |
-| Keycloak 미준비 | `503` | `{"detail": "Keycloak not ready"}` |
-| Keycloak 연결 불가 | `503` | `{"detail": "Keycloak unreachable: ..."}` |
-| DB 미준비 | `503` | `{"detail": "Database not ready"}` |
-| MinIO 미준비 | `503` | `{"detail": "MinIO not ready"}` |
-
----
-
-## `app.state` 속성 요약
-
-| 속성명 (고정) | 타입 | 등록 함수 | 조회 Depends |
-|---|---|---|---|
-| `app.state.auth_provider` | `KeycloakAuthProvider` | `set_auth_provider` | `get_auth_provider` |
-| `app.state.db_engine` | `Engine` | `set_db_engine` | `get_db_engine` |
-| `app.state.minio_client` | `Minio` | `set_minio_client` | `get_minio_client` |
-| `app.state.milvus_client` | `MilvusClient` | `set_milvus_client` | `get_milvus_client` |
-| `app.state.async_milvus_client` | `AsyncMilvusClient` | `set_async_milvus_client` | `get_async_milvus_client` |
-| `app.state.ollama_client` | `ollama.Client` | `set_ollama_client` | `get_ollama_client` |
-| `app.state.nats_client` | `nats.aio.client.Client` | `set_nats_client` | `get_nats_client` |
-
-속성명은 SDK 내부에 하드코딩되어 있으며 사용자가 변경할 수 없다.
-
----
-
-## 사용 예시 (lifespan 패턴)
-
-```python
-from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi_core.factory import create_app
-from fastapi_core.core.config import EnvConfig
-from fastapi_core.dependencies.auth import set_auth_provider
-from fastapi_core.dependencies.database import set_db_engine
-from fastapi_core.dependencies.storage import set_minio_client
-from fastapi_core.dependencies.milvus import set_milvus_client
-from fastapi_core.dependencies.ollama import set_ollama_client
-from fastapi_core.dependencies.messaging import set_nats_client
-
-config = EnvConfig()
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    set_auth_provider(app, config=config)
-    set_db_engine(app, config=config)
-    set_minio_client(app, config=config)
-    set_milvus_client(app, config=config)
-    set_ollama_client(app, config=config)
-    await set_nats_client(app, config=config)
-    yield
-    app.state.db_engine.dispose()
-    app.state.milvus_client.close()
-    await app.state.nats_client.drain()
-
-app = create_app(config=config, lifespan=lifespan)
 ```

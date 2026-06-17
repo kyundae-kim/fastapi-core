@@ -1,69 +1,206 @@
-# NATS 메시징 적용 가이드
+# NATS 메시징 가이드
 
-## 목적
+## 개요
 
-`fastapi-core` 기반 서비스 간 통신을 동기 HTTP 중심에서 비동기 이벤트 기반으로 확장하기 위해 NATS를 적용합니다.
+`fastapi-core`는 NATS 연동을 두 층으로 제공합니다.
 
-- 서비스 간 결합도 감소
-- 처리량 증가 시 수평 확장 용이
-- 이벤트 중심 도메인 아키텍처 기반 마련
-
----
-
-## 1) NATS 클라이언트 라이브러리 설치
-
-패키지 의존성에 `nats-py`를 추가합니다.
-
-```bash
-# uv
-uv add nats-py
-
-# pip
-pip install nats-py
-```
-
-`pyproject.toml` 예시:
-
-```toml
-dependencies = [
-  # ...
-  "nats-py>=2.9.0",
-]
-```
+1. **core helper**: `fastapi_core.core.messaging`
+   - 순수 NATS 클라이언트 생성
+   - subject 검증/조합
+   - JSON publish / subscribe helper
+2. **FastAPI dependency helper**: `fastapi_core.dependencies.messaging`
+   - `app.state.nats_client` 캐시
+   - docmesh registry 기반 lazy singleton 조회
 
 ---
 
-## 2) 환경설정
+## 설정
 
-`EnvConfig`에 NATS 설정을 추가하여 환경 변수로 주입합니다.
-
-권장 환경 변수:
+소스 설정 모델: `fastapi_core.core.config.NatsConfig`
 
 | 변수명 | 타입 | 기본값 | 설명 |
 | --- | --- | --- | --- |
-| `NATS__SERVERS` | `str` (콤마 구분) | `nats://nats:4222` | NATS 서버 목록 |
-| `NATS__NAME` | `str` | `fastapi-core` | NATS 연결 이름 |
-| `NATS__CONNECT_TIMEOUT` | `int` | `2` | 연결 타임아웃(초) |
-| `NATS__MAX_RECONNECT_ATTEMPTS` | `int` | `60` | 재연결 최대 시도 횟수 |
-| `NATS__RECONNECT_TIME_WAIT_MS` | `int` | `2000` | 재연결 간격(ms) |
-| `NATS__QUEUE_GROUP` | `str` | `default-workers` | 기본 큐 그룹 |
+| `NATS__SERVERS` | `str` (콤마 구분) | `nats://nats:4222` | 서버 목록 원본 문자열 |
+| `NATS__NAME` | `str` | `fastapi-core` | 연결 이름 |
+| `NATS__CONNECT_TIMEOUT` | `int` | `2` | 연결 timeout(초) |
+| `NATS__MAX_RECONNECT_ATTEMPTS` | `int` | `60` | 최대 재연결 횟수 |
+| `NATS__RECONNECT_TIME_WAIT_MS` | `int` | `2000` | 재연결 대기 시간(ms) |
+| `NATS__QUEUE_GROUP` | `str` | `default-workers` | 기본 queue group |
 
-`.env` 예시:
+`NatsConfig.server_list`는 `NATS__SERVERS`를 분리한 계산 프로퍼티이며,
+`create_nats_client()`는 이 값을 그대로 `nats.connect(servers=...)`에 전달합니다.
+
+예시:
 
 ```dotenv
 NATS__SERVERS=nats://nats:4222,nats://nats-2:4222
-NATS__NAME=docmesh-fastapi-core
+NATS__NAME=fastapi-core
 NATS__CONNECT_TIMEOUT=2
 NATS__MAX_RECONNECT_ATTEMPTS=60
 NATS__RECONNECT_TIME_WAIT_MS=2000
-NATS__QUEUE_GROUP=docmesh-workers
+NATS__QUEUE_GROUP=default-workers
 ```
 
 ---
 
-## 3) Publish/Subscribe 샘플
+## Core helper API
 
-### 3.1 연결/종료 (lifespan)
+### 클라이언트 생성
+
+```python
+from fastapi_core.core.config import NatsConfig
+from fastapi_core.core.messaging import create_nats_client
+
+config = NatsConfig()
+client = await create_nats_client(config)
+```
+
+동작:
+
+- `servers=config.server_list`
+- `name=config.name`
+- `connect_timeout=config.connect_timeout`
+- `max_reconnect_attempts=config.max_reconnect_attempts`
+- `reconnect_time_wait=config.reconnect_time_wait_ms / 1000`
+
+### Subject 규칙
+
+이벤트 subject는 반드시 **3 segment** 형식이어야 합니다.
+
+```text
+<domain>.<entity>.<action>
+```
+
+각 segment는 다음만 허용됩니다.
+
+- 소문자 영문자
+- 숫자
+- 하이픈(`-`)
+
+예:
+
+- `orders.order.created`
+- `billing.invoice.updated`
+- `documents.file.deleted`
+
+잘못된 예:
+
+- `orders.created`  # segment 2개
+- `Orders.order.created`  # 대문자 포함
+- `orders.order.created.v2`  # segment 4개
+
+### Subject 조합/검증
+
+```python
+from fastapi_core.core.messaging import build_event_subject, validate_event_subject
+
+subject = build_event_subject("orders", "order", "created")
+assert subject == "orders.order.created"
+assert validate_event_subject(subject) is True
+```
+
+`build_event_subject()`는 결과가 규칙에 맞지 않으면 `ValueError`를 발생시킵니다.
+
+### 이벤트 발행
+
+```python
+from fastapi_core.core.messaging import build_event_subject, publish_event
+
+subject = build_event_subject("orders", "order", "created")
+await publish_event(
+    client,
+    subject,
+    {
+        "event_id": "order-created:123",
+        "event": subject,
+        "order_id": "123",
+        "user_id": "u-1",
+    },
+)
+```
+
+동작:
+
+- subject 유효성 검증
+- payload를 compact JSON UTF-8 bytes로 인코딩
+- `client.publish(subject, encoded_payload)` 호출
+
+### 이벤트 구독
+
+```python
+from fastapi_core.core.messaging import subscribe_event, subscribe_queue_event
+
+async def handler(subject: str, payload: dict[str, object]) -> None:
+    print(subject, payload)
+
+await subscribe_event(client, "orders.order.created", handler)
+await subscribe_queue_event(client, "orders.order.created", "default-workers", handler)
+```
+
+동작:
+
+- 수신 payload를 JSON decode
+- `handler(subject, payload)` 호출
+- handler가 async 함수면 await
+
+---
+
+## FastAPI 통합
+
+### `set_nats_client`
+
+```python
+from fastapi import FastAPI
+from fastapi_core.core.config import EnvConfig
+from fastapi_core.dependencies.messaging import set_nats_client
+
+config = EnvConfig()
+app = FastAPI()
+
+await set_nats_client(app, config=config)
+```
+
+현재 구현 기준:
+
+- `client=`를 직접 넘기면 그대로 `app.state.nats_client`에 저장
+- `config=`를 넘기면 `get_required_docmesh_service_async(app, "nats_client", config=config)` 결과를 저장
+- 둘 다 없으면 `ValueError`
+
+즉, FastAPI dependency 레이어는 `create_nats_client()`를 직접 호출하지 않고 **docmesh registry 기반 서비스 해석**을 사용합니다.
+
+### `get_nats_client`
+
+```python
+import nats.aio.client
+from fastapi import APIRouter, Depends
+from fastapi_core.dependencies.messaging import get_nats_client
+
+router = APIRouter()
+
+@router.post("/events")
+async def publish_sample(
+    nc: nats.aio.client.Client = Depends(get_nats_client),
+):
+    await nc.publish("orders.order.created", b"{}")
+    return {"status": "published"}
+```
+
+동작:
+
+- `app.state.nats_client`가 있으면 재사용
+- 없으면 docmesh registry로 생성하고 state에 저장
+- 함수형 dependency이며 `GetNatsClientDependency` 같은 callable class는 없습니다
+
+---
+
+## lifespan 예시
+
+### managed lifespan 사용 시
+
+`create_app()` 기본값은 `create_managed_lifespan(config, settings)`를 사용합니다.
+`settings.lifecycle.eager_nats = true`면 startup에서 NATS를 선행 초기화할 수 있습니다.
+
+### 수동 lifespan 예시
 
 ```python
 from contextlib import asynccontextmanager
@@ -78,140 +215,65 @@ config = EnvConfig()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await set_nats_client(app, config=config)
-    yield
-    await app.state.nats_client.drain()
+    try:
+        yield
+    finally:
+        await app.state.nats_client.drain()
 
 app = create_app(config=config, lifespan=lifespan)
 ```
 
-### 3.1.1 FastAPI dependency로 주입
+---
 
-`get_nats_client`는 `GetNatsClientDependency` class instance가 아니라 함수형 dependency입니다. 라우터에서는 `Depends(get_nats_client)`를 직접 사용합니다.
-
-```python
-import nats.aio.client
-from fastapi import APIRouter, Depends
-
-from fastapi_core.dependencies.messaging import get_nats_client
-
-router = APIRouter()
-
-@router.post("/events/{subject}")
-async def publish_event(
-    subject: str,
-    nc: nats.aio.client.Client = Depends(get_nats_client),
-):
-    await nc.publish(subject, b"{}")
-    return {"status": "published"}
-```
-
-### 3.2 이벤트 발행
-
-`fastapi-core`는 subject 형식 표준화와 JSON 직렬화를 돕는 helper를 제공합니다.
+## 도메인 이벤트 예시
 
 ```python
 from fastapi_core.core.messaging import build_event_subject, publish_event
 
-async def publish_order_created(nc, order_id: str, user_id: str) -> None:
-    subject = build_event_subject("orders", "order", "created")
-    payload = {
-        "event_id": f"order-created:{order_id}",
-        "event": subject,
-        "order_id": order_id,
-        "user_id": user_id,
-    }
-    await publish_event(nc, subject, payload)
-```
-
-### 3.3 이벤트 구독
-
-```python
-from fastapi_core.core.messaging import subscribe_queue_event
-
-async def subscribe_orders_created(nc):
-    async def handler(subject: str, payload: dict[str, object]) -> None:
-        # 후속 처리 (예: 알림 발송, 인덱싱, 집계)
-        print("received:", subject, payload)
-
-    await subscribe_queue_event(
-        nc,
-        "orders.order.created",
-        "docmesh-workers",
-        handler,
-    )
-```
-
----
-
-## 4) 주요 도메인 서비스 적용 패턴
-
-도메인 서비스는 트랜잭션 완료 후 이벤트를 발행하는 구조를 권장합니다.
-
-```python
-class OrderService:
-    def __init__(self, order_repo, nats_client):
-        self.order_repo = order_repo
+class OrderEvents:
+    def __init__(self, nats_client):
         self.nats = nats_client
 
-    async def create_order(self, dto):
-        order = self.order_repo.create(dto)  # DB commit 이후
-
-        await self.nats.publish(
-            "orders.created",
-            json.dumps(
-                {
-                    "event": "orders.created",
-                    "order_id": order.id,
-                    "customer_id": order.customer_id,
-                }
-            ).encode("utf-8"),
+    async def order_created(self, order_id: str, customer_id: str) -> None:
+        subject = build_event_subject("orders", "order", "created")
+        await publish_event(
+            self.nats,
+            subject,
+            {
+                "event_id": f"order-created:{order_id}",
+                "event": subject,
+                "order_id": order_id,
+                "customer_id": customer_id,
+            },
         )
-        return order
 ```
 
-권장 Subject 네이밍:
+권장 사항:
 
-- `<domain>.<entity>.created`
-- `<domain>.<entity>.updated`
-- `<domain>.<entity>.deleted`
-
-예:
-
-- `billing.invoice.created`
-- `users.profile.updated`
-- `documents.file.deleted`
+- `event_id` 같은 멱등성 키를 포함
+- payload에 `event` 또는 `schema_version` 필드를 포함
+- subject는 helper로 생성해 규칙 위반을 방지
 
 ---
 
-## 5) 테스트 전략
+## 테스트 포인트
 
-### 단위 테스트
+현재 저장소의 NATS 관련 테스트:
 
-- NATS 클라이언트를 `AsyncMock`으로 대체
-- `publish` 호출 subject/payload 검증
-- 예외(연결 실패, publish 실패) 경로 검증
+- `test_fastapi_core/core/test_messaging.py`
+  - `create_nats_client`
+  - `validate_event_subject`
+  - `build_event_subject`
+  - `publish_event`
+  - `subscribe_event`
+  - `subscribe_queue_event`
+- `test_fastapi_core/dependencies/test_messaging.py`
+  - `set_nats_client`
+  - `get_nats_client`
+  - 함수형 dependency 정책
 
-### 통합 테스트
-
-- 테스트 NATS 서버(또는 devcontainer 내 NATS) 연결
-- 실제 pub/sub round-trip 검증
-- queue group 기반 다중 소비자 분배 검증
-
-예시:
+실행 예:
 
 ```bash
-# 전체 테스트
-uv run pytest -q
-
-# NATS 관련 테스트만 실행 (파일/마커 기준)
-uv run pytest -q -k nats
+uv run pytest -q test_fastapi_core/core/test_messaging.py test_fastapi_core/dependencies/test_messaging.py
 ```
-
----
-
-## 6) 운영 고려사항
-
-- 재연결 로깅 및 모니터링(연결 상태 이벤트 핸들러)
-- 메시지 스키마 버전 필드(`schema_version`) 포함
-- 멱등성 키(`event_id`) 기반 중복 처리 방지
-- 점진적 도입: 핵심 도메인부터 이벤트 발행 후 구독자 확장
