@@ -215,3 +215,12 @@
 - Updated: `concepts/load-settings-and-settings-model.md`
 - Created: `concepts/lifecycle-policy-resolution.md`
 - Updated: `index.md`
+
+## [2026-06-18] ingest | fastapi-core messaging docs
+- Source captured: `raw/articles/fastapi-core-messaging-2026-06-18.md`
+- Source file: `docs/messaging.md`
+- Created: `concepts/nats-event-helper-layer.md`
+- Updated: `entities/fastapi-core.md`
+- Updated: `concepts/nats-configuration-and-auth-modes.md`
+- Updated: `concepts/registry-backed-dependency-resolution.md`
+- Updated: `index.md`

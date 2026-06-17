@@ -2,7 +2,7 @@
 
 > Content catalog. Every wiki page listed under its type with a one-line summary.
 > Read this first to find relevant pages for any query.
-> Last updated: 2026-06-17 | Total pages: 29
+> Last updated: 2026-06-18 | Total pages: 30
 
 ## Entities
 <!-- Alphabetical within section -->
@@ -27,6 +27,7 @@
 - [[mask-sensitive-value]] — 로그와 오류 메시지에서 token/secret/DSN 등을 마스킹하는 보안 유틸리티.
 - [[nats-configuration-and-auth-modes]] — NATS 서버 목록, 인증 모드, async 제약을 담은 설정 규칙.
 - [[nats-connection-builder]] — NATS 연결을 즉시 생성하지 않고 async connect/check 계약을 제공하는 빌더.
+- [[nats-event-helper-layer]] — core helper와 FastAPI dependency helper로 나뉜 NATS 이벤트 subject/publish/subscribe 계층.
 - [[optional-observability-services]] — Langfuse 같은 선택적 관측성 서비스를 핵심 경로와 분리하는 원칙.
 - [[registry-backed-dependency-resolution]] — 주요 FastAPI dependency 가 registry/docmesh bridge 경로를 통해 해석되는 구조.
 - [[sdk-health-check-patterns]] — startup/readiness 에서 `check()` 와 `check_all_services()` 를 사용하는 운영 패턴.
