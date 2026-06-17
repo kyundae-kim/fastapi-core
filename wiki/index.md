@@ -35,4 +35,5 @@
 - [[docmesh-py-core-refactor-review]] — docmesh-py-core 기반 리팩터링 시 유지할 축, 위험지점, 권장 순서를 정리한 검토 메모.
 - [[fastapi-core-codebase-review-against-docmesh-py-core]] — 현재 fastapi-core 코드가 docmesh-py-core 철학과 어디서 어긋나는지 정리한 코드베이스 리뷰.
 - [[fastapi-core-prd-alignment-review]] — PRD 기준 제품 책임과 현재 구현/registry 방향의 정렬 상태를 정리한 검토 메모.
+- [[fastapi-core-prd-vs-source-code-comparison]] — PRD의 요구사항과 현재 소스코드 구현 범위를 기능별로 대조한 비교 메모.
 - [[registry-full-replacement-plan]] — registry가 완전 대체 가능한 서비스 범위와 남겨야 할 native 경계를 정리한 리팩터링 실행안.

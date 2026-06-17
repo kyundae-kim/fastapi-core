@@ -82,3 +82,9 @@
 - Created: `concepts/fastapi-app-factory-and-health-routes.md`
 - Created: `queries/fastapi-core-prd-alignment-review.md`
 - Updated: `index.md`
+
+## [2026-06-16] query | fastapi-core PRD vs source code comparison
+- Filed: `queries/fastapi-core-prd-vs-source-code-comparison.md`
+- Sources synthesized: `raw/articles/fastapi-core-prd-2026-06-16.md`, `queries/fastapi-core-prd-alignment-review.md`, `queries/fastapi-core-codebase-review-against-docmesh-py-core.md`
+- Verification: `uv run pytest -q -m 'not integration'` -> `146 passed, 26 deselected`
+- Updated: `index.md`
