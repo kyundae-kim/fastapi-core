@@ -355,6 +355,39 @@ def create_ollama_client(config: OllamaConfig) -> ollama.Client:
 
 - `config.host`와 `config.timeout`으로 Ollama HTTP 클라이언트를 생성한다.
 
+### `check_ollama_connection` — `fastapi_core.core.ollama`
+
+```python
+def check_ollama_connection(client: ollama.Client) -> bool:
+```
+
+- `client.list()` 호출이 성공하면 `True`
+- 예외가 발생하면 `False`
+
+### `list_model_names` — `fastapi_core.core.ollama`
+
+```python
+def list_model_names(client: ollama.Client) -> list[str]:
+```
+
+- `client.list()` 응답의 `models[*].model` 값을 추출해 모델 이름 목록을 반환한다.
+
+### `generate_text` — `fastapi_core.core.ollama`
+
+```python
+def generate_text(
+    client: ollama.Client,
+    config: OllamaConfig,
+    prompt: str,
+    *,
+    model: str | None = None,
+) -> str:
+```
+
+- 기본적으로 `config.model`을 사용해 `client.generate(model=..., prompt=...)` 를 호출한다.
+- `model=` 인자를 주면 기본 모델 대신 override 한다.
+- SDK 응답의 `response` 문자열을 반환한다.
+
 ### `set_ollama_client` — `fastapi_core.dependencies.ollama`
 
 ```python
@@ -367,7 +400,7 @@ def set_ollama_client(
 ```
 
 - `client` 직접 전달 → `app.state.ollama_client`에 할당
-- `config` 전달 → `create_ollama_client(config.ollama)` 내부 호출 후 할당
+- `config` 전달 → docmesh bridge의 `get_required_docmesh_service(..., "ollama_client", config=config)` 결과를 할당
 - 둘 다 `None` → `ValueError`
 
 ### `get_ollama_client` — `fastapi_core.dependencies.ollama`
@@ -380,7 +413,7 @@ def get_ollama_client(
 ```
 
 - `app.state.ollama_client` 존재 시 반환 (싱글톤)
-- `AttributeError` 시 `create_ollama_client(config.ollama)` 호출 후 `app.state.ollama_client`에 저장 (fallback lazy singleton)
+- 없으면 docmesh bridge의 `get_required_docmesh_service(..., "ollama_client", config=resolved_config)` 를 통해 fallback lazy singleton을 만든다.
 
 ---
 

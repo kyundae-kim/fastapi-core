@@ -118,3 +118,11 @@
 - Verification: `uv run pytest -q test_fastapi_core/dependencies/test_milvus.py test_fastapi_core/dependencies/test_async_milvus.py test_fastapi_core/core/test_milvus.py test_fastapi_core/core/test_async_milvus.py` -> `26 passed`
 - Verification: `uv run pytest -q -m 'not integration'` -> `165 passed, 26 deselected`
 - Updated: `queries/fastapi-core-prd-vs-source-code-comparison.md`
+
+## [2026-06-17] update | Ollama helper surface
+- Added tests: `test_fastapi_core/core/test_ollama.py`
+- Added: `fastapi_core/core/ollama.py`
+- Verification: `uv run pytest -q test_fastapi_core/core/test_ollama.py` -> `6 passed`
+- Verification: `uv run pytest -q test_fastapi_core/dependencies/test_ollama.py test_fastapi_core/core/test_ollama.py` -> `11 passed`
+- Verification: `uv run pytest -q -m 'not integration'` -> `171 passed, 26 deselected`
+- Updated: `docs/api.md`, `queries/fastapi-core-prd-vs-source-code-comparison.md`
