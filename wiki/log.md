@@ -224,3 +224,11 @@
 - Updated: `concepts/nats-configuration-and-auth-modes.md`
 - Updated: `concepts/registry-backed-dependency-resolution.md`
 - Updated: `index.md`
+
+## [2026-06-18] lint | 11 issues found
+- Broken wikilinks: 0
+- Orphan pages: 0
+- Source drift: 6
+- Contested pages: 0
+- Stale pages: 0
+- Frontmatter/tag/style issues: 5
