@@ -163,3 +163,12 @@
 - Verification: `uv run pytest -q test_fastapi_core/core/test_security.py test_fastapi_core/dependencies/test_security.py` -> `29 passed`
 - Verification: `uv run pytest -q -m 'not integration'` -> `179 passed, 26 deselected`
 - Updated: `wiki/queries/fastapi-core-prd-vs-source-code-comparison.md` now treats introspection gap as closed and reprioritizes remaining doc/architecture differences
+
+## [2026-06-17] query | PRD vs code re-check (Langfuse + package structure)
+- Re-read: `docs/prd.md`, `wiki/queries/fastapi-core-prd-vs-source-code-comparison.md`, `wiki/SCHEMA.md`, `wiki/index.md`
+- Code verified: `fastapi_core/core/langfuse.py`, `fastapi_core/dependencies/langfuse.py`, `fastapi_core/lifecycle.py`, `fastapi_core/factory.py`, `fastapi_core/__init__.py`
+- Tree verified: `fastapi_core/bootstrap.py`, `fastapi_core/docmesh_bridge.py`, `fastapi_core/lifecycle.py`, `fastapi_core/dependencies/langfuse.py`
+- Verification: `uv run pytest -q test_fastapi_core/core/test_langfuse.py test_fastapi_core/dependencies/test_langfuse.py test_fastapi_core/test_lifecycle.py` -> `17 passed, 1 warning`
+- Verification: `uv run pytest -q -m 'not integration'` -> `179 passed, 26 deselected, 5 warnings`
+- Updated: `wiki/queries/fastapi-core-prd-vs-source-code-comparison.md`
+- Result: remaining PRD/code gaps are primarily Langfuse lifecycle contract divergence and package-structure documentation drift, not missing runtime features
