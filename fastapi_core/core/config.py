@@ -68,6 +68,29 @@ class MinIOConfig(BaseModel):
     presigned_expires_sec: int = 900
 
 
+class OllamaConfig(BaseModel):
+    host: str = "http://ollama:11434"
+    model: str = "llama3.2"
+    timeout: float = 60.0
+
+
+class MilvusConfig(BaseModel):
+    uri: str = "http://milvus:19530"
+    db_name: str = ""
+    token: str = ""
+    timeout: float | None = None
+
+
+class LangfuseConfig(BaseModel):
+    host: str = "http://langfuse-web:3000"
+    public_key: str | None = None
+    secret_key: str | None = None
+    timeout: int = 5
+    tracing_enabled: bool = True
+    environment: str | None = None
+    release: str | None = None
+
+
 class NatsConfig(BaseModel):
     servers: str = "nats://nats:4222"
     name: str = "fastapi-core"
@@ -96,12 +119,27 @@ class HealthSettings(BaseModel):
     check_keycloak: bool = True
     check_database: bool = True
     check_minio: bool = True
+    check_langfuse: bool = False
+
+
+class LifecycleSettings(BaseModel):
+    eager_keycloak: bool | None = None
+    eager_database: bool | None = None
+    eager_minio: bool | None = None
+    eager_langfuse: bool | None = None
+    eager_milvus: bool = True
+    eager_async_milvus: bool = False
+    eager_ollama: bool = True
+    eager_nats: bool = False
+    use_docmesh_registry: bool = False
+    use_docmesh_healthchecks: bool = False
 
 
 class ServiceSettings(BaseModel):
     cors: CORSSettings = Field(default_factory=CORSSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
     health: HealthSettings = Field(default_factory=HealthSettings)
+    lifecycle: LifecycleSettings = Field(default_factory=LifecycleSettings)
 
     @classmethod
     def from_yaml(cls, path: str) -> "ServiceSettings":
@@ -130,6 +168,9 @@ class EnvConfig(BaseSettings):
     keycloak: KeycloakConfig = Field(default_factory=KeycloakConfig)
     db: DatabaseConfig = Field(default_factory=DatabaseConfig)
     minio: MinIOConfig = Field(default_factory=MinIOConfig)
+    ollama: OllamaConfig = Field(default_factory=OllamaConfig)
+    milvus: MilvusConfig = Field(default_factory=MilvusConfig)
+    langfuse: LangfuseConfig = Field(default_factory=LangfuseConfig)
     nats: NatsConfig = Field(default_factory=NatsConfig)
 
     keycloak_username: str = "test"

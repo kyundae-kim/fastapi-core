@@ -52,8 +52,35 @@ def test_get_minio_client_from_state():
     assert response.json()["id"] == id(mock_client)
 
 
-def test_get_minio_client_fallback():
-    """app.state에 minio_client가 없으면 생성 후 state에 등록하여 반환한다."""
+def test_get_minio_client_fallback_prefers_docmesh_registry():
+    """docmesh registry가 있으면 native create 대신 registry client를 state에 등록한다."""
+    app = FastAPI()
+    mock_client = MagicMock(spec=Minio)
+    mock_config = MagicMock()
+    mock_registry = MagicMock()
+    mock_registry.create_client.return_value = MagicMock(client=mock_client)
+    app.state.docmesh_registry = mock_registry
+    app.dependency_overrides[get_config] = lambda: mock_config
+
+    @app.get("/client-id")
+    def client_id(client: Minio = Depends(get_minio_client)):
+        return {"id": id(client)}
+
+    with patch(
+        "fastapi_core.dependencies.storage.create_minio_client", return_value=MagicMock(spec=Minio)
+    ) as mock_create:
+        client = TestClient(app)
+        response = client.get("/client-id")
+        mock_create.assert_not_called()
+
+    mock_registry.create_client.assert_called_once_with("minio")
+    assert response.status_code == 200
+    assert response.json()["id"] == id(mock_client)
+    assert app.state.minio_client is mock_client
+
+
+def test_get_minio_client_initializes_docmesh_registry_when_missing():
+    """app.state에 registry와 minio_client가 없으면 docmesh registry로 생성 후 state에 등록한다."""
     app = FastAPI()
     mock_client = MagicMock(spec=Minio)
     mock_config = MagicMock()
@@ -64,11 +91,17 @@ def test_get_minio_client_fallback():
         return {"id": id(client)}
 
     with patch(
-        "fastapi_core.dependencies.storage.create_minio_client", return_value=mock_client
-    ) as mock_create:
+        "fastapi_core.dependencies.storage.get_required_docmesh_service",
+        return_value=mock_client,
+    ) as mock_get_required:
         client = TestClient(app)
         response = client.get("/client-id")
-        mock_create.assert_called_once_with(mock_config.minio)
+
+    mock_get_required.assert_called_once_with(
+        app,
+        "minio_client",
+        config=mock_config,
+    )
     assert response.status_code == 200
     assert response.json()["id"] == id(mock_client)
     assert app.state.minio_client is mock_client
@@ -82,15 +115,16 @@ def test_storage_dependencies_are_functions():
 
 
 def test_set_minio_client_from_config():
-    """config를 전달하면 create_minio_client를 호출하여 state에 등록한다."""
+    """config를 전달하면 docmesh registry를 통해 client를 state에 등록한다."""
     app = FastAPI()
     mock_client = MagicMock(spec=Minio)
     mock_config = MagicMock()
     with patch(
-        "fastapi_core.dependencies.storage.create_minio_client", return_value=mock_client
-    ) as mock_create:
+        "fastapi_core.dependencies.storage.get_required_docmesh_service", return_value=mock_client
+    ) as mock_get_required:
         set_minio_client(app, config=mock_config)
-        mock_create.assert_called_once_with(mock_config.minio)
+
+    mock_get_required.assert_called_once_with(app, "minio_client", config=mock_config)
     assert app.state.minio_client is mock_client
 
 

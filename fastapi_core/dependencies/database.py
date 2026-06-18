@@ -7,9 +7,11 @@ from fastapi.params import Depends as DependsParam
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
+from fastapi_core.bootstrap import get_or_create_state_value, set_state_value
 from fastapi_core.core.config import EnvConfig
 from fastapi_core.core.database import create_db_engine
 from fastapi_core.dependencies.config import get_config
+from fastapi_core.docmesh_bridge import get_required_docmesh_service
 
 _DB_ENGINE_STATE_KEY = "db_engine"
 
@@ -23,22 +25,29 @@ def set_db_engine(
     if engine is None:
         if config is None:
             raise ValueError("Either engine or config must be provided")
-        engine = create_db_engine(config.db)
-    setattr(app.state, _DB_ENGINE_STATE_KEY, engine)
+        engine = get_required_docmesh_service(
+            app,
+            _DB_ENGINE_STATE_KEY,
+            config=config,
+        )
+    set_state_value(app, _DB_ENGINE_STATE_KEY, engine)
 
 
 def get_db_engine(
     request: Request,
     config: EnvConfig | DependsParam = Depends(get_config),
 ) -> Engine:
-    try:
-        return getattr(request.app.state, _DB_ENGINE_STATE_KEY)
-    except AttributeError:
-        if isinstance(config, DependsParam):
-            config = get_config(request)
-        engine = create_db_engine(config.db)
-        set_db_engine(request.app, engine)
-        return engine
+    def factory() -> Engine:
+        resolved_config = config
+        if isinstance(resolved_config, DependsParam):
+            resolved_config = get_config(request)
+        return get_required_docmesh_service(
+            request.app,
+            _DB_ENGINE_STATE_KEY,
+            config=resolved_config,
+        )
+
+    return get_or_create_state_value(request.app, _DB_ENGINE_STATE_KEY, factory)
 
 
 def get_db_session(engine: Engine = Depends(get_db_engine)) -> Iterator[Session]:

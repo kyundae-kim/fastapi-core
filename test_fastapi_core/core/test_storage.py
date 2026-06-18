@@ -1,6 +1,6 @@
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi_core.core.config import MinIOConfig
 from fastapi_core.core.storage import (
     check_minio_connection,
@@ -8,8 +8,9 @@ from fastapi_core.core.storage import (
     ensure_bucket_exists,
     generate_presigned_get_url,
     generate_presigned_put_url,
-    list_buckets,
+    list_bucket_names,
 )
+
 
 
 def test_create_minio_client():
@@ -32,41 +33,12 @@ def test_create_minio_client():
         assert client is mock_instance
 
 
-def test_ensure_bucket_exists_creates_bucket():
-    mock_client = MagicMock()
-    mock_client.bucket_exists.return_value = False
-    ensure_bucket_exists(mock_client, "test-bucket")
-    mock_client.bucket_exists.assert_called_once_with("test-bucket")
-    mock_client.make_bucket.assert_called_once_with("test-bucket")
-
-
-def test_ensure_bucket_exists_no_create_if_exists():
-    mock_client = MagicMock()
-    mock_client.bucket_exists.return_value = True
-    ensure_bucket_exists(mock_client, "test-bucket")
-    mock_client.make_bucket.assert_not_called()
-
-
-def test_list_buckets():
-    mock_client = MagicMock()
-    b1, b2 = MagicMock(), MagicMock()
-    b1.name = "bucket-a"
-    b2.name = "bucket-b"
-    mock_client.list_buckets.return_value = [b1, b2]
-    result = list_buckets(mock_client)
-    assert result == ["bucket-a", "bucket-b"]
-
-
-def test_list_buckets_empty():
-    mock_client = MagicMock()
-    mock_client.list_buckets.return_value = []
-    assert list_buckets(mock_client) == []
-
 
 def test_check_minio_connection_success():
     mock_client = MagicMock()
     mock_client.bucket_exists.return_value = True
     assert check_minio_connection(mock_client, "bucket") is True
+
 
 
 def test_check_minio_connection_failure():
@@ -75,27 +47,70 @@ def test_check_minio_connection_failure():
     assert check_minio_connection(mock_client, "bucket") is False
 
 
-def test_generate_presigned_get_url_default_expires():
+
+def test_ensure_bucket_exists_creates_missing_bucket():
     mock_client = MagicMock()
-    mock_client.get_presigned_url.return_value = "https://example/get"
+    mock_client.bucket_exists.return_value = False
 
-    url = generate_presigned_get_url(mock_client, "bucket", "obj.txt")
+    created = ensure_bucket_exists(mock_client, "documents")
 
-    assert url == "https://example/get"
-    mock_client.get_presigned_url.assert_called_once()
-    args, kwargs = mock_client.get_presigned_url.call_args
-    assert args == ("GET", "bucket", "obj.txt")
-    assert kwargs["expires"].total_seconds() == pytest.approx(900)
+    assert created is True
+    mock_client.bucket_exists.assert_called_once_with("documents")
+    mock_client.make_bucket.assert_called_once_with("documents")
 
 
-def test_generate_presigned_put_url_default_expires():
+
+def test_ensure_bucket_exists_skips_existing_bucket():
     mock_client = MagicMock()
-    mock_client.get_presigned_url.return_value = "https://example/put"
+    mock_client.bucket_exists.return_value = True
 
-    url = generate_presigned_put_url(mock_client, "bucket", "obj.txt")
+    created = ensure_bucket_exists(mock_client, "documents")
 
-    assert url == "https://example/put"
-    mock_client.get_presigned_url.assert_called_once()
-    args, kwargs = mock_client.get_presigned_url.call_args
-    assert args == ("PUT", "bucket", "obj.txt")
-    assert kwargs["expires"].total_seconds() == pytest.approx(900)
+    assert created is False
+    mock_client.make_bucket.assert_not_called()
+
+
+
+def test_list_bucket_names_returns_bucket_names():
+    bucket_a = MagicMock(name="bucket-a")
+    bucket_a.name = "bucket-a"
+    bucket_b = MagicMock(name="bucket-b")
+    bucket_b.name = "bucket-b"
+    mock_client = MagicMock()
+    mock_client.list_buckets.return_value = [bucket_a, bucket_b]
+
+    bucket_names = list_bucket_names(mock_client)
+
+    assert bucket_names == ["bucket-a", "bucket-b"]
+
+
+
+def test_generate_presigned_get_url_uses_config_expiry():
+    config = MinIOConfig(presigned_expires_sec=321)
+    mock_client = MagicMock()
+    mock_client.presigned_get_object.return_value = "https://minio/get"
+
+    url = generate_presigned_get_url(mock_client, config, "documents", "report.pdf")
+
+    assert url == "https://minio/get"
+    mock_client.presigned_get_object.assert_called_once_with(
+        "documents",
+        "report.pdf",
+        expires=timedelta(seconds=321),
+    )
+
+
+
+def test_generate_presigned_put_url_uses_config_expiry():
+    config = MinIOConfig(presigned_expires_sec=654)
+    mock_client = MagicMock()
+    mock_client.presigned_put_object.return_value = "https://minio/put"
+
+    url = generate_presigned_put_url(mock_client, config, "documents", "report.pdf")
+
+    assert url == "https://minio/put"
+    mock_client.presigned_put_object.assert_called_once_with(
+        "documents",
+        "report.pdf",
+        expires=timedelta(seconds=654),
+    )

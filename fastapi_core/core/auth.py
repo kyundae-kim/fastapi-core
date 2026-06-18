@@ -8,11 +8,11 @@ import jwt
 from fastapi_core.schemas.user import UserInfo
 
 
-def extract_roles(payload: dict[str, Any]) -> list[str]:
+def _extract_roles(payload: dict[str, Any]) -> list[str]:
     return payload.get("realm_access", {}).get("roles", [])
 
 
-def extract_scopes(payload: dict[str, Any]) -> list[str]:
+def _extract_scopes(payload: dict[str, Any]) -> list[str]:
     if "scp" in payload:
         scp = payload["scp"]
         return scp if isinstance(scp, list) else [scp]
@@ -42,6 +42,7 @@ class KeycloakAuthProvider:
         self.token_url = (
             f"{base}/realms/{realm}/protocol/openid-connect/token"
         )
+        self.introspection_url = f"{self.token_url}/introspect"
         self.jwks_url = (
             f"{base}/realms/{realm}/protocol/openid-connect/certs"
         )
@@ -53,8 +54,8 @@ class KeycloakAuthProvider:
             username=payload.get("preferred_username", ""),
             email=payload.get("email"),
             name=payload.get("name"),
-            roles=extract_roles(payload),
-            scopes=extract_scopes(payload),
+            roles=_extract_roles(payload),
+            scopes=_extract_scopes(payload),
         )
 
     def decode_token_insecure(self, token: str) -> dict[str, Any]:
@@ -80,6 +81,19 @@ class KeycloakAuthProvider:
             )
         except jwt.PyJWTError as e:
             raise ValueError(f"Invalid token: {e}") from e
+
+    def introspect_token(self, token: str) -> dict[str, Any]:
+        data: dict[str, str] = {
+            "token": token,
+            "client_id": self.client_id,
+        }
+        if self.client_secret:
+            data["client_secret"] = self.client_secret
+
+        with httpx.Client() as client:
+            response = client.post(self.introspection_url, data=data)
+        response.raise_for_status()
+        return response.json()
 
     def authenticate(self, username: str, password: str) -> dict[str, Any]:
         data: dict[str, str] = {

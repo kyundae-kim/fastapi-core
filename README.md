@@ -1,7 +1,7 @@
 # fastapi-core
 
 DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사용하는 Python SDK입니다.
-인증/인가(Keycloak), 데이터베이스(PostgreSQL), 오브젝트 스토리지(MinIO), 설정/의존성/앱 조립을 표준화해 서비스 개발 시 중복 구현을 줄이는 것이 목적입니다.
+인증/인가(Keycloak), 데이터베이스(PostgreSQL), 오브젝트 스토리지(MinIO), 벡터 데이터베이스(Milvus), 로컬 LLM(Ollama), 관측/트레이싱(Langfuse), 설정/의존성/앱 조립을 표준화해 서비스 개발 시 중복 구현을 줄이는 것이 목적입니다.
 
 ## 무엇을 제공하나요?
 
@@ -11,30 +11,39 @@ DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사
   - 역할(role)/스코프(scope) 추출
 - PostgreSQL 연동
   - SQLAlchemy + psycopg 기반 엔진 생성
-  - 연결 확인, DB 버전 조회 유틸리티
-  - DB 세션 의존성/트랜잭션 헬퍼
+  - 연결 확인 유틸리티
+  - DB 세션 의존성
   - 커넥션 풀 파라미터 설정
 - MinIO 연동
   - 클라이언트 생성
-  - 버킷 존재 보장(없으면 생성)
   - 연결 확인 유틸리티
-  - Presigned URL 생성 유틸리티
+- Milvus 연동
+  - Milvus 클라이언트 생성
+  - 비동기 AsyncMilvusClient 생성
+- Ollama 연동
+  - Ollama 클라이언트 생성
+- Langfuse 연동
+  - Langfuse SDK 싱글톤 조회 헬퍼
+  - public health endpoint 기반 연결 확인 유틸리티
+  - FastAPI dependency 없이 직접 호출하는 패턴 제공
 - NATS 메시징
   - `nats-py` 기반 비동기 클라이언트 연결/종료
-  - Subject 기반 Publish/Subscribe 헬퍼
-  - Queue Group 기반 다중 소비자 스케일아웃
-  - 도메인 이벤트 발행 패턴 (`*.created`, `*.updated`, `*.deleted`)
+  - compact JSON publish helper (`publish_event`)
+  - JSON decode subscribe helper (`subscribe_event`)
+  - Queue Group 기반 다중 소비자 스케일아웃 (`subscribe_queue_event`)
+  - `<domain>.<entity>.<action>` subject builder/validator
 - 설정 관리
   - `EnvConfig`(환경 변수/.env)
   - `ServiceSettings`(YAML)
 - FastAPI 조립
   - `create_app()` 팩토리
   - 로깅/CORS/예외 핸들러/헬스체크 라우터 기본 구성
-  - readiness에 Keycloak·PostgreSQL·MinIO 종합 점검
+  - readiness에 Keycloak·PostgreSQL·MinIO·Langfuse 종합 점검(옵션)
 - FastAPI state 기반 싱글톤 패턴
-  - `app.state.auth_provider`, `app.state.db_engine`, `app.state.minio_client`, `app.state.nats_client` 사용
+  - `app.state.auth_provider`, `app.state.db_engine`, `app.state.minio_client`, `app.state.milvus_client`, `app.state.ollama_client`, `app.state.nats_client` 사용
   - `set_*`/함수형 `get_*` dependency 제공
   - `Get*Dependency` class와 `get_* = Get*Dependency()` 전역 인스턴스는 사용하지 않음
+  - Langfuse는 SDK 자체 싱글톤(`get_langfuse_client`)을 사용하므로 FastAPI dependency를 만들지 않음
 
 ## 설치
 
@@ -56,7 +65,33 @@ from fastapi_core import create_app
 app = create_app()
 ```
 
-권장 패턴(lifespan에서 state 싱글톤 등록):
+권장 패턴(기본 managed lifespan 사용):
+
+```python
+from fastapi_core import create_app
+from fastapi_core.core.config import EnvConfig, HealthSettings, LifecycleSettings, ServiceSettings
+
+config = EnvConfig()
+settings = ServiceSettings(
+    health=HealthSettings(
+        check_keycloak=True,
+        check_database=True,
+        check_minio=True,
+        check_langfuse=False,
+    ),
+    lifecycle=LifecycleSettings(
+        eager_nats=False,
+        use_docmesh_registry=False,
+        use_docmesh_healthchecks=False,
+    ),
+)
+
+app = create_app(config=config, settings=settings)
+```
+
+`create_app()` 는 custom lifespan 이 주어지지 않으면 내부의 managed lifespan 을 사용합니다. 이 기본 lifecycle 은 `settings.health` 를 eager-init 기본값으로 삼아 Keycloak/DB/MinIO/Langfuse startup 정책을 정렬하고, shutdown 시 등록된 리소스를 정리합니다.
+
+고급 사용자 정의가 필요하면 여전히 custom lifespan 을 직접 넘길 수 있습니다.
 
 ```python
 from contextlib import asynccontextmanager
@@ -64,9 +99,12 @@ from fastapi import FastAPI
 
 from fastapi_core.factory import create_app
 from fastapi_core.core.config import EnvConfig
+from fastapi_core.core.langfuse import get_langfuse_client
 from fastapi_core.dependencies.auth import set_auth_provider
 from fastapi_core.dependencies.database import set_db_engine
 from fastapi_core.dependencies.storage import set_minio_client
+from fastapi_core.dependencies.milvus import set_milvus_client
+from fastapi_core.dependencies.ollama import set_ollama_client
 from fastapi_core.dependencies.messaging import set_nats_client
 
 config = EnvConfig()
@@ -76,9 +114,13 @@ async def lifespan(app: FastAPI):
     set_auth_provider(app, config=config)
     set_db_engine(app, config=config)
     set_minio_client(app, config=config)
+    set_milvus_client(app, config=config)
+    set_ollama_client(app, config=config)
+    get_langfuse_client(config.langfuse)  # SDK singleton 초기화 (dependency 없음)
     await set_nats_client(app, config=config)
     yield
     app.state.db_engine.dispose()
+    app.state.milvus_client.close()
     await app.state.nats_client.drain()
 
 app = create_app(config=config, lifespan=lifespan)
@@ -115,13 +157,16 @@ def admin_only(user: UserInfo = Depends(require_permissions("admin"))):
 
 1) 환경 변수 (`EnvConfig`)
 - 외부 서비스 접속 정보, 실행 환경, 로깅 레벨
-- 예: `ENV`, `CONFIG_PATH`, `LOGGING__LEVEL`, `KEYCLOAK__*`, `DB__*`, `MINIO__*`, `NATS__*`
+- 예: `ENV`, `CONFIG_PATH`, `LOGGING__LEVEL`, `KEYCLOAK__*`, `DB__*`, `MINIO__*`, `MILVUS__*`, `OLLAMA__*`, `LANGFUSE__*`, `NATS__*`
 
 2) 서비스 설정 YAML (`ServiceSettings`)
 - 앱 동작 정책
-- 예: `cors.origins`, `cors.credentials`, `auth.verify_jwt`, `auth.allow_insecure_jwt_decode`, `auth.use_introspection`
+- 예: `cors.origins`, `cors.credentials`, `auth.verify_jwt`, `auth.allow_insecure_jwt_decode`, `auth.use_introspection`, `health.check_*`, `lifecycle.eager_*`, `lifecycle.use_docmesh_*`
+
+`lifecycle` 섹션은 startup eager-init 정책과 optional docmesh bridge 사용 여부를 제어합니다. `health.check_keycloak`, `health.check_database`, `health.check_minio`, `health.check_langfuse` 값은 기본 eager-init 정책의 fallback 으로도 사용됩니다.
 
 자세한 키/기본값/예시는 `docs/config.md`를 참고하세요.
+빠르게 시작하려면 루트의 `.env.example`을 `.env`로 복사해 사용하세요.
 
 ## 테스트
 
@@ -133,7 +178,7 @@ uv run pytest -q
 uv run pytest -q -m integration
 ```
 
-통합 테스트는 devcontainer 기반 실서비스(Keycloak/PostgreSQL/MinIO) 연결을 전제로 합니다.
+통합 테스트는 devcontainer 기반 실서비스(Keycloak/PostgreSQL/MinIO/Milvus/Ollama/Langfuse) 연결을 전제로 합니다.
 NATS 적용 시 테스트 NATS 서버(로컬 또는 devcontainer) 연결을 추가로 구성하세요.
 
 ## 개발 정보

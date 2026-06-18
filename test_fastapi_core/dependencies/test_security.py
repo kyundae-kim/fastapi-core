@@ -55,7 +55,10 @@ def mock_provider() -> KeycloakAuthProvider:
 @pytest.fixture
 def insecure_settings() -> ServiceSettings:
     settings = ServiceSettings()
-    settings.auth = AuthSettings(verify_jwt=False)
+    settings.auth = AuthSettings(
+        verify_jwt=False,
+        allow_insecure_jwt_decode=True,
+    )
     return settings
 
 
@@ -106,6 +109,63 @@ def test_get_current_user_valid(test_app, mock_provider):
     response = client.get("/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     assert response.json()["username"] == "alice"
+
+
+def test_get_current_user_uses_introspection_when_enabled():
+    class IntrospectionProvider:
+        def __init__(self) -> None:
+            self.introspected_tokens: list[str] = []
+
+        def introspect_token(self, token: str) -> dict[str, object]:
+            self.introspected_tokens.append(token)
+            return {
+                "active": True,
+                "sub": "u-1",
+                "preferred_username": "alice",
+                "realm_access": {"roles": ["admin"]},
+            }
+
+        def to_user(self, payload: dict[str, object]) -> UserInfo:
+            realm_access = payload.get("realm_access")
+            roles = realm_access.get("roles", []) if isinstance(realm_access, dict) else []
+            return UserInfo(
+                sub=str(payload["sub"]),
+                username=str(payload["preferred_username"]),
+                roles=list(roles),
+            )
+
+        def decode_token(self, token: str) -> dict[str, object]:
+            raise AssertionError("decode_token should not be used when introspection is enabled")
+
+        def decode_token_insecure(self, token: str) -> dict[str, object]:
+            raise AssertionError(
+                "decode_token_insecure should not be used when introspection is enabled"
+            )
+
+    provider = IntrospectionProvider()
+    settings = ServiceSettings(
+        auth=AuthSettings(
+            verify_jwt=False,
+            allow_insecure_jwt_decode=False,
+            use_introspection=True,
+        )
+    )
+
+    app = FastAPI()
+
+    @app.get("/me")
+    def me(user: UserInfo = __import__("fastapi").Depends(get_current_user)):  # noqa: F811
+        return user.model_dump()
+
+    app.dependency_overrides[get_auth_provider] = lambda: provider
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.get("/me", headers={"Authorization": "Bearer opaque-token"})
+
+    assert response.status_code == 200
+    assert response.json()["username"] == "alice"
+    assert provider.introspected_tokens == ["opaque-token"]
 
 
 def test_require_permissions_allowed(test_app, mock_provider):
@@ -178,8 +238,8 @@ def test_current_user_dependency_is_function():
     assert inspect.isfunction(auth_dependencies.get_current_user)
 
 
-def test_get_auth_provider_fallback():
-    """app.state에 auth_provider가 없으면 생성 후 state에 등록하여 반환한다."""
+def test_get_auth_provider_fallback_prefers_docmesh_registry():
+    """docmesh registry가 있으면 native provider 생성 대신 registry client를 state에 등록한다."""
     from unittest.mock import MagicMock, patch
 
     from fastapi import Depends
@@ -195,6 +255,9 @@ def test_get_auth_provider_fallback():
     mock_config.keycloak.realm = "myrealm"
     mock_config.keycloak.client_id = "myclient"
     mock_config.keycloak.client_secret = "secret"
+    mock_registry = MagicMock()
+    mock_registry.create_client.return_value = MagicMock(client=mock_provider)
+    app.state.docmesh_registry = mock_registry
     app.dependency_overrides[get_config] = lambda: mock_config
 
     @app.get("/provider-id")
@@ -203,18 +266,58 @@ def test_get_auth_provider_fallback():
 
     with patch(
         "fastapi_core.dependencies.auth.KeycloakAuthProvider",
-        return_value=mock_provider,
+        return_value=MagicMock(spec=KeycloakAuthProvider),
     ) as mock_cls:
         client = TestClient(app)
         response = client.get("/provider-id")
-        mock_cls.assert_called_once()
+        mock_cls.assert_not_called()
+
+    mock_registry.create_client.assert_called_once_with("keycloak")
+    assert response.status_code == 200
+    assert response.json()["id"] == id(mock_provider)
+    assert app.state.auth_provider is mock_provider
+
+
+def test_get_auth_provider_fallback():
+    """app.state에 auth_provider가 없으면 docmesh registry provider를 state에 등록하여 반환한다."""
+    from unittest.mock import MagicMock, patch
+
+    from fastapi import Depends
+
+    from fastapi_core.core.config import EnvConfig, KeycloakConfig
+    from fastapi_core.dependencies.config import get_config
+
+    app = FastAPI()
+    mock_provider = MagicMock(spec=KeycloakAuthProvider)
+    mock_provider.decode_token = MagicMock()
+    mock_provider.to_user = MagicMock()
+    mock_config = MagicMock(spec=EnvConfig)
+    mock_config.keycloak = MagicMock(spec=KeycloakConfig)
+    mock_config.keycloak.http_url = "http://keycloak:8080"
+    mock_config.keycloak.realm = "myrealm"
+    mock_config.keycloak.client_id = "myclient"
+    mock_config.keycloak.client_secret = "secret"
+    app.dependency_overrides[get_config] = lambda: mock_config
+
+    @app.get("/provider-id")
+    def provider_id(provider: KeycloakAuthProvider = Depends(get_auth_provider)):
+        return {"id": id(provider)}
+
+    with patch(
+        "fastapi_core.dependencies.auth.get_required_docmesh_service",
+        return_value=mock_provider,
+    ) as mock_get_required:
+        client = TestClient(app)
+        response = client.get("/provider-id")
+
+    mock_get_required.assert_called_once_with(app, "auth_provider", config=mock_config)
     assert response.status_code == 200
     assert response.json()["id"] == id(mock_provider)
     assert app.state.auth_provider is mock_provider
 
 
 def test_set_auth_provider_from_config():
-    """config를 전달하면 KeycloakAuthProvider를 생성하여 state에 등록한다."""
+    """config를 전달하면 docmesh registry provider를 state에 등록한다."""
     from unittest.mock import MagicMock, patch
 
     from fastapi_core.core.config import EnvConfig, KeycloakConfig
@@ -222,6 +325,8 @@ def test_set_auth_provider_from_config():
 
     app = FastAPI()
     mock_provider = MagicMock(spec=KeycloakAuthProvider)
+    mock_provider.decode_token = MagicMock()
+    mock_provider.to_user = MagicMock()
     mock_config = MagicMock(spec=EnvConfig)
     mock_config.keycloak = MagicMock(spec=KeycloakConfig)
     mock_config.keycloak.http_url = "http://keycloak:8080"
@@ -230,11 +335,12 @@ def test_set_auth_provider_from_config():
     mock_config.keycloak.client_secret = "secret"
 
     with patch(
-        "fastapi_core.dependencies.auth.KeycloakAuthProvider",
+        "fastapi_core.dependencies.auth.get_required_docmesh_service",
         return_value=mock_provider,
-    ) as mock_cls:
+    ) as mock_get_required:
         set_auth_provider(app, config=mock_config)
-        mock_cls.assert_called_once()
+
+    mock_get_required.assert_called_once_with(app, "auth_provider", config=mock_config)
     assert app.state.auth_provider is mock_provider
 
 
