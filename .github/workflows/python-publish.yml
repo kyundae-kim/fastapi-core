@@ -39,8 +39,3 @@ jobs:
         with:
           name: release-dists
           path: dist/
-
-      - name: Upload docs
-        uses: softprops/action-gh-release@v1
-        with:
-          files: docs/*.md
