@@ -303,3 +303,16 @@
 - Synced docs: `docs/config.md`, `docs/api.md`, `wiki/queries/config-duplication-analysis.md`
 - Verification: `uv run pytest -q test_fastapi_core/core/test_config.py test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/dependencies/test_security.py test_fastapi_core/core/test_security.py test_fastapi_core/test_public_api.py` -> `59 passed`
 - Verification: `uv run pytest -q -m 'not integration'` -> `196 passed, 26 deselected`
+
+## [2026-06-24] query | docmesh-py-core what is it
+- Re-read: `entities/docmesh-py-core.md`, `queries/docmesh-py-core-package-summary.md`, `queries/docmesh-py-core-package-structure-summary.md`
+- Filed: none (reused existing entity/query pages)
+
+## [2026-06-24] update | minio canonicalization slice
+- Updated: `fastapi_core/core/config.py`, `fastapi_core/core/storage.py`, `fastapi_core/docmesh_bridge.py`, `fastapi_core/__init__.py`
+- Updated tests: `test_fastapi_core/core/test_config.py`, `test_fastapi_core/core/test_storage.py`, `test_fastapi_core/dependencies/test_storage.py`
+- Synced docs: `docs/config.md`, `docs/api.md`, `docs/prd.md`, `wiki/queries/config-duplication-analysis.md`
+- Removed: local `MinIOConfig` model in favor of canonical `docmesh_py_core.config.MinioConfig`
+- Added overlay: `MinioOverlayConfig.presigned_expires_sec` for FastAPI helper-only presigned URL expiry
+- Verification: `uv run pytest -q test_fastapi_core/core/test_config.py test_fastapi_core/core/test_storage.py test_fastapi_core/dependencies/test_storage.py test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/test_public_api.py` -> `45 passed`
+- Verification: `uv run pytest -q -m 'not integration'` -> `198 passed, 26 deselected`

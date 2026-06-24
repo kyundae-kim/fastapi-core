@@ -160,7 +160,8 @@
 - `LangfuseConfig`
 - `LifecycleSettings`
 - `MilvusConfig`
-- `MinIOConfig`
+- `MinioConfig`
+- `MinioOverlayConfig`
 - `OllamaConfig`
 - `ServiceSettings`
 - `TokenResponse`

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from docmesh_py_core.config import KeycloakConfig
+from docmesh_py_core.config import KeycloakConfig, MinioConfig
 from pydantic import BaseModel, Field, HttpUrl, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -24,6 +24,10 @@ class KeycloakOverlayConfig(BaseModel):
     manage_url: HttpUrl = HttpUrl("http://keycloak:9000/")
 
 
+class MinioOverlayConfig(BaseModel):
+    presigned_expires_sec: int = 900
+
+
 def _default_keycloak_config() -> KeycloakConfig:
     return KeycloakConfig(
         url="http://keycloak:8080/",
@@ -32,6 +36,16 @@ def _default_keycloak_config() -> KeycloakConfig:
         client_secret=None,
         client_public=True,
         verify_ssl=False,
+    )
+
+
+def _default_minio_config() -> MinioConfig:
+    return MinioConfig(
+        endpoint="minio:9000",
+        access_key="admin",
+        secret_key="password",
+        secure=False,
+        bucket="default",
     )
 
 
@@ -65,15 +79,6 @@ class DatabaseConfig(BaseModel):
             f"postgresql+psycopg://{self.user}:{self.password}"
             f"@{self.host}:{self.port}/{self.name}{params}"
         )
-
-
-class MinIOConfig(BaseModel):
-    endpoint: str = "minio:9000"
-    access_key: str = "admin"
-    secret_key: str = "password"
-    secure: bool = False
-    bucket: str = "default"
-    presigned_expires_sec: int = 900
 
 
 class OllamaConfig(BaseModel):
@@ -158,6 +163,7 @@ class ServiceSettings(BaseModel):
             data = yaml.safe_load(f) or {}
         return cls(**data)
 
+
 class EnvConfig(BaseSettings):
     model_config = SettingsConfigDict(
         env_nested_delimiter="__",
@@ -175,7 +181,8 @@ class EnvConfig(BaseSettings):
     keycloak: KeycloakConfig = Field(default_factory=_default_keycloak_config)
     keycloak_overlay: KeycloakOverlayConfig = Field(default_factory=KeycloakOverlayConfig)
     db: DatabaseConfig = Field(default_factory=DatabaseConfig)
-    minio: MinIOConfig = Field(default_factory=MinIOConfig)
+    minio: MinioConfig = Field(default_factory=_default_minio_config)
+    minio_overlay: MinioOverlayConfig = Field(default_factory=MinioOverlayConfig)
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     milvus: MilvusConfig = Field(default_factory=MilvusConfig)
     langfuse: LangfuseConfig = Field(default_factory=LangfuseConfig)
@@ -186,36 +193,59 @@ class EnvConfig(BaseSettings):
 
     @model_validator(mode="before")
     @classmethod
-    def normalize_keycloak_inputs(cls, data: Any) -> Any:
+    def normalize_config_inputs(cls, data: Any) -> Any:
         if not isinstance(data, dict):
             return data
 
         normalized = dict(data)
         raw_keycloak = normalized.get("keycloak")
-        if not isinstance(raw_keycloak, dict):
-            return normalized
+        if isinstance(raw_keycloak, dict):
+            keycloak_data = dict(raw_keycloak)
+            manage_url = keycloak_data.pop("manage_url", None)
+            if "url" not in keycloak_data and "http_url" in keycloak_data:
+                keycloak_data["url"] = keycloak_data.pop("http_url")
+            if "url" in keycloak_data and "verify_ssl" not in keycloak_data:
+                keycloak_data["verify_ssl"] = str(keycloak_data["url"]).startswith(
+                    "https://"
+                )
 
-        keycloak_data = dict(raw_keycloak)
-        manage_url = keycloak_data.pop("manage_url", None)
-        if "url" not in keycloak_data and "http_url" in keycloak_data:
-            keycloak_data["url"] = keycloak_data.pop("http_url")
-        if "url" in keycloak_data and "verify_ssl" not in keycloak_data:
-            keycloak_data["verify_ssl"] = str(keycloak_data["url"]).startswith("https://")
+            merged_keycloak = _default_keycloak_config().model_dump(mode="python")
+            merged_keycloak.update(keycloak_data)
+            normalized["keycloak"] = merged_keycloak
 
-        merged_keycloak = _default_keycloak_config().model_dump(mode="python")
-        merged_keycloak.update(keycloak_data)
-        normalized["keycloak"] = merged_keycloak
+            if manage_url is not None:
+                raw_overlay = normalized.get("keycloak_overlay")
+                if isinstance(raw_overlay, dict):
+                    overlay_data = dict(raw_overlay)
+                elif raw_overlay is None:
+                    overlay_data = {}
+                else:
+                    overlay_data = raw_overlay.model_dump(mode="python")
+                overlay_data.setdefault("manage_url", manage_url)
+                normalized["keycloak_overlay"] = overlay_data
 
-        if manage_url is not None:
-            raw_overlay = normalized.get("keycloak_overlay")
-            if isinstance(raw_overlay, dict):
-                overlay_data = dict(raw_overlay)
-            elif raw_overlay is None:
-                overlay_data = {}
-            else:
-                overlay_data = raw_overlay.model_dump(mode="python")
-            overlay_data.setdefault("manage_url", manage_url)
-            normalized["keycloak_overlay"] = overlay_data
+        raw_minio = normalized.get("minio")
+        if isinstance(raw_minio, dict):
+            minio_data = dict(raw_minio)
+            presigned_expires_sec = minio_data.pop("presigned_expires_sec", None)
+
+            merged_minio = _default_minio_config().model_dump(mode="python")
+            merged_minio.update(minio_data)
+            normalized["minio"] = merged_minio
+
+            if presigned_expires_sec is not None:
+                raw_minio_overlay = normalized.get("minio_overlay")
+                if isinstance(raw_minio_overlay, dict):
+                    minio_overlay_data = dict(raw_minio_overlay)
+                elif raw_minio_overlay is None:
+                    minio_overlay_data = {}
+                else:
+                    minio_overlay_data = raw_minio_overlay.model_dump(mode="python")
+                minio_overlay_data.setdefault(
+                    "presigned_expires_sec",
+                    presigned_expires_sec,
+                )
+                normalized["minio_overlay"] = minio_overlay_data
 
         return normalized
 

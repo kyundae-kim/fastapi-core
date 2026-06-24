@@ -10,8 +10,9 @@ from fastapi_core.core.config import (
     KeycloakConfig,
     KeycloakOverlayConfig,
     LangfuseConfig,
-    MinIOConfig,
     MilvusConfig,
+    MinioConfig,
+    MinioOverlayConfig,
     ServiceSettings,
     load_service_settings,
 )
@@ -73,6 +74,8 @@ def test_env_config_defaults():
     assert config.db.host == "postgres"
     assert config.db.port == 5432
     assert config.minio.bucket == "default"
+    assert config.minio.secure is False
+    assert config.minio_overlay.presigned_expires_sec == 900
     assert config.logging.level in ("WARNING", "INFO", "DEBUG")
 
 
@@ -93,6 +96,13 @@ def test_core_config_reexports_docmesh_keycloak_config():
     assert KeycloakConfig.__module__ == "docmesh_py_core.config"
 
 
+def test_core_config_reexports_docmesh_minio_config():
+    from docmesh_py_core.config import MinioConfig as DocmeshMinioConfig
+
+    assert MinioConfig is DocmeshMinioConfig
+    assert MinioConfig.__module__ == "docmesh_py_core.config"
+
+
 def test_env_config_normalizes_legacy_keycloak_inputs_for_docmesh_model():
     config = EnvConfig(
         keycloak={
@@ -111,8 +121,34 @@ def test_env_config_normalizes_legacy_keycloak_inputs_for_docmesh_model():
     assert str(config.keycloak_overlay.manage_url) == "https://keycloak-admin.example.com/"
 
 
+def test_env_config_normalizes_legacy_minio_presigned_override():
+    config = EnvConfig(
+        minio={
+            "endpoint": "minio.example.com:9000",
+            "access_key": "key",
+            "secret_key": "secret",
+            "secure": True,
+            "bucket": "documents",
+            "presigned_expires_sec": 321,
+        }
+    )
+
+    assert config.minio.endpoint == "minio.example.com:9000"
+    assert config.minio.access_key == "key"
+    assert config.minio.secret_key == "secret"
+    assert config.minio.secure is True
+    assert config.minio.bucket == "documents"
+    assert config.minio_overlay.presigned_expires_sec == 321
+
+
 def test_minio_config_defaults():
-    config = MinIOConfig()
+    config = MinioConfig(
+        endpoint="minio:9000",
+        access_key="admin",
+        secret_key="password",
+        secure=False,
+        bucket="default",
+    )
     assert config.endpoint == "minio:9000"
     assert config.secure is False
     assert config.bucket == "default"
@@ -144,7 +180,7 @@ def test_database_pool_defaults():
 
 
 def test_minio_presigned_default_expires():
-    config = MinIOConfig()
+    config = MinioOverlayConfig()
     assert config.presigned_expires_sec == 900
 
 

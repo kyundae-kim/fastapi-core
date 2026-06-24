@@ -88,7 +88,11 @@
 | `MINIO__SECRET_KEY` | `str` | `password` | 시크릿 키 |
 | `MINIO__SECURE` | `bool` | `false` | HTTPS 사용 여부 |
 | `MINIO__BUCKET` | `str` | `default` | 기본 버킷 |
-| `MINIO__PRESIGNED_EXPIRES_SEC` | `int` | `900` | presigned URL 만료 시간(초) |
+| `MINIO__REGION` | `str \| None` | `None` | 선택적 region |
+| `MINIO__REQUEST_TIMEOUT_SECONDS` | `int` | `30` | docmesh canonical 요청 timeout(초) |
+| `MINIO__MAX_RETRIES` | `int` | `3` | docmesh canonical 재시도 횟수 |
+| `MINIO__PRESIGNED_EXPIRES_SEC` | `int` | legacy alias of `MINIO_OVERLAY__PRESIGNED_EXPIRES_SEC` | legacy 호환 입력 alias. `EnvConfig` 단계에서 `minio_overlay.presigned_expires_sec` 로 정규화 |
+| `MINIO_OVERLAY__PRESIGNED_EXPIRES_SEC` | `int` | `900` | FastAPI helper용 presigned URL 만료 시간(초) |
 
 ### Milvus
 
@@ -210,6 +214,12 @@ Keycloak은 두 층으로 읽는다고 보면 됩니다.
 
 즉 `fastapi_core.core.config` 는 더 이상 bespoke local `KeycloakConfig` 를 정의하지 않고, docmesh canonical 모델을 재사용합니다. `/health/readiness` 전용 값만 `keycloak_overlay.manage_url` 로 분리됩니다.
 
+MinIO도 같은 패턴을 따릅니다.
+
+- `EnvConfig.minio` — `docmesh_py_core.config.MinioConfig` 재사용. `endpoint/access_key/secret_key/secure/bucket/region/request_timeout_seconds/max_retries` 같은 canonical 연결 필드를 직접 담습니다.
+- `EnvConfig.minio_overlay` — FastAPI helper 전용 `presigned_expires_sec` overlay
+- legacy `MINIO__PRESIGNED_EXPIRES_SEC` 또는 nested `minio.presigned_expires_sec` 입력은 `EnvConfig` 전처리에서 `minio_overlay.presigned_expires_sec` 로 정규화됩니다.
+
 즉 `EnvConfig.milvus` 는 fastapi-core의 **native 기본값**이고, runtime에서 docmesh registry/settings가 개입하는 경우 실제 dependency 계층은 `docmesh_bridge.resolve_milvus_config(...)` 를 통해 최종 Milvus 설정을 선택합니다.
 
 ### YAML 예시
@@ -288,7 +298,11 @@ MINIO__ACCESS_KEY=admin
 MINIO__SECRET_KEY=password
 MINIO__SECURE=false
 MINIO__BUCKET=default
-MINIO__PRESIGNED_EXPIRES_SEC=900
+MINIO__REGION=
+MINIO__REQUEST_TIMEOUT_SECONDS=30
+MINIO__MAX_RETRIES=3
+# legacy alias: MINIO__PRESIGNED_EXPIRES_SEC=900
+MINIO_OVERLAY__PRESIGNED_EXPIRES_SEC=900
 
 MILVUS__URI=http://milvus:19530
 MILVUS__DB_NAME=

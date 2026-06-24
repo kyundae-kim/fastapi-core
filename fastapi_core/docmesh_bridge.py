@@ -117,6 +117,8 @@ def build_docmesh_env(config: EnvConfig) -> dict[str, str]:
         "MINIO_SECRET_KEY": config.minio.secret_key,
         "MINIO_SECURE": _bool_string(config.minio.secure),
         "MINIO_BUCKET": config.minio.bucket,
+        "MINIO_REQUEST_TIMEOUT_SECONDS": str(config.minio.request_timeout_seconds),
+        "MINIO_MAX_RETRIES": str(config.minio.max_retries),
         "MILVUS_URI": config.milvus.uri,
         "MILVUS_DB_NAME": config.milvus.db_name or "default",
         "MILVUS_SECURE": _bool_string(config.milvus.uri.startswith("https://")),
@@ -133,6 +135,9 @@ def build_docmesh_env(config: EnvConfig) -> dict[str, str]:
         env["KEYCLOAK_CLIENT_SECRET"] = keycloak_config.client_secret
     else:
         env["KEYCLOAK_CLIENT_PUBLIC"] = "true"
+
+    if config.minio.region:
+        env["MINIO_REGION"] = config.minio.region
 
     langfuse_enabled = bool(
         config.langfuse.tracing_enabled

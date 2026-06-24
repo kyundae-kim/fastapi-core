@@ -98,6 +98,28 @@ confidence: medium
 - `test_fastapi_core/core/test_config.py` 에 `KeycloakConfig is docmesh_py_core.config.KeycloakConfig` 계약 테스트와 legacy 입력 정규화 테스트를 추가했다.
 - 검증은 `uv run pytest -q test_fastapi_core/core/test_config.py test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/dependencies/test_security.py test_fastapi_core/core/test_security.py test_fastapi_core/test_public_api.py` 에서 `59 passed`, 이어 `uv run pytest -q -m 'not integration'` 에서 `196 passed, 26 deselected` 로 확인했다.
 
+## Replacement feasibility: MinIOConfig
+`fastapi_core.core.config.MinIOConfig` 는 Keycloak보다 더 쉽게 `docmesh_py_core.config.MinioConfig` 로 canonicalization 할 수 있었다. 핵심 연결 필드가 거의 일치하고, fastapi-core 고유 필드는 `presigned_expires_sec` 하나뿐이었기 때문이다.
+
+근거:
+- fastapi-core 쪽 `MinIOConfig` 는 `endpoint`, `access_key`, `secret_key`, `secure`, `bucket`, `presigned_expires_sec` 를 가진다.
+- docmesh 쪽 `MinioConfig` 는 `endpoint`, `access_key`, `secret_key`, `secure`, `bucket` 을 그대로 포함하면서 추가로 `region`, `request_timeout_seconds`, `max_retries` 를 제공한다.
+- runtime dependency 계층의 MinIO client 해석은 이미 native 생성보다 registry-backed 경로를 우선 사용하므로, canonical source를 docmesh 모델로 바꿔도 방향성 충돌이 작다.
+
+제약:
+- `presigned_expires_sec` 는 docmesh canonical MinIO 설정이 아니라 fastapi-core helper 전용 값이므로 direct drop-in field로 옮길 수 없다.
+
+결론적으로 MinIO는 **"docmesh MinioConfig + fastapi overlay"** 구조가 안전한 canonicalization 경로다.
+
+## Implemented MinIO slice
+- `fastapi_core.core.config` 의 로컬 `MinIOConfig` 정의를 제거하고 `docmesh_py_core.config.MinioConfig` 를 직접 재수출하도록 바꿨다.
+- fastapi-core 고유 presigned URL 만료 시간은 `MinioOverlayConfig.presigned_expires_sec` 로 분리했다.
+- `EnvConfig` 는 legacy nested 입력 `minio.presigned_expires_sec` 와 `MINIO__PRESIGNED_EXPIRES_SEC` 를 `minio_overlay.presigned_expires_sec` 로 정규화해 backwards compatibility 를 유지한다.
+- `fastapi_core.core.storage.generate_presigned_*` 는 더 이상 local config 모델에 의존하지 않고 `expires_sec` 값을 직접 받도록 바꿨다.
+- `fastapi_core.docmesh_bridge.build_docmesh_env()` 는 canonical MinIO 추가 필드 `region`, `request_timeout_seconds`, `max_retries` 도 docmesh env 로 전달한다.
+- `docs/config.md`, `docs/api.md` 를 새 canonical/overlay 경계에 맞춰 갱신했다.
+- 검증은 `uv run pytest -q test_fastapi_core/core/test_config.py test_fastapi_core/core/test_storage.py test_fastapi_core/dependencies/test_storage.py test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/test_public_api.py` 에서 `45 passed`, 이어 `uv run pytest -q -m 'not integration'` 에서 `198 passed, 26 deselected` 로 확인했다.
+
 ## Related Topics
 - [[layered-configuration-model]] 은 `EnvConfig` 와 `ServiceSettings` 의 책임 분리를 설명한다.
 - [[load-settings-and-settings-model]] 은 docmesh `load_settings()` / `Settings` 와 fastapi-core 이중 레이어의 관계를 설명한다.

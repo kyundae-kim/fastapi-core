@@ -2,11 +2,12 @@ import inspect
 from unittest.mock import MagicMock, patch
 
 import pytest
+from docmesh_py_core.config import MinioConfig
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from minio import Minio
 
-from fastapi_core.core.config import EnvConfig, MinIOConfig
+from fastapi_core.core.config import EnvConfig
 from fastapi_core.core.storage import create_minio_client
 from fastapi_core.dependencies.config import get_config
 from fastapi_core.dependencies.storage import get_minio_client, set_minio_client
@@ -14,11 +15,12 @@ from fastapi_core.dependencies.storage import get_minio_client, set_minio_client
 
 def test_get_minio_client_creates_client():
     config = MagicMock()
-    config.minio = MinIOConfig(
+    config.minio = MinioConfig(
         endpoint="minio:9000",
         access_key="admin",
         secret_key="password",
         secure=False,
+        bucket="default",
     )
 
     with patch("fastapi_core.core.storage.Minio") as mock_cls:

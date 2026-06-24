@@ -9,7 +9,7 @@
 
 패키지 루트는 **curated subset만** 재수출합니다.
 
-> `KeycloakConfig` 는 fastapi-core 전용 로컬 모델이 아니라 `docmesh_py_core.config.KeycloakConfig` 의 재수출입니다. FastAPI 전용 `manage_url` 은 `KeycloakOverlayConfig` 로 분리됩니다.
+> `KeycloakConfig` 와 `MinioConfig` 는 fastapi-core 전용 로컬 모델이 아니라 각각 `docmesh_py_core.config.KeycloakConfig`, `docmesh_py_core.config.MinioConfig` 의 재수출입니다. FastAPI 전용 보조 필드는 `KeycloakOverlayConfig`, `MinioOverlayConfig` 로 분리됩니다.
 
 ```python
 from fastapi_core import (
@@ -23,7 +23,8 @@ from fastapi_core import (
     LangfuseConfig,
     LifecycleSettings,
     MilvusConfig,
-    MinIOConfig,
+    MinioConfig,
+    MinioOverlayConfig,
     OllamaConfig,
     ServiceSettings,
     TokenResponse,
@@ -333,7 +334,7 @@ def get_db_session(engine: Engine = Depends(get_db_engine)) -> Iterator[Session]
 ### Core helper — `fastapi_core.core.storage`
 
 ```python
-def create_minio_client(config: MinIOConfig) -> Minio:
+def create_minio_client(config: MinioConfig) -> Minio:
 ```
 
 ```python
@@ -356,7 +357,8 @@ def list_bucket_names(client: Minio) -> list[str]:
 ```python
 def generate_presigned_get_url(
     client: Minio,
-    config: MinIOConfig,
+    *,
+    expires_sec: int,
     bucket: str,
     object_name: str,
 ) -> str:
@@ -365,13 +367,14 @@ def generate_presigned_get_url(
 ```python
 def generate_presigned_put_url(
     client: Minio,
-    config: MinIOConfig,
+    *,
+    expires_sec: int,
     bucket: str,
     object_name: str,
 ) -> str:
 ```
 
-- 둘 다 `config.presigned_expires_sec`를 `timedelta(seconds=...)`로 변환
+- 둘 다 `expires_sec`를 `timedelta(seconds=...)`로 변환한다. `EnvConfig`를 쓰는 경우 이 값은 보통 `config.minio_overlay.presigned_expires_sec` 에서 읽는다.
 
 ### FastAPI dependency — `fastapi_core.dependencies.storage`
 
