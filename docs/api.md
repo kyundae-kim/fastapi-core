@@ -254,6 +254,7 @@ def get_settings(
 ```
 
 - `app.state.settings`가 없으면 `ServiceSettings.from_yaml(config.config_path)` 결과를 저장
+- 설정 로딩 책임은 `fastapi_core.core.config` 에 있고, docmesh registry/settings 적응 책임은 `fastapi_core.docmesh_bridge` 에 있습니다.
 
 ---
 
@@ -444,6 +445,7 @@ def get_milvus_client(...): ...
 ```
 
 - sync Milvus는 registry-backed `milvus_client` 해석 사용
+- native `EnvConfig.milvus` 와 docmesh settings 사이의 최종 선택은 `fastapi_core.docmesh_bridge.resolve_milvus_config(...)` 가 담당합니다.
 
 ```python
 async def set_async_milvus_client(...): ...

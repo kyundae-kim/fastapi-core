@@ -9,6 +9,13 @@
 | 환경 변수 | `EnvConfig` | OS 환경 변수 + `.env` | 외부 서비스 접속 정보, 실행 환경, 로깅, root path |
 | 서비스 설정 | `ServiceSettings` | YAML 파일 (`config_path`) | CORS, 인증 정책, readiness/lifecycle 정책 |
 
+그리고 **docmesh 연동은 별도 bridge 계층**에서 처리합니다.
+
+| 계층 | 모듈 | 역할 |
+| --- | --- | --- |
+| pure config | `fastapi_core.core.config` | `EnvConfig`, `ServiceSettings`, `load_env_config()`, `load_service_settings()` |
+| docmesh bridge | `fastapi_core.docmesh_bridge` | `build_docmesh_env()`, `load_docmesh_settings()`, `resolve_milvus_config()`, registry 초기화/적응 |
+
 핵심 동작:
 
 - `EnvConfig`는 `pydantic-settings` 기반이며 `env_nested_delimiter="__"`를 사용합니다.
@@ -16,6 +23,7 @@
 - 알 수 없는 환경 변수는 `extra="ignore"`로 무시합니다.
 - `ServiceSettings.from_yaml(path)`는 파일이 없으면 예외 없이 기본값을 사용합니다.
 - 기본 YAML 경로는 `CONFIG_PATH=.devcontainer/config.yaml` 입니다.
+- `core.config` 는 **설정 모델과 로더만** 담당하며, docmesh registry/settings 적응은 `docmesh_bridge` 에서 담당합니다.
 
 ---
 
@@ -179,6 +187,20 @@
 - `async_milvus_client`만 예외적으로 registry가 아니라 `create_async_milvus_client(config.milvus)`로 직접 생성됩니다.
 
 > 현재 FastAPI dependency 계층의 auth/db/minio/milvus/ollama/langfuse/nats 조회는 docmesh registry 기반 helper를 사용합니다. `use_docmesh_registry`는 이 동작을 끄는 스위치가 아니라, startup 시 registry를 선행 초기화할지까지 포함한 lifecycle 정책 플래그입니다.
+
+---
+
+## docmesh bridge와의 경계
+
+설정 자체는 `fastapi_core.core.config` 에 있고, **docmesh-specific 적응 로직은 `fastapi_core.docmesh_bridge` 로 분리**되어 있습니다.
+
+현재 bridge 계층이 담당하는 대표 helper는 다음과 같습니다.
+
+- `build_docmesh_env(config)` — `EnvConfig` 를 docmesh가 이해하는 환경 변수 맵으로 변환
+- `load_docmesh_settings(config)` — docmesh settings / registry 초기화 결과에서 settings 추출
+- `resolve_milvus_config(config, docmesh_settings=...)` — docmesh settings 가 있으면 그 값을 우선해 effective `MilvusConfig` 결정
+
+즉 `EnvConfig.milvus` 는 fastapi-core의 **native 기본값**이고, runtime에서 docmesh registry/settings가 개입하는 경우 실제 dependency 계층은 `docmesh_bridge.resolve_milvus_config(...)` 를 통해 최종 Milvus 설정을 선택합니다.
 
 ### YAML 예시
 

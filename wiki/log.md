@@ -257,3 +257,8 @@
 - Moved: `load_docmesh_settings()` and `resolve_milvus_config()` from `core/config.py` to `docmesh_bridge.py`
 - Verification: `uv run pytest -q test_fastapi_core/core/test_config.py test_fastapi_core/dependencies/test_milvus.py test_fastapi_core/dependencies/test_async_milvus.py test_fastapi_core/test_public_api.py` -> `34 passed`
 - Verification: `uv run pytest -q -m 'not integration'` -> `189 passed, 26 deselected`
+
+## [2026-06-24] update | config docs sync
+- Updated: `docs/config.md`, `docs/api.md`, `wiki/queries/config-duplication-analysis.md`
+- Synced: pure config vs docmesh bridge boundary, Milvus effective config resolution path
+- Verification: stale term search for removed config helpers in `docs/` returned 0 matches

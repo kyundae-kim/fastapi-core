@@ -28,6 +28,8 @@ confidence: medium
 
 검증은 `uv run pytest -q test_fastapi_core/core/test_config.py test_fastapi_core/dependencies/test_milvus.py test_fastapi_core/dependencies/test_async_milvus.py test_fastapi_core/test_public_api.py` 에서 `34 passed`, 이어 `uv run pytest -q -m 'not integration'` 에서 `189 passed, 26 deselected` 로 확인했다.
 
+이후 문서도 동기화했다. `docs/config.md` 에 pure config vs docmesh bridge 경계를 명시하고, `docs/api.md` 에서 설정 dependency와 Milvus dependency가 `docmesh_bridge` 책임 분리를 따름을 반영했다.
+
 ## Related Topics
 - [[layered-configuration-model]] 은 `EnvConfig` 와 `ServiceSettings` 의 책임 분리를 설명한다.
 - [[load-settings-and-settings-model]] 은 docmesh `load_settings()` / `Settings` 와 fastapi-core 이중 레이어의 관계를 설명한다.
