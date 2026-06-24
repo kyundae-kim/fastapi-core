@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
@@ -151,14 +150,6 @@ class ServiceSettings(BaseModel):
             data = yaml.safe_load(f) or {}
         return cls(**data)
 
-
-@dataclass(frozen=True, slots=True)
-class ApplicationSettings:
-    config: EnvConfig
-    settings: ServiceSettings
-    docmesh_settings: Any | None = None
-
-
 class EnvConfig(BaseSettings):
     model_config = SettingsConfigDict(
         env_nested_delimiter="__",
@@ -192,53 +183,3 @@ def load_env_config(**overrides: Any) -> EnvConfig:
 def load_service_settings(config: EnvConfig | None = None) -> ServiceSettings:
     resolved_config = config or load_env_config()
     return ServiceSettings.from_yaml(resolved_config.config_path)
-
-
-def load_docmesh_settings(config: EnvConfig | None = None) -> Any:
-    from fastapi_core.docmesh_bridge import initialize_docmesh_registry
-
-    resolved_config = config or load_env_config()
-    initialized = initialize_docmesh_registry(config=resolved_config)
-    if initialized is None:
-        raise RuntimeError("docmesh registry is unavailable")
-    settings, _ = initialized
-    return settings
-
-
-def _adapt_docmesh_milvus_config(docmesh_milvus: Any) -> MilvusConfig:
-    return MilvusConfig(
-        uri=str(getattr(docmesh_milvus, "uri", MilvusConfig().uri)),
-        db_name=str(getattr(docmesh_milvus, "db_name", MilvusConfig().db_name)),
-        token=(getattr(docmesh_milvus, "token", MilvusConfig().token) or ""),
-        timeout=getattr(docmesh_milvus, "request_timeout_seconds", None),
-    )
-
-
-def resolve_milvus_config(
-    config: EnvConfig,
-    *,
-    docmesh_settings: Any | None = None,
-) -> MilvusConfig:
-    resolved_docmesh_settings = docmesh_settings
-    if resolved_docmesh_settings is not None:
-        docmesh_milvus = getattr(resolved_docmesh_settings, "milvus", None)
-        if docmesh_milvus is not None:
-            return _adapt_docmesh_milvus_config(docmesh_milvus)
-    return config.milvus
-
-
-def load_application_settings(
-    *,
-    config: EnvConfig | None = None,
-    include_docmesh: bool = False,
-) -> ApplicationSettings:
-    resolved_config = config or load_env_config()
-    settings = load_service_settings(resolved_config)
-    docmesh_settings = (
-        load_docmesh_settings(resolved_config) if include_docmesh else None
-    )
-    return ApplicationSettings(
-        config=resolved_config,
-        settings=settings,
-        docmesh_settings=docmesh_settings,
-    )

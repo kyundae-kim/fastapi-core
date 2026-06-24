@@ -5,10 +5,10 @@ from fastapi.params import Depends as DependsParam
 from pymilvus import MilvusClient
 
 from fastapi_core.bootstrap import get_or_create_state_value, set_state_value
-from fastapi_core.core.config import EnvConfig, resolve_milvus_config
+from fastapi_core.core.config import EnvConfig
 from fastapi_core.core.milvus import create_milvus_client
 from fastapi_core.dependencies.config import get_config
-from fastapi_core.docmesh_bridge import get_required_docmesh_service
+from fastapi_core.docmesh_bridge import get_required_docmesh_service, resolve_milvus_config
 
 _MILVUS_CLIENT_STATE_KEY = "milvus_client"
 

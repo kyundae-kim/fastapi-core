@@ -1,7 +1,9 @@
+import inspect
 from pathlib import Path
 
 import pytest
 
+import fastapi_core.core.config as core_config
 from fastapi_core.core.config import (
     DatabaseConfig,
     EnvConfig,
@@ -9,12 +11,13 @@ from fastapi_core.core.config import (
     MinIOConfig,
     MilvusConfig,
     ServiceSettings,
-    load_application_settings,
-    load_docmesh_settings,
     load_service_settings,
+)
+from fastapi_core.docmesh_bridge import (
+    is_docmesh_available,
+    load_docmesh_settings,
     resolve_milvus_config,
 )
-from fastapi_core.docmesh_bridge import is_docmesh_available
 
 
 def test_database_config_url_with_password_auth():
@@ -134,14 +137,13 @@ def test_load_service_settings_uses_config_path(tmp_path: Path):
     assert settings.cors.origins == ["https://example.com"]
 
 
-def test_load_application_settings_reuses_provided_config():
-    config = EnvConfig()
-
-    bundle = load_application_settings(config=config)
-
-    assert bundle.config is config
-    assert isinstance(bundle.settings, ServiceSettings)
-    assert bundle.docmesh_settings is None
+def test_core_config_exports_only_pure_config_helpers():
+    assert inspect.isfunction(core_config.load_env_config)
+    assert inspect.isfunction(core_config.load_service_settings)
+    assert not hasattr(core_config, "ApplicationSettings")
+    assert not hasattr(core_config, "load_application_settings")
+    assert not hasattr(core_config, "load_docmesh_settings")
+    assert not hasattr(core_config, "resolve_milvus_config")
 
 
 @pytest.mark.skipif(not is_docmesh_available(), reason="docmesh_py_core is not installed")
@@ -151,15 +153,6 @@ def test_load_docmesh_settings_returns_real_docmesh_settings():
     from docmesh_py_core import Settings
 
     assert isinstance(settings, Settings)
-
-
-@pytest.mark.skipif(not is_docmesh_available(), reason="docmesh_py_core is not installed")
-def test_load_application_settings_can_include_real_docmesh_settings():
-    bundle = load_application_settings(include_docmesh=True)
-
-    from docmesh_py_core import Settings
-
-    assert isinstance(bundle.docmesh_settings, Settings)
 
 
 def test_resolve_milvus_config_prefers_docmesh_settings():

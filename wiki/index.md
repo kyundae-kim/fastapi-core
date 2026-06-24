@@ -2,7 +2,7 @@
 
 > Content catalog. Every wiki page listed under its type with a one-line summary.
 > Read this first to find relevant pages for any query.
-> Last updated: 2026-06-24 | Total pages: 32
+> Last updated: 2026-06-24 | Total pages: 33
 
 ## Entities
 <!-- Alphabetical within section -->
@@ -37,6 +37,7 @@
 ## Comparisons
 
 ## Queries
+- [[config-duplication-analysis]] — `core/config.py`의 설정·docmesh adapter·문서 중복을 분리 관점에서 정리한 분석 메모.
 - [[docmesh-py-core-package-structure-summary]] — docmesh-py-core를 설정, 조립, wrapper, health, Keycloak, 보안 유틸리티 레이어로 나눠 설명한 구조 요약.
 - [[docmesh-py-core-package-summary]] — docmesh-py-core 패키지의 책임, lifecycle, 주요 통합 축을 한 번에 읽는 요약 메모.
 - [[docmesh-py-core-refactor-review]] — docmesh-py-core 기반 리팩터링 시 유지할 축, 위험지점, 권장 순서를 정리한 검토 메모.

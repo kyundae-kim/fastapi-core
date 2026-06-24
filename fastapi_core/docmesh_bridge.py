@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from fastapi import FastAPI
 
 if TYPE_CHECKING:
-    from fastapi_core.core.config import EnvConfig
+    from fastapi_core.core.config import EnvConfig, MilvusConfig
 
 
 DOCMESH_MODULE_NAME = "docmesh_py_core"
@@ -139,6 +139,39 @@ def build_docmesh_env(config: EnvConfig) -> dict[str, str]:
             env["LANGFUSE_RELEASE"] = config.langfuse.release
 
     return env
+
+
+def load_docmesh_settings(config: EnvConfig | None = None) -> Any:
+    initialized = initialize_docmesh_registry(config=config)
+    if initialized is None:
+        raise RuntimeError("docmesh registry is unavailable")
+    settings, _ = initialized
+    return settings
+
+
+def _adapt_docmesh_milvus_config(docmesh_milvus: Any) -> MilvusConfig:
+    from fastapi_core.core.config import MilvusConfig
+
+    fallback = MilvusConfig()
+    return MilvusConfig(
+        uri=str(getattr(docmesh_milvus, "uri", fallback.uri)),
+        db_name=str(getattr(docmesh_milvus, "db_name", fallback.db_name)),
+        token=(getattr(docmesh_milvus, "token", fallback.token) or ""),
+        timeout=getattr(docmesh_milvus, "request_timeout_seconds", None),
+    )
+
+
+def resolve_milvus_config(
+    config: EnvConfig,
+    *,
+    docmesh_settings: Any | None = None,
+) -> MilvusConfig:
+    resolved_docmesh_settings = docmesh_settings
+    if resolved_docmesh_settings is not None:
+        docmesh_milvus = getattr(resolved_docmesh_settings, "milvus", None)
+        if docmesh_milvus is not None:
+            return _adapt_docmesh_milvus_config(docmesh_milvus)
+    return config.milvus
 
 
 def unwrap_docmesh_client(client: Any) -> Any:

@@ -240,3 +240,20 @@
 ## [2026-06-24] query | docmesh-py-core package structure summary
 - Filed: `queries/docmesh-py-core-package-structure-summary.md`
 - Sources synthesized: `raw/articles/docmesh-py-core-sdk-2026-06-11.md`, `raw/articles/docmesh-py-core-api-2026-06-11.md`, `raw/articles/docmesh-py-core-config-2026-06-11.md`
+
+## [2026-06-24] query | docmesh-py-core quick summary
+- Re-read: `entities/docmesh-py-core.md`, `queries/docmesh-py-core-package-summary.md`, `queries/docmesh-py-core-package-structure-summary.md`
+- Filed: none (reused existing query pages)
+
+## [2026-06-24] query | config duplication analysis
+- Filed: `queries/config-duplication-analysis.md`
+- Code reviewed: `fastapi_core/core/config.py`, `fastapi_core/docmesh_bridge.py`, `fastapi_core/dependencies/{config,milvus,async_milvus}.py`, `fastapi_core/factory.py`, `fastapi_core/lifecycle.py`, `fastapi_core/__init__.py`
+- Artifact: `docs/plans/2026-06-24-config-dedup-refactor-plan.md`
+- Updated: `index.md`
+
+## [2026-06-24] update | config dedup first slice
+- Updated: `fastapi_core/core/config.py`, `fastapi_core/docmesh_bridge.py`, `fastapi_core/dependencies/milvus.py`, `fastapi_core/dependencies/async_milvus.py`, `test_fastapi_core/core/test_config.py`, `wiki/queries/config-duplication-analysis.md`
+- Removed dead surface: `ApplicationSettings`, `load_application_settings()`
+- Moved: `load_docmesh_settings()` and `resolve_milvus_config()` from `core/config.py` to `docmesh_bridge.py`
+- Verification: `uv run pytest -q test_fastapi_core/core/test_config.py test_fastapi_core/dependencies/test_milvus.py test_fastapi_core/dependencies/test_async_milvus.py test_fastapi_core/test_public_api.py` -> `34 passed`
+- Verification: `uv run pytest -q -m 'not integration'` -> `189 passed, 26 deselected`
