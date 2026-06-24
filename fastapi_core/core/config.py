@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import AliasChoices, BaseModel, Field, HttpUrl, model_validator
+from docmesh_py_core.config import KeycloakConfig
+from pydantic import BaseModel, Field, HttpUrl, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,23 +20,19 @@ class LoggingConfig(BaseModel):
     level: Literal["WARNING", "INFO", "DEBUG"] = "DEBUG"
 
 
-class KeycloakConfig(BaseModel):
-    url: HttpUrl = Field(
-        default=HttpUrl("http://keycloak:8080/"),
-        validation_alias=AliasChoices("url", "http_url"),
-    )
-    manage_url: HttpUrl = HttpUrl("http://keycloak:9000/")
-    realm: str = "restapi"
-    client_id: str = "fastapi"
-    client_secret: str | None = None
-
-    @property
-    def http_url(self) -> HttpUrl:
-        return self.url
-
-
 class KeycloakOverlayConfig(BaseModel):
     manage_url: HttpUrl = HttpUrl("http://keycloak:9000/")
+
+
+def _default_keycloak_config() -> KeycloakConfig:
+    return KeycloakConfig(
+        url="http://keycloak:8080/",
+        realm="restapi",
+        client_id="fastapi",
+        client_secret=None,
+        client_public=True,
+        verify_ssl=False,
+    )
 
 
 class DatabaseConfig(BaseModel):
@@ -175,7 +172,7 @@ class EnvConfig(BaseSettings):
     token_url: str = "/token"
 
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
-    keycloak: KeycloakConfig = Field(default_factory=KeycloakConfig)
+    keycloak: KeycloakConfig = Field(default_factory=_default_keycloak_config)
     keycloak_overlay: KeycloakOverlayConfig = Field(default_factory=KeycloakOverlayConfig)
     db: DatabaseConfig = Field(default_factory=DatabaseConfig)
     minio: MinIOConfig = Field(default_factory=MinIOConfig)
@@ -187,15 +184,40 @@ class EnvConfig(BaseSettings):
     keycloak_username: str = "test"
     keycloak_password: str = "test"
 
-    @model_validator(mode="after")
-    def backfill_keycloak_overlay_manage_url(self) -> "EnvConfig":
-        default_manage_url = KeycloakOverlayConfig().manage_url
-        if (
-            self.keycloak_overlay.manage_url == default_manage_url
-            and self.keycloak.manage_url != default_manage_url
-        ):
-            self.keycloak_overlay.manage_url = self.keycloak.manage_url
-        return self
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_keycloak_inputs(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        normalized = dict(data)
+        raw_keycloak = normalized.get("keycloak")
+        if not isinstance(raw_keycloak, dict):
+            return normalized
+
+        keycloak_data = dict(raw_keycloak)
+        manage_url = keycloak_data.pop("manage_url", None)
+        if "url" not in keycloak_data and "http_url" in keycloak_data:
+            keycloak_data["url"] = keycloak_data.pop("http_url")
+        if "url" in keycloak_data and "verify_ssl" not in keycloak_data:
+            keycloak_data["verify_ssl"] = str(keycloak_data["url"]).startswith("https://")
+
+        merged_keycloak = _default_keycloak_config().model_dump(mode="python")
+        merged_keycloak.update(keycloak_data)
+        normalized["keycloak"] = merged_keycloak
+
+        if manage_url is not None:
+            raw_overlay = normalized.get("keycloak_overlay")
+            if isinstance(raw_overlay, dict):
+                overlay_data = dict(raw_overlay)
+            elif raw_overlay is None:
+                overlay_data = {}
+            else:
+                overlay_data = raw_overlay.model_dump(mode="python")
+            overlay_data.setdefault("manage_url", manage_url)
+            normalized["keycloak_overlay"] = overlay_data
+
+        return normalized
 
 
 def load_env_config(**overrides: Any) -> EnvConfig:

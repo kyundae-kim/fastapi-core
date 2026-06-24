@@ -50,8 +50,8 @@
 
 | 변수명 | 타입 | 기본값 | 설명 |
 | --- | --- | --- | --- |
-| `KEYCLOAK__URL` | `HttpUrl` | `http://keycloak:8080/` | canonical Keycloak base URL |
-| `KEYCLOAK__HTTP_URL` | `HttpUrl` | alias of `KEYCLOAK__URL` | legacy 호환 입력 alias. 지정 시 canonical `keycloak.url` 로 적재 |
+| `KEYCLOAK__URL` | `str` | `http://keycloak:8080/` | docmesh canonical Keycloak base URL |
+| `KEYCLOAK__HTTP_URL` | `str` | alias of `KEYCLOAK__URL` | legacy 호환 입력 alias. `EnvConfig` 단계에서 canonical `keycloak.url` 로 정규화 |
 | `KEYCLOAK__MANAGE_URL` | `HttpUrl` | `http://keycloak:9000/` | legacy 호환 필드. 명시 시 `keycloak_overlay.manage_url` 기본값을 덮어씀 |
 | `KEYCLOAK_OVERLAY__MANAGE_URL` | `HttpUrl` | `http://keycloak:9000/` | FastAPI readiness용 관리 URL overlay |
 | `KEYCLOAK__REALM` | `str` | `restapi` | Realm 이름 |
@@ -205,10 +205,10 @@
 
 Keycloak은 두 층으로 읽는다고 보면 됩니다.
 
-- `EnvConfig.keycloak` — canonical `url` 기반의 native/base Keycloak 연결 정보 (`http_url` 입력은 legacy alias 로만 허용)
+- `EnvConfig.keycloak` — `docmesh_py_core.config.KeycloakConfig` 재사용. `http_url` / `manage_url` legacy 입력은 `EnvConfig` 전처리에서 각각 `url` / `keycloak_overlay.manage_url` 로 정규화
 - `EnvConfig.keycloak_overlay` — FastAPI readiness용 `manage_url` overlay
 
-즉 `docmesh_bridge.build_docmesh_keycloak_config(...)` 가 auth/runtime 쪽 canonical config 적응을 담당하고, `/health/readiness` 는 `keycloak_overlay.manage_url` 을 사용합니다.
+즉 `fastapi_core.core.config` 는 더 이상 bespoke local `KeycloakConfig` 를 정의하지 않고, docmesh canonical 모델을 재사용합니다. `/health/readiness` 전용 값만 `keycloak_overlay.manage_url` 로 분리됩니다.
 
 즉 `EnvConfig.milvus` 는 fastapi-core의 **native 기본값**이고, runtime에서 docmesh registry/settings가 개입하는 경우 실제 dependency 계층은 `docmesh_bridge.resolve_milvus_config(...)` 를 통해 최종 Milvus 설정을 선택합니다.
 
@@ -259,7 +259,8 @@ ROOT_PATH=/
 TOKEN_URL=/token
 LOGGING__LEVEL=DEBUG
 
-KEYCLOAK__HTTP_URL=http://keycloak:8080/
+KEYCLOAK__URL=http://keycloak:8080/
+# legacy alias: KEYCLOAK__HTTP_URL=http://keycloak:8080/
 KEYCLOAK__MANAGE_URL=http://keycloak:9000/
 KEYCLOAK__REALM=restapi
 KEYCLOAK__CLIENT_ID=fastapi

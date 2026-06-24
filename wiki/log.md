@@ -294,3 +294,12 @@
 - Synced docs: `docs/config.md`, `wiki/queries/config-duplication-analysis.md`
 - Verification: `uv run pytest -q test_fastapi_core/core/test_config.py test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/dependencies/test_security.py test_fastapi_core/core/test_security.py test_fastapi_core/test_public_api.py` -> `59 passed`
 - Verification: `uv run pytest -q -m 'not integration'` -> `196 passed, 26 deselected`
+
+## [2026-06-24] update | keycloak local-model removal slice
+- Updated: `fastapi_core/core/config.py`, `test_fastapi_core/core/test_config.py`
+- Removed: bespoke local `KeycloakConfig` definition from `fastapi_core.core.config`
+- Reused: `docmesh_py_core.config.KeycloakConfig` as the canonical `EnvConfig.keycloak` model
+- Compatibility: `EnvConfig` now normalizes legacy `keycloak.http_url` -> `keycloak.url` and `keycloak.manage_url` -> `keycloak_overlay.manage_url` before validation
+- Synced docs: `docs/config.md`, `docs/api.md`, `wiki/queries/config-duplication-analysis.md`
+- Verification: `uv run pytest -q test_fastapi_core/core/test_config.py test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/dependencies/test_security.py test_fastapi_core/core/test_security.py test_fastapi_core/test_public_api.py` -> `59 passed`
+- Verification: `uv run pytest -q -m 'not integration'` -> `196 passed, 26 deselected`

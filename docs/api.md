@@ -9,6 +9,8 @@
 
 패키지 루트는 **curated subset만** 재수출합니다.
 
+> `KeycloakConfig` 는 fastapi-core 전용 로컬 모델이 아니라 `docmesh_py_core.config.KeycloakConfig` 의 재수출입니다. FastAPI 전용 `manage_url` 은 `KeycloakOverlayConfig` 로 분리됩니다.
+
 ```python
 from fastapi_core import (
     AuthError,

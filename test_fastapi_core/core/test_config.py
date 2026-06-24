@@ -86,18 +86,29 @@ def test_env_config_keycloak_overlay_override():
     assert str(config.keycloak_overlay.manage_url) == "https://keycloak-admin.example.com/"
 
 
-def test_keycloak_config_uses_url_as_canonical_field():
-    config = KeycloakConfig(url="https://keycloak.example.com/")
+def test_core_config_reexports_docmesh_keycloak_config():
+    from docmesh_py_core.config import KeycloakConfig as DocmeshKeycloakConfig
 
-    assert str(config.url) == "https://keycloak.example.com/"
-    assert str(config.http_url) == "https://keycloak.example.com/"
+    assert KeycloakConfig is DocmeshKeycloakConfig
+    assert KeycloakConfig.__module__ == "docmesh_py_core.config"
 
 
-def test_keycloak_config_accepts_legacy_http_url_input():
-    config = KeycloakConfig(http_url="https://legacy-keycloak.example.com/")
+def test_env_config_normalizes_legacy_keycloak_inputs_for_docmesh_model():
+    config = EnvConfig(
+        keycloak={
+            "http_url": "https://legacy-keycloak.example.com/",
+            "manage_url": "https://keycloak-admin.example.com/",
+            "realm": "myrealm",
+            "client_id": "myclient",
+        }
+    )
 
-    assert str(config.url) == "https://legacy-keycloak.example.com/"
-    assert str(config.http_url) == "https://legacy-keycloak.example.com/"
+    assert str(config.keycloak.url) == "https://legacy-keycloak.example.com/"
+    assert config.keycloak.realm == "myrealm"
+    assert config.keycloak.client_id == "myclient"
+    assert config.keycloak.client_public is True
+    assert config.keycloak.verify_ssl is True
+    assert str(config.keycloak_overlay.manage_url) == "https://keycloak-admin.example.com/"
 
 
 def test_minio_config_defaults():

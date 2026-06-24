@@ -85,10 +85,17 @@ confidence: medium
 - 검증은 `uv run pytest -q test_fastapi_core/core/test_security.py test_fastapi_core/dependencies/test_security.py test_fastapi_core/routers/test_auth.py` 에서 `36 passed`, 이어 `uv run pytest -q -m 'not integration'` 에서 `194 passed, 26 deselected` 로 확인했다.
 
 ## Implemented keycloak third slice
-- `fastapi_core.core.config.KeycloakConfig` 의 canonical 입력 필드를 `url` 로 전환했다.
-- legacy `http_url` 입력은 `AliasChoices("url", "http_url")` 로 계속 허용하되, 내부 canonical state 는 `keycloak.url` 로 정규화된다.
+- `KeycloakConfig.url` canonicalization 을 먼저 마쳤다.
+- legacy `http_url` 입력은 계속 허용하되, 내부 canonical state 는 `keycloak.url` 로 정규화되도록 만들었다.
 - `fastapi_core.docmesh_bridge.build_docmesh_keycloak_config(...)` 와 관련 테스트를 `config.keycloak.url` 기준으로 갱신했다.
 - 통합/의존성 테스트 중 canonical 경로를 써도 되는 지점은 `config.keycloak.url` 사용으로 옮겼고, `http_url` 은 compatibility surface 로만 남겼다.
+- 검증은 `uv run pytest -q test_fastapi_core/core/test_config.py test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/dependencies/test_security.py test_fastapi_core/core/test_security.py test_fastapi_core/test_public_api.py` 에서 `59 passed`, 이어 `uv run pytest -q -m 'not integration'` 에서 `196 passed, 26 deselected` 로 확인했다.
+
+## Implemented keycloak fourth slice
+- `fastapi_core.core.config` 의 로컬 `KeycloakConfig` 정의를 제거하고 `docmesh_py_core.config.KeycloakConfig` 를 직접 재수출하도록 바꿨다.
+- `EnvConfig.keycloak` 기본값은 docmesh canonical config default factory 로 채우고, legacy `http_url` / `manage_url` 입력은 `EnvConfig` 전처리에서 각각 `keycloak.url` / `keycloak_overlay.manage_url` 로 정규화한다.
+- 이로써 fastapi-core 고유 Keycloak 설정 표면은 `KeycloakOverlayConfig.manage_url` 만 남고, canonical auth config 자체는 docmesh 모델을 그대로 재사용한다.
+- `test_fastapi_core/core/test_config.py` 에 `KeycloakConfig is docmesh_py_core.config.KeycloakConfig` 계약 테스트와 legacy 입력 정규화 테스트를 추가했다.
 - 검증은 `uv run pytest -q test_fastapi_core/core/test_config.py test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/dependencies/test_security.py test_fastapi_core/core/test_security.py test_fastapi_core/test_public_api.py` 에서 `59 passed`, 이어 `uv run pytest -q -m 'not integration'` 에서 `196 passed, 26 deselected` 로 확인했다.
 
 ## Related Topics
