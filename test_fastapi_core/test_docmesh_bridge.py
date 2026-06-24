@@ -52,7 +52,7 @@ def test_build_docmesh_env_translates_fastapi_env_config():
     env = build_docmesh_env(config)
 
     assert env["DOCMESH_ENV"] == "development"
-    assert env["KEYCLOAK_URL"] == str(config.keycloak.http_url)
+    assert env["KEYCLOAK_URL"] == str(config.keycloak.url)
     assert env["POSTGRES_DSN"] == config.db.sqlalchemy_database_url
     assert env["OLLAMA_GENERATION_MODEL"] == config.ollama.model
     assert env["NATS_SERVERS"] == config.nats.servers
@@ -70,18 +70,25 @@ def test_build_docmesh_env_translates_fastapi_env_config():
 
 @pytest.mark.skipif(not is_docmesh_available(), reason="docmesh_py_core is not installed")
 def test_build_docmesh_keycloak_config_adapts_fastapi_config():
-    config = EnvConfig()
+    config = EnvConfig(
+        keycloak={
+            "url": "https://keycloak.example.com/",
+            "realm": "myrealm",
+            "client_id": "myclient",
+            "client_secret": "topsecret",
+        }
+    )
 
     keycloak_config = build_docmesh_keycloak_config(config)
 
     from docmesh_py_core.config import KeycloakConfig as DocmeshKeycloakConfig
 
     assert isinstance(keycloak_config, DocmeshKeycloakConfig)
-    assert keycloak_config.url == str(config.keycloak.http_url)
+    assert keycloak_config.url == str(config.keycloak.url)
     assert keycloak_config.realm == config.keycloak.realm
     assert keycloak_config.client_id == config.keycloak.client_id
     assert keycloak_config.client_secret == config.keycloak.client_secret
-    assert keycloak_config.verify_ssl is False
+    assert keycloak_config.verify_ssl is True
 
 
 def test_initialize_docmesh_registry_builds_settings_and_registry_from_env_mapping():

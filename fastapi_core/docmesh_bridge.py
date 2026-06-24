@@ -93,11 +93,11 @@ def build_docmesh_keycloak_config(config: EnvConfig) -> Any:
     docmesh_config_module = importlib.import_module(f"{DOCMESH_MODULE_NAME}.config")
     docmesh_keycloak_config = getattr(docmesh_config_module, "KeycloakConfig")
     return docmesh_keycloak_config(
-        url=str(config.keycloak.http_url),
+        url=str(config.keycloak.url),
         realm=config.keycloak.realm,
         client_id=config.keycloak.client_id,
         client_secret=config.keycloak.client_secret,
-        verify_ssl=str(config.keycloak.http_url).startswith("https://"),
+        verify_ssl=str(config.keycloak.url).startswith("https://"),
         client_public=config.keycloak.client_secret is None,
     )
 

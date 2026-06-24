@@ -50,7 +50,8 @@
 
 | 변수명 | 타입 | 기본값 | 설명 |
 | --- | --- | --- | --- |
-| `KEYCLOAK__HTTP_URL` | `HttpUrl` | `http://keycloak:8080/` | docmesh canonical Keycloak URL로 적응되는 base URL |
+| `KEYCLOAK__URL` | `HttpUrl` | `http://keycloak:8080/` | canonical Keycloak base URL |
+| `KEYCLOAK__HTTP_URL` | `HttpUrl` | alias of `KEYCLOAK__URL` | legacy 호환 입력 alias. 지정 시 canonical `keycloak.url` 로 적재 |
 | `KEYCLOAK__MANAGE_URL` | `HttpUrl` | `http://keycloak:9000/` | legacy 호환 필드. 명시 시 `keycloak_overlay.manage_url` 기본값을 덮어씀 |
 | `KEYCLOAK_OVERLAY__MANAGE_URL` | `HttpUrl` | `http://keycloak:9000/` | FastAPI readiness용 관리 URL overlay |
 | `KEYCLOAK__REALM` | `str` | `restapi` | Realm 이름 |
@@ -204,7 +205,7 @@
 
 Keycloak은 두 층으로 읽는다고 보면 됩니다.
 
-- `EnvConfig.keycloak` — native/base Keycloak 연결 정보
+- `EnvConfig.keycloak` — canonical `url` 기반의 native/base Keycloak 연결 정보 (`http_url` 입력은 legacy alias 로만 허용)
 - `EnvConfig.keycloak_overlay` — FastAPI readiness용 `manage_url` overlay
 
 즉 `docmesh_bridge.build_docmesh_keycloak_config(...)` 가 auth/runtime 쪽 canonical config 적응을 담당하고, `/health/readiness` 는 `keycloak_overlay.manage_url` 을 사용합니다.

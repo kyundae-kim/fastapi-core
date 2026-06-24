@@ -7,6 +7,7 @@ import fastapi_core.core.config as core_config
 from fastapi_core.core.config import (
     DatabaseConfig,
     EnvConfig,
+    KeycloakConfig,
     KeycloakOverlayConfig,
     LangfuseConfig,
     MinIOConfig,
@@ -65,6 +66,7 @@ def test_database_config_url_direct():
 def test_env_config_defaults():
     config = EnvConfig()
     assert config.env.value == "dev"
+    assert str(config.keycloak.url) == "http://keycloak:8080/"
     assert config.keycloak.realm == "restapi"
     assert config.keycloak.client_id == "fastapi"
     assert str(config.keycloak_overlay.manage_url) == "http://keycloak:9000/"
@@ -82,6 +84,20 @@ def test_env_config_keycloak_overlay_override():
     )
 
     assert str(config.keycloak_overlay.manage_url) == "https://keycloak-admin.example.com/"
+
+
+def test_keycloak_config_uses_url_as_canonical_field():
+    config = KeycloakConfig(url="https://keycloak.example.com/")
+
+    assert str(config.url) == "https://keycloak.example.com/"
+    assert str(config.http_url) == "https://keycloak.example.com/"
+
+
+def test_keycloak_config_accepts_legacy_http_url_input():
+    config = KeycloakConfig(http_url="https://legacy-keycloak.example.com/")
+
+    assert str(config.url) == "https://legacy-keycloak.example.com/"
+    assert str(config.http_url) == "https://legacy-keycloak.example.com/"
 
 
 def test_minio_config_defaults():

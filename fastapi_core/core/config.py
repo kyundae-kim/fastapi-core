@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, HttpUrl, model_validator
+from pydantic import AliasChoices, BaseModel, Field, HttpUrl, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,11 +20,18 @@ class LoggingConfig(BaseModel):
 
 
 class KeycloakConfig(BaseModel):
-    http_url: HttpUrl = HttpUrl("http://keycloak:8080/")
+    url: HttpUrl = Field(
+        default=HttpUrl("http://keycloak:8080/"),
+        validation_alias=AliasChoices("url", "http_url"),
+    )
     manage_url: HttpUrl = HttpUrl("http://keycloak:9000/")
     realm: str = "restapi"
     client_id: str = "fastapi"
     client_secret: str | None = None
+
+    @property
+    def http_url(self) -> HttpUrl:
+        return self.url
 
 
 class KeycloakOverlayConfig(BaseModel):

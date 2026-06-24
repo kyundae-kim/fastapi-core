@@ -84,6 +84,13 @@ confidence: medium
 - `test_fastapi_core/core/test_security.py` 에 canonical-config 적응 성공/거부(audience mismatch) 테스트를 추가했다.
 - 검증은 `uv run pytest -q test_fastapi_core/core/test_security.py test_fastapi_core/dependencies/test_security.py test_fastapi_core/routers/test_auth.py` 에서 `36 passed`, 이어 `uv run pytest -q -m 'not integration'` 에서 `194 passed, 26 deselected` 로 확인했다.
 
+## Implemented keycloak third slice
+- `fastapi_core.core.config.KeycloakConfig` 의 canonical 입력 필드를 `url` 로 전환했다.
+- legacy `http_url` 입력은 `AliasChoices("url", "http_url")` 로 계속 허용하되, 내부 canonical state 는 `keycloak.url` 로 정규화된다.
+- `fastapi_core.docmesh_bridge.build_docmesh_keycloak_config(...)` 와 관련 테스트를 `config.keycloak.url` 기준으로 갱신했다.
+- 통합/의존성 테스트 중 canonical 경로를 써도 되는 지점은 `config.keycloak.url` 사용으로 옮겼고, `http_url` 은 compatibility surface 로만 남겼다.
+- 검증은 `uv run pytest -q test_fastapi_core/core/test_config.py test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/dependencies/test_security.py test_fastapi_core/core/test_security.py test_fastapi_core/test_public_api.py` 에서 `59 passed`, 이어 `uv run pytest -q -m 'not integration'` 에서 `196 passed, 26 deselected` 로 확인했다.
+
 ## Related Topics
 - [[layered-configuration-model]] 은 `EnvConfig` 와 `ServiceSettings` 의 책임 분리를 설명한다.
 - [[load-settings-and-settings-model]] 은 docmesh `load_settings()` / `Settings` 와 fastapi-core 이중 레이어의 관계를 설명한다.

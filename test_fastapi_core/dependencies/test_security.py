@@ -251,7 +251,7 @@ def test_get_auth_provider_fallback_prefers_docmesh_registry():
     mock_provider = MagicMock(spec=KeycloakAuthProvider)
     mock_config = MagicMock(spec=EnvConfig)
     mock_config.keycloak = MagicMock(spec=KeycloakConfig)
-    mock_config.keycloak.http_url = "http://keycloak:8080"
+    mock_config.keycloak.url = "http://keycloak:8080"
     mock_config.keycloak.realm = "myrealm"
     mock_config.keycloak.client_id = "myclient"
     mock_config.keycloak.client_secret = "secret"
@@ -293,7 +293,7 @@ def test_get_auth_provider_fallback():
     mock_provider.to_user = MagicMock()
     mock_config = MagicMock(spec=EnvConfig)
     mock_config.keycloak = MagicMock(spec=KeycloakConfig)
-    mock_config.keycloak.http_url = "http://keycloak:8080"
+    mock_config.keycloak.url = "http://keycloak:8080"
     mock_config.keycloak.realm = "myrealm"
     mock_config.keycloak.client_id = "myclient"
     mock_config.keycloak.client_secret = "secret"
@@ -329,7 +329,7 @@ def test_set_auth_provider_from_config():
     mock_provider.to_user = MagicMock()
     mock_config = MagicMock(spec=EnvConfig)
     mock_config.keycloak = MagicMock(spec=KeycloakConfig)
-    mock_config.keycloak.http_url = "http://keycloak:8080"
+    mock_config.keycloak.url = "http://keycloak:8080"
     mock_config.keycloak.realm = "myrealm"
     mock_config.keycloak.client_id = "myclient"
     mock_config.keycloak.client_secret = "secret"

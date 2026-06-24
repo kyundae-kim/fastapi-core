@@ -286,3 +286,11 @@
 - Guardrail: reject docmesh `audience` override when it differs from `client_id`, because native `KeycloakAuthProvider` cannot represent separate OAuth client id and JWT audience semantics
 - Verification: `uv run pytest -q test_fastapi_core/core/test_security.py test_fastapi_core/dependencies/test_security.py test_fastapi_core/routers/test_auth.py` -> `36 passed`
 - Verification: `uv run pytest -q -m 'not integration'` -> `194 passed, 26 deselected`
+
+## [2026-06-24] update | keycloak url canonicalization slice
+- Updated: `fastapi_core/core/config.py`, `fastapi_core/docmesh_bridge.py`, `test_fastapi_core/core/test_config.py`, `test_fastapi_core/test_docmesh_bridge.py`
+- Canonicalized: `KeycloakConfig.url` is now the primary field; legacy `http_url` remains accepted as an input alias/property for compatibility
+- Migrated tests/fixtures: canonical call sites now prefer `config.keycloak.url`
+- Synced docs: `docs/config.md`, `wiki/queries/config-duplication-analysis.md`
+- Verification: `uv run pytest -q test_fastapi_core/core/test_config.py test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/dependencies/test_security.py test_fastapi_core/core/test_security.py test_fastapi_core/test_public_api.py` -> `59 passed`
+- Verification: `uv run pytest -q -m 'not integration'` -> `196 passed, 26 deselected`

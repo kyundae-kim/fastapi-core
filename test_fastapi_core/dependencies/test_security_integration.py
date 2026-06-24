@@ -23,7 +23,7 @@ def config() -> EnvConfig:
 @pytest.fixture(scope="module")
 def provider(config: EnvConfig) -> KeycloakAuthProvider:
     return KeycloakAuthProvider(
-        http_url=str(config.keycloak.http_url),
+        http_url=str(config.keycloak.url),
         realm=config.keycloak.realm,
         client_id=config.keycloak.client_id,
         client_secret=config.keycloak.client_secret,
