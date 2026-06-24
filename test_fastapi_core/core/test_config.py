@@ -7,6 +7,7 @@ import fastapi_core.core.config as core_config
 from fastapi_core.core.config import (
     DatabaseConfig,
     EnvConfig,
+    KeycloakOverlayConfig,
     LangfuseConfig,
     MinIOConfig,
     MilvusConfig,
@@ -66,10 +67,21 @@ def test_env_config_defaults():
     assert config.env.value == "dev"
     assert config.keycloak.realm == "restapi"
     assert config.keycloak.client_id == "fastapi"
+    assert str(config.keycloak_overlay.manage_url) == "http://keycloak:9000/"
     assert config.db.host == "postgres"
     assert config.db.port == 5432
     assert config.minio.bucket == "default"
     assert config.logging.level in ("WARNING", "INFO", "DEBUG")
+
+
+def test_env_config_keycloak_overlay_override():
+    config = EnvConfig(
+        keycloak_overlay=KeycloakOverlayConfig(
+            manage_url="https://keycloak-admin.example.com/"
+        )
+    )
+
+    assert str(config.keycloak_overlay.manage_url) == "https://keycloak-admin.example.com/"
 
 
 def test_minio_config_defaults():

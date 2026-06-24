@@ -17,6 +17,7 @@ from fastapi_core import (
     HealthResponse,
     KeycloakAuthProvider,
     KeycloakConfig,
+    KeycloakOverlayConfig,
     LangfuseConfig,
     LifecycleSettings,
     MilvusConfig,
@@ -255,6 +256,7 @@ def get_settings(
 
 - `app.state.settings`가 없으면 `ServiceSettings.from_yaml(config.config_path)` 결과를 저장
 - 설정 로딩 책임은 `fastapi_core.core.config` 에 있고, docmesh registry/settings 적응 책임은 `fastapi_core.docmesh_bridge` 에 있습니다.
+- Keycloak readiness용 관리 URL은 `EnvConfig.keycloak_overlay.manage_url` 로 읽고, docmesh canonical Keycloak 적응은 `build_docmesh_keycloak_config()` 가 담당합니다.
 
 ---
 

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,6 +25,10 @@ class KeycloakConfig(BaseModel):
     realm: str = "restapi"
     client_id: str = "fastapi"
     client_secret: str | None = None
+
+
+class KeycloakOverlayConfig(BaseModel):
+    manage_url: HttpUrl = HttpUrl("http://keycloak:9000/")
 
 
 class DatabaseConfig(BaseModel):
@@ -165,6 +169,7 @@ class EnvConfig(BaseSettings):
 
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     keycloak: KeycloakConfig = Field(default_factory=KeycloakConfig)
+    keycloak_overlay: KeycloakOverlayConfig = Field(default_factory=KeycloakOverlayConfig)
     db: DatabaseConfig = Field(default_factory=DatabaseConfig)
     minio: MinIOConfig = Field(default_factory=MinIOConfig)
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
@@ -174,6 +179,16 @@ class EnvConfig(BaseSettings):
 
     keycloak_username: str = "test"
     keycloak_password: str = "test"
+
+    @model_validator(mode="after")
+    def backfill_keycloak_overlay_manage_url(self) -> "EnvConfig":
+        default_manage_url = KeycloakOverlayConfig().manage_url
+        if (
+            self.keycloak_overlay.manage_url == default_manage_url
+            and self.keycloak.manage_url != default_manage_url
+        ):
+            self.keycloak_overlay.manage_url = self.keycloak.manage_url
+        return self
 
 
 def load_env_config(**overrides: Any) -> EnvConfig:

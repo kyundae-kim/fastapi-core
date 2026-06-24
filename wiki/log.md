@@ -262,3 +262,20 @@
 - Updated: `docs/config.md`, `docs/api.md`, `wiki/queries/config-duplication-analysis.md`
 - Synced: pure config vs docmesh bridge boundary, Milvus effective config resolution path
 - Verification: stale term search for removed config helpers in `docs/` returned 0 matches
+
+## [2026-06-24] query | docmesh config replacement feasibility
+- Updated: `wiki/queries/config-duplication-analysis.md`
+- Compared: `fastapi_core.core.config.{KeycloakConfig,DatabaseConfig}` vs `docmesh_py_core.config.{KeycloakConfig,PostgresConfig}`
+- Conclusion: Keycloak is adapter-feasible first; Database is not a safe drop-in replacement yet
+
+## [2026-06-24] plan | keycloak config canonicalization
+- Filed: `docs/plans/2026-06-24-keycloak-config-canonicalization-plan.md`
+- Scope: move Keycloak toward docmesh canonical config with fastapi overlay for `manage_url`
+- Next slice: `docmesh_bridge` helper + overlay split + auth/health compatibility tests
+
+## [2026-06-24] update | keycloak canonicalization first slice
+- Updated: `fastapi_core/core/config.py`, `fastapi_core/docmesh_bridge.py`, `fastapi_core/routers/health.py`, `fastapi_core/__init__.py`
+- Added: `KeycloakOverlayConfig`, `EnvConfig.keycloak_overlay`, `build_docmesh_keycloak_config(config)`
+- Synced docs: `docs/config.md`, `docs/api.md`, `wiki/queries/config-duplication-analysis.md`
+- Verification: `uv run pytest -q test_fastapi_core/core/test_config.py test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/routers/test_health.py test_fastapi_core/test_public_api.py` -> `38 passed`
+- Verification: `uv run pytest -q -m 'not integration'` -> `192 passed, 26 deselected`

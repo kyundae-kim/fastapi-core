@@ -89,16 +89,28 @@ def _docmesh_env_name(env: str) -> str:
     }.get(env, env)
 
 
+def build_docmesh_keycloak_config(config: EnvConfig) -> Any:
+    docmesh_config_module = importlib.import_module(f"{DOCMESH_MODULE_NAME}.config")
+    docmesh_keycloak_config = getattr(docmesh_config_module, "KeycloakConfig")
+    return docmesh_keycloak_config(
+        url=str(config.keycloak.http_url),
+        realm=config.keycloak.realm,
+        client_id=config.keycloak.client_id,
+        client_secret=config.keycloak.client_secret,
+        verify_ssl=str(config.keycloak.http_url).startswith("https://"),
+        client_public=config.keycloak.client_secret is None,
+    )
+
+
 def build_docmesh_env(config: EnvConfig) -> dict[str, str]:
+    keycloak_config = build_docmesh_keycloak_config(config)
     env: dict[str, str] = {
         "DOCMESH_ENV": _docmesh_env_name(config.env.value),
         "DOCMESH_HEALTHCHECK_ENABLED": "true",
-        "KEYCLOAK_URL": str(config.keycloak.http_url),
-        "KEYCLOAK_REALM": config.keycloak.realm,
-        "KEYCLOAK_CLIENT_ID": config.keycloak.client_id,
-        "KEYCLOAK_VERIFY_SSL": _bool_string(
-            str(config.keycloak.http_url).startswith("https://")
-        ),
+        "KEYCLOAK_URL": keycloak_config.url,
+        "KEYCLOAK_REALM": keycloak_config.realm,
+        "KEYCLOAK_CLIENT_ID": keycloak_config.client_id,
+        "KEYCLOAK_VERIFY_SSL": _bool_string(keycloak_config.verify_ssl),
         "POSTGRES_DSN": config.db.sqlalchemy_database_url,
         "MINIO_ENDPOINT": config.minio.endpoint,
         "MINIO_ACCESS_KEY": config.minio.access_key,
@@ -117,8 +129,8 @@ def build_docmesh_env(config: EnvConfig) -> dict[str, str]:
         "NATS_MAX_RECONNECT_ATTEMPTS": str(config.nats.max_reconnect_attempts),
     }
 
-    if config.keycloak.client_secret:
-        env["KEYCLOAK_CLIENT_SECRET"] = config.keycloak.client_secret
+    if keycloak_config.client_secret:
+        env["KEYCLOAK_CLIENT_SECRET"] = keycloak_config.client_secret
     else:
         env["KEYCLOAK_CLIENT_PUBLIC"] = "true"
 

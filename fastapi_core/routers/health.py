@@ -56,7 +56,7 @@ async def readiness(
     settings: ServiceSettings = Depends(get_settings),
 ) -> HealthResponse:
     if settings.health.check_keycloak:
-        manage_url = str(config.keycloak.manage_url).rstrip("/")
+        manage_url = str(config.keycloak_overlay.manage_url).rstrip("/")
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(

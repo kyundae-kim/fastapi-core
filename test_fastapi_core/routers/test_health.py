@@ -63,6 +63,45 @@ def test_readiness_ok(client):
     assert response.json()["status"] == "ok"
 
 
+def test_readiness_uses_keycloak_overlay_manage_url():
+    app = create_app(include_auth_router=False)
+    app.dependency_overrides[get_config] = lambda: EnvConfig(
+        keycloak_overlay={"manage_url": "https://overlay-keycloak.example.com/"},
+        keycloak={"manage_url": "http://legacy-keycloak:9000/"},
+    )
+    app.dependency_overrides[get_settings] = lambda: ServiceSettings(
+        health=HealthSettings(
+            check_keycloak=True,
+            check_database=True,
+            check_minio=True,
+            check_langfuse=False,
+        )
+    )
+    client = TestClient(app)
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+
+    with (
+        patch("fastapi_core.routers.health.httpx.AsyncClient") as mock_cls,
+        patch(
+            "fastapi_core.routers.health.check_database_connection",
+            return_value=True,
+        ),
+        patch("fastapi_core.routers.health.check_minio_connection", return_value=True),
+    ):
+        mock_ctx = AsyncMock()
+        mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_ctx)
+        mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_ctx.get = AsyncMock(return_value=mock_response)
+
+        response = client.get("/health/readiness")
+
+    assert response.status_code == 200
+    mock_ctx.get.assert_awaited_once_with(
+        "https://overlay-keycloak.example.com/health/ready", timeout=5.0
+    )
+
+
 def test_readiness_keycloak_not_ready(client):
     mock_response = MagicMock()
     mock_response.status_code = 503

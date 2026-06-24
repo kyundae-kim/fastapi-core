@@ -10,6 +10,7 @@ from fastapi_core.docmesh_bridge import (
     REGISTRY_SERVICE_SPECS,
     RegistryServiceSpec,
     build_docmesh_env,
+    build_docmesh_keycloak_config,
     get_registry_service_spec,
     initialize_docmesh_registry,
     is_docmesh_available,
@@ -65,6 +66,22 @@ def test_build_docmesh_env_translates_fastapi_env_config():
         else "false"
     )
     assert env["KEYCLOAK_CLIENT_PUBLIC"] == "true"
+
+
+@pytest.mark.skipif(not is_docmesh_available(), reason="docmesh_py_core is not installed")
+def test_build_docmesh_keycloak_config_adapts_fastapi_config():
+    config = EnvConfig()
+
+    keycloak_config = build_docmesh_keycloak_config(config)
+
+    from docmesh_py_core.config import KeycloakConfig as DocmeshKeycloakConfig
+
+    assert isinstance(keycloak_config, DocmeshKeycloakConfig)
+    assert keycloak_config.url == str(config.keycloak.http_url)
+    assert keycloak_config.realm == config.keycloak.realm
+    assert keycloak_config.client_id == config.keycloak.client_id
+    assert keycloak_config.client_secret == config.keycloak.client_secret
+    assert keycloak_config.verify_ssl is False
 
 
 def test_initialize_docmesh_registry_builds_settings_and_registry_from_env_mapping():

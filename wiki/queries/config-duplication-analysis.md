@@ -30,6 +30,53 @@ confidence: medium
 
 이후 문서도 동기화했다. `docs/config.md` 에 pure config vs docmesh bridge 경계를 명시하고, `docs/api.md` 에서 설정 dependency와 Milvus dependency가 `docmesh_bridge` 책임 분리를 따름을 반영했다.
 
+## Replacement feasibility: docmesh config as canonical model
+
+### KeycloakConfig
+`fastapi_core.core.config.KeycloakConfig` 를 `docmesh_py_core.config.KeycloakConfig` 로 **완전히 drop-in 교체**하는 것은 아직 어렵지만, **adapter를 둔 canonical source 전환**은 현실적이다.
+
+근거:
+- fastapi-core 쪽 `KeycloakConfig` 는 `http_url`, `manage_url`, `realm`, `client_id`, `client_secret` 만 가진다.
+- docmesh 쪽 `KeycloakConfig` 는 `url`, `realm`, `client_id`, `client_secret` 외에도 `verify_ssl`, `audience`, `token_grant_type`, `request_timeout_seconds`, provisioning 관련 필드를 포함한다.
+- 현재 bridge는 `build_docmesh_env()` 에서 fastapi-core 설정을 docmesh env 로 변환할 때 `KEYCLOAK_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_VERIFY_SSL` 등을 구성한다. 즉 아직은 **fastapi-core 모델이 source이고 docmesh는 파생 결과**다.
+- 동시에 auth dependency는 이미 registry-backed docmesh service를 사용하므로, runtime 관점에서는 docmesh 설정을 canonical로 삼아도 큰 방향성 충돌은 없다.
+
+제약:
+- `manage_url` 같은 fastapi-core 고유 필드는 docmesh `KeycloakConfig` 에 없다.
+- `core/auth.py` 의 native `KeycloakAuthProvider` 는 `http_url` 명명과 자체 URL 조합 계약을 가진다.
+
+결론적으로 Keycloak은 **"직접 대체"보다 "docmesh KeycloakConfig + fastapi overlay(adapter)"** 가 적절하다.
+
+### DatabaseConfig
+`fastapi_core.core.config.DatabaseConfig` 를 `docmesh_py_core.config.PostgresConfig` 로 **바로 대체하는 것은 현재 구조에서는 비추천**이다.
+
+근거:
+- fastapi-core `DatabaseConfig` 는 `sqlalchemy_database_url` 계산 프로퍼티를 제공하고, `create_db_engine()` 이 여기에 직접 의존한다.
+- 또한 `auth_method`, `echo`, `pool_timeout`, `pool_recycle`, `url` 직접 override 같은 SQLAlchemy/운영 편의 필드가 있다.
+- 반면 docmesh `PostgresConfig` 는 `dsn`, `host`, `db`, `user`, `password`, `sslmode`, `connect_timeout_seconds`, `pool_size`, `max_overflow` 까지만 제공한다.
+- bridge도 현재 `POSTGRES_DSN` 만 docmesh 쪽으로 넘긴다. 즉 fastapi-core의 native DB 모델에는 SQLAlchemy 엔진 생성 편의 계약이 더 많이 들어 있다.
+
+결론적으로 Database는 **현재는 adapter 없이는 교체 불가에 가깝고**, 먼저 `create_db_engine()` 이 의존하는 계약을 분리해야 한다.
+
+### Recommendation
+1. **Keycloak 먼저**: `docmesh_py_core.config.KeycloakConfig` 를 canonical source 후보로 보고, `manage_url` 같은 fastapi-only 필드를 별도 overlay로 분리
+2. **Database는 2단계**: 먼저 `DatabaseConfig` 를
+   - pure connection input (`dsn/host/db/user/password/...`)
+   - SQLAlchemy engine tuning (`echo/pool_timeout/pool_recycle`)
+   로 쪼갠 뒤, 그 다음 `PostgresConfig` canonical화 검토
+3. 단기적으로는 `EnvConfig` 전체를 없애기보다, `EnvConfig` 를 **fastapi overlay + docmesh settings adapter entrypoint** 로 축소하는 편이 안전하다.
+
+## Artifact
+- `docs/plans/2026-06-24-keycloak-config-canonicalization-plan.md` — Keycloak canonicalization 단계별 설계안
+
+## Implemented keycloak first slice
+- `fastapi_core.core.config` 에 `KeycloakOverlayConfig` 와 `EnvConfig.keycloak_overlay` 를 추가했다.
+- `EnvConfig` 는 legacy `keycloak.manage_url` override 가 있으면 overlay 기본값으로 backfill 해 backwards compatibility 를 유지한다.
+- `fastapi_core.docmesh_bridge` 에 `build_docmesh_keycloak_config(config)` 를 추가해 native Keycloak 설정을 docmesh canonical config 로 적응한다.
+- `fastapi_core.routers.health` 는 이제 `config.keycloak_overlay.manage_url` 을 사용해 readiness Keycloak healthcheck URL 을 결정한다.
+- `fastapi_core.__all__` 에 `KeycloakOverlayConfig` 를 추가했고, `docs/config.md`, `docs/api.md` 에 새 경계를 반영했다.
+- 검증은 `uv run pytest -q test_fastapi_core/core/test_config.py test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/routers/test_health.py test_fastapi_core/test_public_api.py` 에서 `38 passed`, 이어 `uv run pytest -q -m 'not integration'` 에서 `192 passed, 26 deselected` 로 확인했다.
+
 ## Related Topics
 - [[layered-configuration-model]] 은 `EnvConfig` 와 `ServiceSettings` 의 책임 분리를 설명한다.
 - [[load-settings-and-settings-model]] 은 docmesh `load_settings()` / `Settings` 와 fastapi-core 이중 레이어의 관계를 설명한다.

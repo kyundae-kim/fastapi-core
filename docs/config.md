@@ -50,8 +50,9 @@
 
 | 변수명 | 타입 | 기본값 | 설명 |
 | --- | --- | --- | --- |
-| `KEYCLOAK__HTTP_URL` | `HttpUrl` | `http://keycloak:8080/` | Keycloak base URL |
-| `KEYCLOAK__MANAGE_URL` | `HttpUrl` | `http://keycloak:9000/` | readiness용 관리 URL |
+| `KEYCLOAK__HTTP_URL` | `HttpUrl` | `http://keycloak:8080/` | docmesh canonical Keycloak URL로 적응되는 base URL |
+| `KEYCLOAK__MANAGE_URL` | `HttpUrl` | `http://keycloak:9000/` | legacy 호환 필드. 명시 시 `keycloak_overlay.manage_url` 기본값을 덮어씀 |
+| `KEYCLOAK_OVERLAY__MANAGE_URL` | `HttpUrl` | `http://keycloak:9000/` | FastAPI readiness용 관리 URL overlay |
 | `KEYCLOAK__REALM` | `str` | `restapi` | Realm 이름 |
 | `KEYCLOAK__CLIENT_ID` | `str` | `fastapi` | OAuth client id / JWT audience |
 | `KEYCLOAK__CLIENT_SECRET` | `str \| None` | `None` | Confidential client secret |
@@ -196,9 +197,17 @@
 
 현재 bridge 계층이 담당하는 대표 helper는 다음과 같습니다.
 
+- `build_docmesh_keycloak_config(config)` — native `EnvConfig.keycloak` 을 docmesh canonical `KeycloakConfig` 로 적응
 - `build_docmesh_env(config)` — `EnvConfig` 를 docmesh가 이해하는 환경 변수 맵으로 변환
 - `load_docmesh_settings(config)` — docmesh settings / registry 초기화 결과에서 settings 추출
 - `resolve_milvus_config(config, docmesh_settings=...)` — docmesh settings 가 있으면 그 값을 우선해 effective `MilvusConfig` 결정
+
+Keycloak은 두 층으로 읽는다고 보면 됩니다.
+
+- `EnvConfig.keycloak` — native/base Keycloak 연결 정보
+- `EnvConfig.keycloak_overlay` — FastAPI readiness용 `manage_url` overlay
+
+즉 `docmesh_bridge.build_docmesh_keycloak_config(...)` 가 auth/runtime 쪽 canonical config 적응을 담당하고, `/health/readiness` 는 `keycloak_overlay.manage_url` 을 사용합니다.
 
 즉 `EnvConfig.milvus` 는 fastapi-core의 **native 기본값**이고, runtime에서 docmesh registry/settings가 개입하는 경우 실제 dependency 계층은 `docmesh_bridge.resolve_milvus_config(...)` 를 통해 최종 Milvus 설정을 선택합니다.
 
