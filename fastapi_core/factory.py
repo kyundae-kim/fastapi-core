@@ -6,7 +6,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi_core.bootstrap import set_state_value
-from fastapi_core.core.config import EnvConfig, ServiceSettings
+from fastapi_core.core.config import (
+    EnvConfig,
+    ServiceSettings,
+    load_env_config,
+    load_service_settings,
+)
 from fastapi_core.core.exceptions import AuthError, auth_error_handler
 from fastapi_core.core.logging import setup_logging
 from fastapi_core.dependencies.config import _CONFIG_STATE_KEY, _SETTINGS_STATE_KEY
@@ -21,9 +26,9 @@ def create_app(
     include_auth_router: bool = True,
 ) -> FastAPI:
     if config is None:
-        config = EnvConfig()
+        config = load_env_config()
     if settings is None:
-        settings = ServiceSettings.from_yaml(config.config_path)
+        settings = load_service_settings(config)
     if lifespan is None:
         lifespan = create_managed_lifespan(config, settings)
 

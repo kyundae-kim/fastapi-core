@@ -101,7 +101,9 @@ async def readiness(
                 detail="MinIO not ready",
             )
 
-    langfuse_ready = check_docmesh_service_connection(request.app, "langfuse_client")
+    langfuse_ready = None
+    if settings.lifecycle.use_docmesh_registry:
+        langfuse_ready = check_docmesh_service_connection(request.app, "langfuse_client")
     if langfuse_ready is None:
         langfuse_ready = check_langfuse_connection(config.langfuse)
 

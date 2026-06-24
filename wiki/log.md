@@ -232,3 +232,11 @@
 - Contested pages: 0
 - Stale pages: 0
 - Frontmatter/tag/style issues: 5
+
+## [2026-06-24] query | docmesh-py-core package summary
+- Filed: `queries/docmesh-py-core-package-summary.md`
+- Sources synthesized: `raw/articles/docmesh-py-core-sdk-2026-06-11.md`, `raw/articles/docmesh-py-core-api-2026-06-11.md`, `raw/articles/docmesh-py-core-config-2026-06-11.md`
+
+## [2026-06-24] query | docmesh-py-core package structure summary
+- Filed: `queries/docmesh-py-core-package-structure-summary.md`
+- Sources synthesized: `raw/articles/docmesh-py-core-sdk-2026-06-11.md`, `raw/articles/docmesh-py-core-api-2026-06-11.md`, `raw/articles/docmesh-py-core-config-2026-06-11.md`

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, HttpUrl
@@ -151,6 +152,13 @@ class ServiceSettings(BaseModel):
         return cls(**data)
 
 
+@dataclass(frozen=True, slots=True)
+class ApplicationSettings:
+    config: EnvConfig
+    settings: ServiceSettings
+    docmesh_settings: Any | None = None
+
+
 class EnvConfig(BaseSettings):
     model_config = SettingsConfigDict(
         env_nested_delimiter="__",
@@ -175,3 +183,40 @@ class EnvConfig(BaseSettings):
 
     keycloak_username: str = "test"
     keycloak_password: str = "test"
+
+
+def load_env_config(**overrides: Any) -> EnvConfig:
+    return EnvConfig(**overrides)
+
+
+def load_service_settings(config: EnvConfig | None = None) -> ServiceSettings:
+    resolved_config = config or load_env_config()
+    return ServiceSettings.from_yaml(resolved_config.config_path)
+
+
+def load_docmesh_settings(config: EnvConfig | None = None) -> Any:
+    from fastapi_core.docmesh_bridge import initialize_docmesh_registry
+
+    resolved_config = config or load_env_config()
+    initialized = initialize_docmesh_registry(config=resolved_config)
+    if initialized is None:
+        raise RuntimeError("docmesh registry is unavailable")
+    settings, _ = initialized
+    return settings
+
+
+def load_application_settings(
+    *,
+    config: EnvConfig | None = None,
+    include_docmesh: bool = False,
+) -> ApplicationSettings:
+    resolved_config = config or load_env_config()
+    settings = load_service_settings(resolved_config)
+    docmesh_settings = (
+        load_docmesh_settings(resolved_config) if include_docmesh else None
+    )
+    return ApplicationSettings(
+        config=resolved_config,
+        settings=settings,
+        docmesh_settings=docmesh_settings,
+    )
