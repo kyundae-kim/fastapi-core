@@ -3,7 +3,10 @@ from unittest.mock import MagicMock, patch
 import jwt
 import pytest
 
-from fastapi_core.core.auth import KeycloakAuthProvider
+from fastapi_core.core.auth import (
+    KeycloakAuthProvider,
+    create_keycloak_auth_provider_from_docmesh_config,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -50,6 +53,44 @@ def test_keycloak_auth_provider_url_construction():
         "http://keycloak:8080/realms/myrealm/protocol/openid-connect/certs"
     )
     assert provider.issuer == "http://keycloak:8080/realms/myrealm"
+
+
+def test_create_keycloak_auth_provider_from_docmesh_config_maps_canonical_fields():
+    from docmesh_py_core.config import KeycloakConfig as DocmeshKeycloakConfig
+
+    docmesh_config = DocmeshKeycloakConfig(
+        url="https://keycloak.example.com/",
+        realm="myrealm",
+        client_id="myclient",
+        client_secret="topsecret",
+        client_public=False,
+    )
+
+    provider = create_keycloak_auth_provider_from_docmesh_config(docmesh_config)
+
+    assert isinstance(provider, KeycloakAuthProvider)
+    assert provider.realm == "myrealm"
+    assert provider.client_id == "myclient"
+    assert provider.client_secret == "topsecret"
+    assert provider.token_url == (
+        "https://keycloak.example.com/realms/myrealm/protocol/openid-connect/token"
+    )
+
+
+def test_create_keycloak_auth_provider_from_docmesh_config_rejects_audience_override():
+    from docmesh_py_core.config import KeycloakConfig as DocmeshKeycloakConfig
+
+    docmesh_config = DocmeshKeycloakConfig(
+        url="https://keycloak.example.com/",
+        realm="myrealm",
+        client_id="myclient",
+        client_secret="topsecret",
+        audience="different-audience",
+        client_public=False,
+    )
+
+    with pytest.raises(ValueError, match="audience"):
+        create_keycloak_auth_provider_from_docmesh_config(docmesh_config)
 
 
 # ---------------------------------------------------------------------------

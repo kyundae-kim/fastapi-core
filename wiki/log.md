@@ -279,3 +279,10 @@
 - Synced docs: `docs/config.md`, `docs/api.md`, `wiki/queries/config-duplication-analysis.md`
 - Verification: `uv run pytest -q test_fastapi_core/core/test_config.py test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/routers/test_health.py test_fastapi_core/test_public_api.py` -> `38 passed`
 - Verification: `uv run pytest -q -m 'not integration'` -> `192 passed, 26 deselected`
+
+## [2026-06-24] update | keycloak canonicalization second slice
+- Updated: `fastapi_core/core/auth.py`, `test_fastapi_core/core/test_security.py`, `wiki/queries/config-duplication-analysis.md`
+- Added: `create_keycloak_auth_provider_from_docmesh_config(...)`
+- Guardrail: reject docmesh `audience` override when it differs from `client_id`, because native `KeycloakAuthProvider` cannot represent separate OAuth client id and JWT audience semantics
+- Verification: `uv run pytest -q test_fastapi_core/core/test_security.py test_fastapi_core/dependencies/test_security.py test_fastapi_core/routers/test_auth.py` -> `36 passed`
+- Verification: `uv run pytest -q -m 'not integration'` -> `194 passed, 26 deselected`

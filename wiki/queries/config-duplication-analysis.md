@@ -77,6 +77,13 @@ confidence: medium
 - `fastapi_core.__all__` 에 `KeycloakOverlayConfig` 를 추가했고, `docs/config.md`, `docs/api.md` 에 새 경계를 반영했다.
 - 검증은 `uv run pytest -q test_fastapi_core/core/test_config.py test_fastapi_core/test_docmesh_bridge.py test_fastapi_core/routers/test_health.py test_fastapi_core/test_public_api.py` 에서 `38 passed`, 이어 `uv run pytest -q -m 'not integration'` 에서 `192 passed, 26 deselected` 로 확인했다.
 
+## Implemented keycloak second slice
+- `fastapi_core.core.auth.create_keycloak_auth_provider_from_docmesh_config(...)` 를 추가했다.
+- 이 helper 는 docmesh canonical `KeycloakConfig` 의 `url/realm/client_id/client_secret` 를 native `KeycloakAuthProvider(http_url=...)` 계약으로 변환한다.
+- `audience` 가 `client_id` 와 다르면 native provider가 동일 semantics 를 표현할 수 없으므로 명시적으로 `ValueError` 를 발생시켜 silent mismatch 를 막는다.
+- `test_fastapi_core/core/test_security.py` 에 canonical-config 적응 성공/거부(audience mismatch) 테스트를 추가했다.
+- 검증은 `uv run pytest -q test_fastapi_core/core/test_security.py test_fastapi_core/dependencies/test_security.py test_fastapi_core/routers/test_auth.py` 에서 `36 passed`, 이어 `uv run pytest -q -m 'not integration'` 에서 `194 passed, 26 deselected` 로 확인했다.
+
 ## Related Topics
 - [[layered-configuration-model]] 은 `EnvConfig` 와 `ServiceSettings` 의 책임 분리를 설명한다.
 - [[load-settings-and-settings-model]] 은 docmesh `load_settings()` / `Settings` 와 fastapi-core 이중 레이어의 관계를 설명한다.

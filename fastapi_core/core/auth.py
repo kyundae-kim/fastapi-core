@@ -20,6 +20,26 @@ def _extract_scopes(payload: dict[str, Any]) -> list[str]:
     return scope.split() if scope else []
 
 
+def create_keycloak_auth_provider_from_docmesh_config(
+    keycloak_config: Any,
+) -> "KeycloakAuthProvider":
+    url = str(getattr(keycloak_config, "url", "") or "")
+    realm = str(getattr(keycloak_config, "realm", "") or "")
+    client_id = str(getattr(keycloak_config, "client_id", "") or "")
+    client_secret = getattr(keycloak_config, "client_secret", None)
+    audience = getattr(keycloak_config, "audience", None)
+    if audience is not None and str(audience) != client_id:
+        raise ValueError(
+            "docmesh Keycloak audience override is not compatible with KeycloakAuthProvider"
+        )
+    return KeycloakAuthProvider(
+        http_url=url,
+        realm=realm,
+        client_id=client_id,
+        client_secret=client_secret,
+    )
+
+
 class KeycloakAuthProvider:
     def __init__(
         self,
