@@ -7,10 +7,12 @@ from fastapi_core.core.config import (
     EnvConfig,
     LangfuseConfig,
     MinIOConfig,
+    MilvusConfig,
     ServiceSettings,
     load_application_settings,
     load_docmesh_settings,
     load_service_settings,
+    resolve_milvus_config,
 )
 from fastapi_core.docmesh_bridge import is_docmesh_available
 
@@ -158,3 +160,46 @@ def test_load_application_settings_can_include_real_docmesh_settings():
     from docmesh_py_core import Settings
 
     assert isinstance(bundle.docmesh_settings, Settings)
+
+
+def test_resolve_milvus_config_prefers_docmesh_settings():
+    config = EnvConfig(
+        milvus=MilvusConfig(
+            uri="http://native:19530",
+            db_name="native",
+            token="native-token",
+            timeout=1,
+        )
+    )
+
+    class _DocmeshMilvus:
+        uri = "http://docmesh:19530"
+        db_name = "docmesh-db"
+        token = "docmesh-token"
+        request_timeout_seconds = 17
+
+    class _DocmeshSettings:
+        milvus = _DocmeshMilvus()
+
+    resolved = resolve_milvus_config(config, docmesh_settings=_DocmeshSettings())
+
+    assert isinstance(resolved, MilvusConfig)
+    assert resolved.uri == "http://docmesh:19530"
+    assert resolved.db_name == "docmesh-db"
+    assert resolved.token == "docmesh-token"
+    assert resolved.timeout == 17
+
+
+def test_resolve_milvus_config_falls_back_to_native_config():
+    config = EnvConfig(
+        milvus=MilvusConfig(
+            uri="http://native:19530",
+            db_name="native",
+            token="native-token",
+            timeout=1,
+        )
+    )
+
+    resolved = resolve_milvus_config(config)
+
+    assert resolved is config.milvus

@@ -205,6 +205,28 @@ def load_docmesh_settings(config: EnvConfig | None = None) -> Any:
     return settings
 
 
+def _adapt_docmesh_milvus_config(docmesh_milvus: Any) -> MilvusConfig:
+    return MilvusConfig(
+        uri=str(getattr(docmesh_milvus, "uri", MilvusConfig().uri)),
+        db_name=str(getattr(docmesh_milvus, "db_name", MilvusConfig().db_name)),
+        token=(getattr(docmesh_milvus, "token", MilvusConfig().token) or ""),
+        timeout=getattr(docmesh_milvus, "request_timeout_seconds", None),
+    )
+
+
+def resolve_milvus_config(
+    config: EnvConfig,
+    *,
+    docmesh_settings: Any | None = None,
+) -> MilvusConfig:
+    resolved_docmesh_settings = docmesh_settings
+    if resolved_docmesh_settings is not None:
+        docmesh_milvus = getattr(resolved_docmesh_settings, "milvus", None)
+        if docmesh_milvus is not None:
+            return _adapt_docmesh_milvus_config(docmesh_milvus)
+    return config.milvus
+
+
 def load_application_settings(
     *,
     config: EnvConfig | None = None,

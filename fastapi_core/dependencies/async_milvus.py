@@ -5,11 +5,18 @@ from fastapi.params import Depends as DependsParam
 from pymilvus import AsyncMilvusClient
 
 from fastapi_core.bootstrap import get_or_create_state_value_async, set_state_value_async
-from fastapi_core.core.config import EnvConfig
+from fastapi_core.core.config import EnvConfig, resolve_milvus_config
 from fastapi_core.core.milvus import create_async_milvus_client
 from fastapi_core.dependencies.config import get_config
 
 _ASYNC_MILVUS_CLIENT_STATE_KEY = "async_milvus_client"
+
+
+def _resolve_async_milvus_config(app: FastAPI, config: EnvConfig):
+    return resolve_milvus_config(
+        config,
+        docmesh_settings=getattr(app.state, "docmesh_settings", None),
+    )
 
 
 async def set_async_milvus_client(
@@ -21,7 +28,7 @@ async def set_async_milvus_client(
     if client is None:
         if config is None:
             raise ValueError("Either client or config must be provided")
-        client = create_async_milvus_client(config.milvus)
+        client = create_async_milvus_client(_resolve_async_milvus_config(app, config))
     await set_state_value_async(app, _ASYNC_MILVUS_CLIENT_STATE_KEY, client)
 
 
@@ -33,7 +40,9 @@ async def get_async_milvus_client(
         resolved_config = config
         if isinstance(resolved_config, DependsParam):
             resolved_config = get_config(request)
-        return create_async_milvus_client(resolved_config.milvus)
+        return create_async_milvus_client(
+            _resolve_async_milvus_config(request.app, resolved_config)
+        )
 
     return await get_or_create_state_value_async(
         request.app, _ASYNC_MILVUS_CLIENT_STATE_KEY, factory

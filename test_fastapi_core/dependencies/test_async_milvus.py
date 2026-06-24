@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -67,6 +68,47 @@ class TestGetAsyncMilvusClient:
         assert response.json()["id"] == id(mock_client)
         assert app.state.async_milvus_client is mock_client
 
+    @pytest.mark.asyncio
+    async def test_prefers_docmesh_settings_adapter_when_present(self):
+        app = FastAPI()
+        mock_client = MagicMock(spec=AsyncMilvusClient)
+        mock_config = MagicMock()
+        mock_config.milvus = MilvusConfig(
+            uri="http://native:19530",
+            db_name="native",
+            token="native-token",
+            timeout=1,
+        )
+        app.state.docmesh_settings = SimpleNamespace(
+            milvus=SimpleNamespace(
+                uri="http://docmesh:19530",
+                db_name="docmesh-db",
+                token="docmesh-token",
+                request_timeout_seconds=17,
+            )
+        )
+        app.dependency_overrides[get_config] = lambda: mock_config
+
+        @app.get("/client-id")
+        async def client_id(client: AsyncMilvusClient = Depends(get_async_milvus_client)):
+            return {"id": id(client)}
+
+        with patch(
+            "fastapi_core.dependencies.async_milvus.create_async_milvus_client",
+            return_value=mock_client,
+        ) as mock_create:
+            client = TestClient(app)
+            response = client.get("/client-id")
+
+        adapted_config = mock_create.call_args.args[0]
+        assert isinstance(adapted_config, MilvusConfig)
+        assert adapted_config.uri == "http://docmesh:19530"
+        assert adapted_config.db_name == "docmesh-db"
+        assert adapted_config.token == "docmesh-token"
+        assert adapted_config.timeout == 17
+        assert response.status_code == 200
+        assert response.json()["id"] == id(mock_client)
+
 
 class TestSetAsyncMilvusClient:
     @pytest.mark.asyncio
@@ -92,6 +134,40 @@ class TestSetAsyncMilvusClient:
             await set_async_milvus_client(app, config=mock_config)
 
         mock_create.assert_called_once_with(mock_config.milvus)
+        assert app.state.async_milvus_client is mock_client
+
+    @pytest.mark.asyncio
+    async def test_prefers_docmesh_settings_adapter_when_present(self):
+        app = FastAPI()
+        mock_client = MagicMock(spec=AsyncMilvusClient)
+        mock_config = MagicMock()
+        mock_config.milvus = MilvusConfig(
+            uri="http://native:19530",
+            db_name="native",
+            token="native-token",
+            timeout=1,
+        )
+        app.state.docmesh_settings = SimpleNamespace(
+            milvus=SimpleNamespace(
+                uri="http://docmesh:19530",
+                db_name="docmesh-db",
+                token="docmesh-token",
+                request_timeout_seconds=17,
+            )
+        )
+
+        with patch(
+            "fastapi_core.dependencies.async_milvus.create_async_milvus_client",
+            return_value=mock_client,
+        ) as mock_create:
+            await set_async_milvus_client(app, config=mock_config)
+
+        adapted_config = mock_create.call_args.args[0]
+        assert isinstance(adapted_config, MilvusConfig)
+        assert adapted_config.uri == "http://docmesh:19530"
+        assert adapted_config.db_name == "docmesh-db"
+        assert adapted_config.token == "docmesh-token"
+        assert adapted_config.timeout == 17
         assert app.state.async_milvus_client is mock_client
 
     @pytest.mark.asyncio
