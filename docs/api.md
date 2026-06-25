@@ -1,555 +1,279 @@
 # fastapi-core API Reference
 
-> 문서 목적: `fastapi-core`가 외부 FastAPI 서비스에 제공해야 하는 공개 Python API를 정의한다.
+> 문서 목적: `fastapi-core`의 **FastAPI 공개 표면**을 문서화한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`
-> 문서 상태: 초안(v0.1)
+> 문서 상태: 초안(v0.2)
 
 ---
 
 ## 1. 문서 개요
 
-- 문서명: `fastapi-core API Reference`
-- 작성일: `2026-06-25`
-- 작성자: `Hermes Agent 초안 / 사용자 검토 필요`
-- 버전: `v0.1`
-- 상태: `draft`
+이 문서는 외부 서비스 SDK 래퍼보다, FastAPI 서비스 작성자가 직접 사용하는 API를 우선 설명한다.
 
-### 1.1 범위
+핵심 범주는 다음과 같다.
 
-이 문서는 `fastapi-core` 패키지 루트에서 소비 가능한 공개 API를 중심으로 설명한다. 여기에는 설정 로딩, 서비스 클라이언트 생성, 인증, 헬스체크, 유틸리티, 메시징 builder, 프로비저닝 진입점이 포함된다.
-
-### 1.2 비범위
-
-- 내부 구현 세부 클래스의 private 메서드
-- 각 외부 서비스 SDK의 원본 API 전체
-- 개별 FastAPI 애플리케이션의 엔드포인트 정의
+- app factory
+- router
+- dependency
+- schema
+- 설정/인증/메시징과의 통합 지점
 
 ---
 
-## 2. Public imports
+## 2. Entry point
 
-패키지 루트에서 다음 공개 API를 import할 수 있어야 한다.
+`pyproject.toml` 기준 FastAPI entrypoint:
 
-```python
-from fastapi_core import (
-    AccessTokenResult,
-    AuthenticatedUser,
-    ConfigError,
-    HealthCheckError,
-    KeycloakAuthService,
-    KeycloakProvisioner,
-    NatsConnectionBuilder,
-    Page,
-    ServiceClientError,
-    ServiceClientWrapper,
-    ServiceClientWrapperError,
-    ServiceFactoryRegistry,
-    Settings,
-    SqliteConfig,
-    TokenValidationError,
-    UnsupportedServiceError,
-    build_service_log_event,
-    build_settings_snapshot,
-    check_all_services,
-    load_settings,
-    mask_sensitive_value,
-    retry_call,
-    to_serializable,
-)
+```toml
+[tool.fastapi]
+entrypoint = "fastapi_core.factory:create_app"
 ```
 
-> 참고: 위 목록은 현재 PRD/SRS와 ingest된 `docmesh-py-core` API 패턴을 기준으로 한 초안이다. 실제 구현 시 공개 범위는 코드와 함께 확정되어야 한다.
+즉, 이 패키지의 1차 공개 표면은 `create_app`이다.
 
 ---
 
-## 3. Settings API
+## 3. App factory API
 
-## 3.1 `load_settings(env) -> Settings`
+## 3.1 `create_app(config=None, settings=None, lifespan=None, include_auth_router=True) -> FastAPI`
 
-환경변수 매핑에서 전체 설정을 읽고 검증한다.
+공통 FastAPI 애플리케이션을 생성한다.
 
 ### 입력
-- `env`: dict-like 환경변수 매핑
+- `config`: 환경/런타임 설정 객체 또는 None
+- `settings`: 서비스 설정 객체 또는 None
+- `lifespan`: 사용자 정의 FastAPI lifespan 또는 None
+- `include_auth_router`: auth router 포함 여부
 
-### 출력
-- `Settings`: 최상위 설정 객체
+### 기본 동작
+- 설정이 없으면 기본 설정 객체를 생성한다.
+- logging을 초기화한다.
+- `FastAPI(root_path=..., lifespan=...)` 인스턴스를 만든다.
+- CORS middleware를 등록한다.
+- auth 예외 핸들러를 등록한다.
+- health router를 포함한다.
+- 옵션에 따라 auth router를 포함한다.
 
-### 동작
-- 공통 및 서비스별 환경변수를 읽는다.
-- 빈 문자열을 미설정으로 처리한다.
-- Boolean/숫자형 값을 검증 및 변환한다.
-- 필수/선택/조건부 필수 규칙을 검증한다.
-
-### 예외
-- `ConfigError`: 필수값 누락, 타입 오류, 범위 오류, 조건부 필수 규칙 위반
-
-### 예시
-
-```python
-from os import environ
-from fastapi_core import load_settings
-
-settings = load_settings(environ)
-print(settings.common.env)
-```
-
----
-
-## 3.2 `Settings`
-
-패키지의 최상위 설정 객체다.
-
-### 주요 하위 설정
-- `settings.common`
-- `settings.keycloak`
-- `settings.postgres`
-- `settings.sqlite`
-- `settings.minio`
-- `settings.milvus`
-- `settings.ollama`
-- `settings.langfuse`
-- `settings.nats`
-
-### 요구 특성
-- 서비스별 설정을 타입 안전한 구조로 제공해야 한다.
-- 민감정보 포함 여부를 고려해 스냅샷 생성 시 마스킹 가능해야 한다.
-
----
-
-## 3.3 `SqliteConfig`
-
-SQLite 전용 설정 객체다.
-
-### 대표 속성
-- `path`
-- `readonly`
-- `enable_wal`
-- `busy_timeout_ms`
-
-### 사용 목적
-- 로컬 개발
-- 단위 테스트
-- 경량 통합 테스트
-
----
-
-## 4. Client factory API
-
-## 4.1 `ServiceFactoryRegistry(settings)`
-
-외부 서비스 클라이언트를 생성하는 중앙 진입점이다.
-
-### 생성자 입력
-- `settings`: `Settings`
-
-### 주요 메서드
-- `create_client(service_name)`
-- `create_clients(services)`
-- `close_all()`
-
-### 지원 서비스명
-- `keycloak`
-- `postgres`
-- `sqlite`
-- `minio`
-- `milvus`
-- `ollama`
-- `langfuse`
-- `nats`
-
-### 반환 타입
-
-| 서비스 | 반환값 |
-| --- | --- |
-| `keycloak` | `ServiceClientWrapper` |
-| `postgres` | `ServiceClientWrapper` |
-| `sqlite` | `ServiceClientWrapper` |
-| `minio` | `ServiceClientWrapper` |
-| `milvus` | `ServiceClientWrapper` |
-| `ollama` | `ServiceClientWrapper` |
-| `langfuse` | `ServiceClientWrapper | None` |
-| `nats` | `NatsConnectionBuilder` |
-
-### 예외
-- `UnsupportedServiceError`
-- `ServiceClientWrapperError`
-- `ServiceClientError`
+### 반환값
+- `FastAPI`
 
 ### 예시
 
 ```python
-from os import environ
-from fastapi_core import load_settings, ServiceFactoryRegistry
+from fastapi_core.factory import create_app
 
-settings = load_settings(environ)
-registry = ServiceFactoryRegistry(settings)
-postgres = registry.create_client("postgres")
-postgres.check()
-registry.close_all()
+app = create_app()
 ```
 
 ---
 
-## 4.2 `ServiceClientWrapper`
+## 4. Router API
 
-공통 `check()` / `close()` 인터페이스를 제공하는 서비스 래퍼다.
+## 4.1 Auth router
 
-### 목적
-- 서비스별 클라이언트의 공통 수명주기 노출
-- 호출부의 서비스 종속 로직 감소
+태그: `auth`
 
-### 공통 메서드
-- `check()`
-- `close()`
+### `POST /token`
 
-### 예시
+사용자명/비밀번호 폼을 받아 access token을 발급한다.
 
-```python
-client = registry.create_client("sqlite")
-client.check()
-client.close()
+#### 입력
+- `OAuth2PasswordRequestForm`
+
+#### 응답 모델
+- `TokenResponse`
+
+#### 성공 응답 예시
+
+```json
+{
+  "access_token": "...",
+  "refresh_token": "...",
+  "token_type": "bearer"
+}
 ```
 
-### 기본 `check()` 기대 동작
+#### 실패
+- 401 Unauthorized
+- `WWW-Authenticate: Bearer`
 
-| 서비스 | 기본 확인 |
-| --- | --- |
-| Keycloak | `fetch_access_token()` |
-| PostgreSQL | `SELECT 1` |
-| SQLite | `SELECT 1` |
-| MinIO | `list_buckets()` |
-| Milvus | `list_collections()` |
-| Ollama | `ps()` |
-| Langfuse | `auth_check()` |
+### `GET /user`
+
+현재 인증된 사용자 정보를 반환한다.
+
+#### 응답 모델
+- `UserInfo`
 
 ---
 
-## 4.3 `NatsConnectionBuilder`
+## 4.2 Health router
 
-NATS 연결용 비동기 builder다.
+prefix: `/health`
+tag: `health`
+
+### `GET /health/liveness`
+
+프로세스 생존 여부를 확인한다.
+
+#### 응답 모델
+- `HealthResponse`
+
+#### 예시
+
+```json
+{
+  "status": "ok"
+}
+```
+
+### `GET /health/readiness`
+
+외부 의존성 준비 상태를 확인한다.
+
+#### 응답 모델
+- `HealthResponse`
+
+#### 실패
+- 503 Service Unavailable
+
+---
+
+## 5. Dependency API
+
+## 5.1 `get_config()`
+
+캐시 가능한 환경 설정 객체를 반환한다.
 
 ### 특징
-- `create_client("nats")`의 반환값
-- 실제 연결은 `await connect()` 또는 `await check()`로 수행
-- user/password, token, creds file 인증 중 하나를 사용 가능해야 함
+- FastAPI dependency로 사용 가능
+- 요청 간 재사용 가능
+
+## 5.2 `get_settings(config: EnvConfig | None = None)`
+
+서비스 설정 객체를 반환한다.
+
+## 5.3 `get_auth_provider(request, config=Depends(get_config))`
+
+auth provider를 반환한다.
+
+### 동작
+- `app.state`에 provider가 있으면 그것을 사용한다.
+- 없으면 설정 기반 기본 provider를 생성한다.
+
+## 5.4 `get_current_user(token=Depends(oauth2_scheme), provider=Depends(get_auth_provider), settings=Depends(get_settings))`
+
+현재 사용자 정보를 반환한다.
+
+### 동작
+- bearer token이 없으면 401
+- 설정에 따라 secure/insecure decode 분기
+- decode 결과를 `UserInfo`로 변환
+
+### 반환값
+- `UserInfo`
+
+## 5.5 `require_permissions(*roles)`
+
+역할 검사용 dependency factory.
+
+### 동작
+- 지정한 role이 없으면 403
+- 있으면 현재 user 반환
 
 ### 예시
 
 ```python
-from os import environ
-from fastapi_core import load_settings, ServiceFactoryRegistry
+from fastapi import Depends
+from fastapi_core.dependencies.auth import require_permissions
 
-settings = load_settings(environ)
-registry = ServiceFactoryRegistry(settings)
-builder = registry.create_client("nats")
-
-# async context에서 사용
-# await builder.check()
+@router.get("/admin")
+def admin_only(user=Depends(require_permissions("admin"))):
+    return {"ok": True}
 ```
 
 ---
 
-## 5. Health API
+## 6. Schema API
 
-## 5.1 `check_all_services(service_checks, required_services=None, parallel=False)`
-
-여러 서비스의 헬스체크를 집계 실행한다.
-
-### 입력
-- `service_checks`: `{service_name: callable}` 형태의 매핑
-- `required_services`: 필수 서비스명 집합 또는 None
-- `parallel`: 병렬 실행 여부
-
-### 출력
-집계 결과는 최소 다음 정보를 포함해야 한다.
-
-- 전체 성공 여부
-- 서비스별 성공 여부
-- 서비스별 지연 시간
-- 마스킹된 오류 메시지
-
-### 예외
-- `HealthCheckError`: 필수 서비스 실패 시
-
-### 예시
+## 6.1 `TokenResponse`
 
 ```python
-result = check_all_services(
-    {
-        "postgres": postgres.check,
-        "minio": minio.check,
-    },
-    required_services={"postgres"},
-    parallel=True,
-)
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str | None = None
+    token_type: str = "bearer"
 ```
 
-### 동작 정책
-- 필수 서비스와 선택 서비스를 구분해야 한다.
-- `parallel=True`일 때 병렬 실행을 지원해야 한다.
-- 오류 메시지는 민감정보가 마스킹되어야 한다.
+## 6.2 `UserInfo`
+
+```python
+class UserInfo(BaseModel):
+    sub: str
+    username: str
+    email: str | None = None
+    name: str | None = None
+    roles: list[str] = []
+    scopes: list[str] = []
+```
+
+## 6.3 `HealthResponse`
+
+```python
+class HealthResponse(BaseModel):
+    status: str
+```
 
 ---
 
-## 6. Keycloak API
+## 7. FastAPI security model
 
-## 6.1 `KeycloakAuthService(settings, allowed_algorithms=None)`
-
-Keycloak 인증 관련 고수준 진입점이다.
-
-### 제공 기능
-- Access Token 획득
-- JWT 검증
-- 사용자 정보 및 역할 추출
-
-### 생성자 입력
-- `settings`: `Settings`
-- `allowed_algorithms`: 허용 알고리즘 목록 또는 None
+- OAuth2 bearer 기반
+- `OAuth2PasswordBearer(tokenUrl="/token", auto_error=False)` 사용
+- token 미제공: 401
+- 권한 부족: 403
+- auth router와 dependency 계층이 동일한 user/auth 모델을 공유
 
 ---
 
-## 6.2 `fetch_access_token(scope=None) -> AccessTokenResult`
+## 8. Lifespan / integration points
 
-Keycloak token endpoint에서 access token을 요청한다.
+`create_app(..., lifespan=...)`는 외부 의존성 초기화를 FastAPI 수명주기와 연결하는 핵심 진입점이다.
 
-### 입력
-- `scope`: 선택적 scope 문자열
-
-### 기본 특성
-- 기본 grant: `client_credentials`
-- 선택적 `scope` 전달 지원
-- 명시적 설정 시 `password` grant 지원 가능
-
-### 반환 필드
-- `access_token`
-- `token_type`
-- `expires_in`
-- `refresh_token`
-- `scope`
-
-### 대표 예외
-- `KeycloakTokenConfigurationError` 또는 `ConfigError`
-- `KeycloakTokenAuthenticationError`
-- `KeycloakTokenTemporaryError`
-- `ServiceClientError`
-
----
-
-## 6.3 `extract_user_info(token) -> AuthenticatedUser`
-
-JWT를 검증한 뒤 표준 사용자 정보를 반환한다.
-
-### 입력
-- raw JWT 문자열
-- `Bearer <token>` 형식 문자열
-
-### 검증 항목
-- 서명
-- 만료 시간
-- issuer
-- 선택적 audience
-- 허용 알고리즘
-
-### 반환 필드
-- `sub`
-- `preferred_username`
-- `email`
-- `given_name` (있을 수 있음)
-- `family_name` (있을 수 있음)
-- `name`
-- `realm_roles`
-- `client_roles`
-- `claims`
-
-### 예외
-- `TokenValidationError`
-
----
-
-## 6.4 `AccessTokenResult`
-
-토큰 응답 객체다.
-
-### 대표 필드
-- `access_token`
-- `token_type`
-- `expires_in`
-- `refresh_token`
-- `scope`
-
----
-
-## 6.5 `AuthenticatedUser`
-
-검증된 토큰에서 추출한 사용자 정보 객체다.
-
-### 대표 필드
-- `sub`
-- `preferred_username`
-- `email`
-- `name`
-- `realm_roles`
-- `client_roles`
-- `claims`
-
----
-
-## 6.6 `KeycloakProvisioner`
-
-Keycloak Realm/Client/Role을 선언형으로 생성/갱신하는 프로비저너다.
-
-### 주요 특징
-- 멱등 실행
-- Dry-run 지원
-- 생성/갱신/변경 없음/실패 구분
-- 선언에서 제거된 리소스 자동 삭제 없음
-
-### 운영 조건
-- `KEYCLOAK_PROVISIONING_ENABLED=true`일 때 관련 설정 검증이 필요함
-- 관리자 인증정보가 조건부 필수일 수 있음
-
----
-
-## 7. Utility API
-
-## 7.1 `mask_sensitive_value(raw)`
-
-민감값을 마스킹한다.
-
-### 마스킹 대상 예시
-- password
-- token
-- secret
-- 전체 DSN/URI
-
-### 기대 동작
-- 원문 노출 없이 운영 분석 가능한 수준의 형태 유지
-
----
-
-## 7.2 `build_service_log_event(...)`
-
-서비스 연결/헬스체크/재시도 이벤트를 구조화된 dict로 생성한다.
-
-### 사용 목적
-- 구조화 로그
-- 운영 이벤트 추적
-- 장애 분석 보조
-
----
-
-## 7.3 `retry_call(operation, ..., retry_on, max_attempts)`
-
-일시적 오류에 대해 동기 함수를 재시도한다.
-
-### 입력 개념
-- `operation`: 실행할 호출 가능 객체
-- `retry_on`: 재시도 대상 오류 타입 또는 조건
-- `max_attempts`: 최대 시도 횟수
-
-### 사용 목적
-- 외부 서비스 일시 오류 완화
-- 공통 retry 정책 재사용
-
----
-
-## 7.4 `to_serializable(value)`
-
-복합 값을 JSON 친화 구조로 변환한다.
-
-### 지원 대상 예시
-- dataclass
-- 모델 객체
-- datetime
-- nested container
-
----
-
-## 7.5 `build_settings_snapshot(settings)`
-
-민감정보가 마스킹된 설정 스냅샷을 생성한다.
-
-### 목적
-- 진단용 출력
-- 운영 상태 점검
-- 설정 비교
-
-### 주의사항
-- secret/token/password/전체 DSN·URI는 마스킹되어야 한다.
-
----
-
-## 7.6 `Page`
-
-공통 페이지네이션 표현용 타입이다.
-
-### 사용 목적
-- 목록 API/쿼리 결과의 페이지 표현 통일
-
----
-
-## 8. Error model
-
-시스템은 최소 다음 오류 범주를 제공하거나 구분 가능해야 한다.
-
-- `ConfigError`
-- `TokenValidationError`
-- `HealthCheckError`
-- `UnsupportedServiceError`
-- `ServiceClientError`
-- `ServiceClientWrapperError`
-- `KeycloakTokenAuthenticationError`
-- `KeycloakTokenConfigurationError`
-- `KeycloakTokenTemporaryError`
-
-### 오류 메시지 원칙
-- 어떤 서비스 또는 환경변수가 문제인지 식별 가능해야 한다.
-- 민감정보를 포함하면 안 된다.
-- 호출자가 대응할 수 있는 수준의 오류 의미를 제공해야 한다.
+대표 용도:
+- startup에서 NATS 연결
+- shutdown에서 외부 자원 정리
+- app.state에 provider/registry 주입
 
 ---
 
 ## 9. Minimal usage examples
 
-## 9.1 설정 로딩과 registry 생성
+### 9.1 기본 앱 생성
 
 ```python
-from os import environ
-from fastapi_core import load_settings, ServiceFactoryRegistry
+from fastapi_core.factory import create_app
 
-settings = load_settings(environ)
-registry = ServiceFactoryRegistry(settings)
+app = create_app()
 ```
 
-## 9.2 헬스체크 집계
+### 9.2 auth router 제외
 
 ```python
-postgres = registry.create_client("postgres")
-minio = registry.create_client("minio")
-
-result = check_all_services(
-    {
-        "postgres": postgres.check,
-        "minio": minio.check,
-    },
-    required_services={"postgres"},
-    parallel=True,
-)
+app = create_app(include_auth_router=False)
 ```
 
-## 9.3 Keycloak 토큰 검증
+### 9.3 현재 사용자 주입
 
 ```python
-auth = KeycloakAuthService(settings)
-user = auth.extract_user_info("Bearer <token>")
-print(user.preferred_username)
-```
+from fastapi import APIRouter, Depends
+from fastapi_core.dependencies.auth import get_current_user
+from fastapi_core.schemas.user import UserInfo
 
-## 9.4 설정 스냅샷
+router = APIRouter()
 
-```python
-snapshot = build_settings_snapshot(settings)
-print(snapshot)
+@router.get("/me")
+def me(user: UserInfo = Depends(get_current_user)):
+    return user
 ```
 
 ---
@@ -558,15 +282,12 @@ print(snapshot)
 
 - `docs/prd.md`
 - `docs/srs.md`
-- `README.md`
-- `wiki/entities/docmesh-py-core.md`
-- `wiki/concepts/service-factory-registry.md`
-- `wiki/concepts/service-health-check-aggregation.md`
-- `wiki/concepts/keycloak-authentication-api.md`
-- `wiki/concepts/service-configuration-contracts.md`
+- `docs/config.md`
+- `docs/messaging.md`
+- `pyproject.toml`
 
 ---
 
 ## 부록 A. 문서 상태 메모
 
-이 초안은 현재 확인 가능한 PRD/SRS 및 wiki에 ingest된 `docmesh-py-core` API/config 내용을 바탕으로 작성되었다. 실제 구현 코드가 준비되면 import 경로, 예외 클래스명, 반환 타입 상세 스키마를 코드 기준으로 다시 맞춰야 한다.
+이 문서는 배포 산출물에 포함된 FastAPI 계층(`factory.py`, `routers`, `dependencies`, `schemas`)을 기준으로 다시 작성했다. 서비스 클라이언트 레지스트리보다 FastAPI app surface를 우선 공개 API로 취급한다.

@@ -1,7 +1,7 @@
 # fastapi-core 제품 요구사항 정의서 (PRD)
 
-> 문서 목적: DocMesh 프로젝트의 FastAPI 기반 마이크로서비스들이 공통으로 사용하는 backend SDK인 `fastapi-core`의 제품 요구사항을 정의한다.
-> 문서 상태: 초안(v0.1)
+> 문서 목적: `fastapi-core`를 **FastAPI 애플리케이션 조립용 공통 코어**로 정의한다.
+> 문서 상태: 초안(v0.2)
 
 ---
 
@@ -10,21 +10,28 @@
 - 문서명: `fastapi-core 제품 요구사항 정의서`
 - 작성일: `2026-06-25`
 - 작성자: `Hermes Agent 초안 / 사용자 검토 필요`
-- 버전: `v0.1`
+- 버전: `v0.2`
 - 상태: `draft`
 
 ### 1.1 배경
 
-DocMesh 프로젝트 내 여러 FastAPI 서비스는 공통적으로 인증/인가, 데이터베이스 연결, 오브젝트 스토리지, 벡터 데이터베이스, 로컬 LLM, 관측/트레이싱, 메시징 같은 인프라 의존성을 사용한다. 이러한 공통 기능을 서비스마다 개별 구현하면 설정 형식, 보안 처리, 연결 수명주기, 헬스체크 방식, 오류 모델이 제각각이 되어 유지보수 비용과 운영 리스크가 커진다.
+`fastapi-core`는 단순한 인프라 SDK 문서 묶음이 아니라, **DocMesh 계열 FastAPI 서비스가 공통으로 사용하는 애플리케이션 코어**여야 한다. 실제 패키지 메타데이터와 배포 산출물 기준으로 이 프로젝트는 FastAPI 의존성을 가지며, `fastapi_core.factory:create_app`를 엔트리포인트로 사용하고, 공통 router / dependency / schema 계층을 포함한다.
 
-`fastapi-core`는 이러한 반복 구현을 줄이고, 공통 SDK를 통해 서비스 초기화/설정/인증/운영 진단을 표준화하기 위한 제품이다.
+즉 이 프로젝트의 핵심 가치는 단순히 Keycloak·DB·NATS 같은 외부 의존성에 연결하는 것이 아니라, 다음을 서비스마다 반복 구현하지 않도록 만드는 데 있다.
+
+- FastAPI 앱 초기화
+- 공통 CORS / 예외 핸들러 설정
+- 인증 라우터와 헬스 라우터 등록
+- 인증 dependency / current user 해석
+- Pydantic 응답 스키마 표준화
+- startup / shutdown 수명주기와 외부 의존성 연결의 결합
 
 ### 1.2 문제 정의
 
-- 서비스마다 인증/설정/헬스체크/외부 연동 구현이 중복될 수 있다.
-- 외부 서비스 연결 방식과 오류 처리 규칙이 통일되지 않으면 서비스 간 품질 편차가 커진다.
-- 운영 환경별 설정과 보안 요구사항이 문서화·검증되지 않으면 장애 및 보안 사고 가능성이 높아진다.
-- 신규 서비스 개발 시 팀이 공통 인프라 연결 코드를 반복 작성하게 되어 개발 속도가 느려진다.
+- 서비스마다 `FastAPI()` 초기화와 middleware / router 조립이 중복될 수 있다.
+- 인증 라우터(`/token`, `/user`)와 health 라우터(`/health/liveness`, `/health/readiness`)의 동작이 서비스별로 달라질 수 있다.
+- `Depends(...)` 기반 인증/설정 dependency가 서비스마다 달라지면 보안과 유지보수 품질이 흔들린다.
+- 외부 인프라 연결 규칙은 공유하더라도, FastAPI 계층이 표준화되지 않으면 실제 서비스 개발 생산성은 충분히 올라가지 않는다.
 
 ---
 
@@ -32,19 +39,20 @@ DocMesh 프로젝트 내 여러 FastAPI 서비스는 공통적으로 인증/인�
 
 ### 2.1 목표
 
-- FastAPI 기반 서비스가 공통 SDK를 통해 인증, 설정, 서비스 연결, 헬스체크, 운영 유틸리티를 표준 방식으로 사용할 수 있어야 한다.
-- 외부 서비스 통합에 필요한 환경변수 계약을 명확히 제공하고 검증할 수 있어야 한다.
-- Keycloak, PostgreSQL, SQLite, MinIO, Milvus, Ollama, Langfuse, NATS 등 주요 의존성을 일관된 방식으로 초기화하고 진단할 수 있어야 한다.
-- 민감정보 마스킹, TLS 기본값, 필수/선택 서비스 구분 등 운영 보안 기본 원칙을 제품 레벨에서 제공해야 한다.
-- 신규 서비스가 중복 구현 없이 빠르게 시작할 수 있는 공통 기반을 제공해야 한다.
+- FastAPI 서비스가 `create_app(...)` 중심의 공통 앱 조립 경로를 사용할 수 있어야 한다.
+- 공통 auth / health router를 재사용 가능해야 한다.
+- 공통 dependency(`get_config`, `get_settings`, `get_auth_provider`, `get_current_user`, `require_permissions`)를 제공해야 한다.
+- 공통 응답 스키마(`TokenResponse`, `UserInfo`, `HealthResponse`)를 제공해야 한다.
+- 설정/인증/메시징/스토리지 같은 인프라 기능이 FastAPI startup/shutdown 및 request lifecycle과 자연스럽게 통합되어야 한다.
+- py-core 계층의 재사용과 별개로, FastAPI 서비스 작성자가 바로 사용할 수 있는 **웹 애플리케이션 표면**을 제공해야 한다.
 
 ### 2.2 비목표
 
-- 개별 마이크로서비스의 도메인 비즈니스 로직 제공
-- 프론트엔드/UI 경험 설계
-- 모든 서비스의 세부 배포 파이프라인 직접 구현
-- 각 외부 시스템 자체(Keycloak, Milvus 등)의 운영 자동화 전체를 대체하는 것
-- 장기적으로 필요한 모든 플랫폼 기능을 이번 버전에서 한 번에 제공하는 것
+- 개별 도메인 서비스의 비즈니스 endpoint 제공
+- 서비스별 domain schema 전체 통합
+- UI / 프론트엔드 제공
+- 각 외부 시스템의 전체 관리자 기능 제공
+- 모든 조직의 API 정책을 한 번에 일반화하는 것
 
 ---
 
@@ -52,16 +60,15 @@ DocMesh 프로젝트 내 여러 FastAPI 서비스는 공통적으로 인증/인�
 
 ### 3.1 대상 사용자
 
-- 1차 사용자: DocMesh FastAPI 서비스 개발자
-- 2차 사용자: 플랫폼/인프라 엔지니어
-- 3차 사용자: QA 및 운영 담당자
+- 1차 사용자: FastAPI 마이크로서비스 개발자
+- 2차 사용자: 플랫폼/백엔드 공통 모듈 유지보수자
+- 3차 사용자: 운영/QA 담당자
 
 ### 3.2 이해관계자
 
-- 제품/기획: 공통 백엔드 플랫폼 방향을 정의하는 담당자
-- 백엔드: 서비스 개발팀 및 SDK 유지보수 담당자
-- 플랫폼/DevOps: 환경변수, secret, 배포 정책 운영 담당자
-- 보안/운영: 인증, secret 처리, TLS, 운영 감사 기준 담당자
+- 백엔드 플랫폼 담당자
+- 개별 FastAPI 서비스 개발팀
+- 운영/보안 담당자
 
 ---
 
@@ -69,345 +76,127 @@ DocMesh 프로젝트 내 여러 FastAPI 서비스는 공통적으로 인증/인�
 
 ### 4.1 포함 범위
 
-- FastAPI 서비스 공통 SDK 형태의 Python 패키지 제공
-- 환경변수 기반 설정 로딩 및 검증
-- Keycloak 기반 인증/인가 관련 공통 API
-- 서비스별 클라이언트 생성 registry 제공
-- 서비스별 헬스체크와 집계형 헬스체크 API 제공
-- 민감정보 마스킹, 설정 스냅샷, 직렬화, 재시도 같은 공통 운영 유틸리티 제공
-- 다음 외부 의존성에 대한 표준 통합 진입점 제공:
-  - Keycloak
-  - PostgreSQL
-  - SQLite
-  - MinIO
-  - Milvus
-  - Ollama
-  - Langfuse
-  - NATS
+- FastAPI 앱 팩토리 제공 (`create_app`)
+- CORS middleware 설정
+- 공통 auth router 제공
+- 공통 health router 제공
+- 공통 dependency 제공
+- 공통 Pydantic schema 제공
+- Keycloak 인증 연동
+- 설정 로딩 및 검증
+- 서비스별 인프라 연결 보조
+- NATS 등 비동기 통합의 startup/lifespan 연계 기반 제공
 
 ### 4.2 제외 범위
 
-- 개별 서비스의 엔드포인트 구현
-- 개별 서비스의 도메인 데이터 모델 설계
-- UI/웹 콘솔 제공
-- 각 외부 시스템의 전체 관리자 콘솔 기능 대체
-- 배포 플랫폼별 IaC 세부 구현
+- 서비스별 비즈니스 라우터 구현
+- 서비스별 도메인 모델 정의
+- 조직별 API 게이트웨이 정책 구현
+- OpenAPI 문서 커스터마이징 전부 자동화
 
 ---
 
-## 5. 사용자 시나리오 / 사용 흐름
+## 5. 대표 사용자 시나리오
 
-### 5.1 대표 시나리오
+### 5.1 공통 앱 조립
+1. 개발자는 `create_app()`을 호출한다.
+2. `fastapi-core`는 설정을 읽고 logging / middleware / exception handler를 등록한다.
+3. health router가 기본 포함된다.
+4. 옵션에 따라 auth router가 포함된다.
+5. 개발자는 여기에 자신의 domain router만 추가한다.
 
-#### 시나리오 A. 신규 서비스 개발자 온보딩
-1. 개발자는 `fastapi-core`를 서비스 프로젝트에 추가한다.
-2. 필요한 환경변수와 secret을 정의한다.
-3. `load_settings(env)`로 설정을 로딩하고 검증한다.
-4. `ServiceFactoryRegistry(settings)`를 통해 필요한 서비스 클라이언트를 생성한다.
-5. 공통 인증/헬스체크/유틸리티를 바로 사용한다.
+### 5.2 인증 보호 endpoint 작성
+1. 개발자는 endpoint에서 `Depends(get_current_user)` 또는 `Depends(require_permissions(...))`를 사용한다.
+2. `fastapi-core`는 bearer token을 읽고 검증한다.
+3. endpoint는 표준 `UserInfo` 구조를 사용한다.
 
-#### 시나리오 B. 운영 환경 배포
-1. 운영자는 환경별 secret과 환경변수를 배포 플랫폼에 등록한다.
-2. 서비스는 기동 시 설정을 검증하고 필수 의존성 연결 준비 여부를 점검한다.
-3. 헬스체크 API는 서비스별 상태와 오류를 표준 포맷으로 노출한다.
-4. 운영자는 민감정보가 마스킹된 로그/이벤트를 통해 문제를 분석한다.
+### 5.3 운영 readiness 확인
+1. 운영자는 `/health/liveness`, `/health/readiness`를 호출한다.
+2. 서비스는 기본 프로세스 상태와 외부 인증 의존성 준비 여부를 표준 응답으로 제공한다.
 
-#### 시나리오 C. 선택 기능 비활성화
-1. 팀은 특정 통합(예: Langfuse)을 선택 기능으로 취급한다.
-2. 운영자는 관련 환경변수를 비활성화한다.
-3. 서비스는 핵심 기능을 유지한 채 선택 통합 없이 동작한다.
-
-#### 시나리오 D. 인증 검증 공통화
-1. 서비스는 전달받은 JWT 또는 Bearer 토큰을 공통 인증 API에 전달한다.
-2. SDK는 서명, 만료, issuer, audience를 검증한다.
-3. 서비스는 표준 사용자/역할 구조를 받아 비즈니스 로직에서 재사용한다.
-
-### 5.2 예외 / 실패 시나리오
-
-- 필수 환경변수가 누락되면 서비스는 명확한 설정 오류와 함께 기동 실패해야 한다.
-- 필수 서비스 헬스체크가 실패하면 집계 결과에서 실패 원인이 구분되어야 하며, 필요 시 예외를 발생시켜야 한다.
-- 잘못된 환경변수 타입/범위 입력 시 사용자는 어느 항목이 잘못되었는지 알 수 있어야 한다.
-- 인증 토큰이 잘못되었거나 만료되었으면 검증 실패가 명시적인 인증 오류로 드러나야 한다.
-- 선택 서비스가 비활성화되었거나 실패해도 핵심 제품 흐름은 유지 가능해야 한다.
+### 5.4 startup 연계 메시징/외부 연결
+1. 서비스는 startup 단계에서 registry / builder를 이용해 외부 의존성을 준비한다.
+2. FastAPI lifespan과 연결되어 정상 종료 시 자원을 정리한다.
 
 ---
 
 ## 6. 기능 요구사항
 
-> 각 요구사항은 `FR-번호`로 관리한다.
+### 6.1 FastAPI 앱 팩토리
 
-### 6.1 설정
+- FR-001. 시스템은 `create_app(...) -> FastAPI`를 제공해야 한다.
+- FR-002. 시스템은 `config`, `settings`, `lifespan`, `include_auth_router`를 입력으로 받을 수 있어야 한다.
+- FR-003. 시스템은 CORS middleware를 공통 설정으로 등록해야 한다.
+- FR-004. 시스템은 공통 auth 예외 핸들러를 등록할 수 있어야 한다.
+- FR-005. 시스템은 health router를 기본 포함해야 한다.
+- FR-006. 시스템은 옵션에 따라 auth router를 포함/제외할 수 있어야 한다.
 
-- FR-001. 시스템은 모든 런타임 구성을 환경변수에서 읽을 수 있어야 한다.
-- FR-002. 시스템은 빈 문자열을 미설정으로 처리해야 한다.
-- FR-003. 시스템은 Boolean/숫자형 환경변수의 타입과 범위를 검증해야 한다.
-- FR-004. 시스템은 서비스별 timeout/retry를 개별 설정으로 관리할 수 있어야 한다.
-- FR-005. 시스템은 필수/선택/조건부 필수 환경변수를 구분할 수 있어야 한다.
-- FR-006. 시스템은 설정 검증 실패 시 명확한 오류를 제공해야 한다.
+### 6.2 Router
 
-### 6.2 인증/인가
+- FR-010. 시스템은 `/token` endpoint를 제공해야 한다.
+- FR-011. 시스템은 `/user` endpoint를 제공해야 한다.
+- FR-012. 시스템은 `/health/liveness` endpoint를 제공해야 한다.
+- FR-013. 시스템은 `/health/readiness` endpoint를 제공해야 한다.
 
-- FR-010. 시스템은 Keycloak 기반 access token 발급을 지원해야 한다.
-- FR-011. 시스템은 JWT 서명, 만료, issuer, 선택적 audience를 검증할 수 있어야 한다.
-- FR-012. 시스템은 검증된 사용자 정보와 역할 정보를 표준 구조로 제공해야 한다.
-- FR-013. 시스템은 `client_credentials` grant를 기본 토큰 획득 방식으로 지원해야 한다.
-- FR-014. 시스템은 명시적 설정이 있을 경우 `password` grant를 지원할 수 있어야 한다.
-- FR-015. 시스템은 Keycloak 관련 오류를 설정 오류/인증 오류/일시 오류 등으로 구분해야 한다.
+### 6.3 Dependency
 
-### 6.3 서비스 클라이언트 생성
+- FR-020. 시스템은 `get_config()` dependency를 제공해야 한다.
+- FR-021. 시스템은 `get_settings()` dependency를 제공해야 한다.
+- FR-022. 시스템은 `get_auth_provider()` dependency를 제공해야 한다.
+- FR-023. 시스템은 `get_current_user()` dependency를 제공해야 한다.
+- FR-024. 시스템은 `require_permissions(*roles)` dependency factory를 제공해야 한다.
 
-- FR-020. 시스템은 서비스별 클라이언트 생성 진입점을 단일 registry로 제공해야 한다.
-- FR-021. 시스템은 Keycloak, PostgreSQL, SQLite, MinIO, Milvus, Ollama, Langfuse, NATS 통합을 지원해야 한다.
-- FR-022. 시스템은 서비스 생성 실패를 일관된 오류 모델로 전달해야 한다.
-- FR-023. 시스템은 생성된 클라이언트에 대해 표준 `check()` / `close()` 또는 동등한 수명주기 인터페이스를 제공해야 한다.
-- FR-024. 시스템은 NATS처럼 비동기 연결이 필요한 통합을 지원해야 한다.
+### 6.4 Auth / Security
 
-### 6.4 헬스체크
+- FR-030. 시스템은 OAuth2 bearer token 기반 인증 흐름을 제공해야 한다.
+- FR-031. 시스템은 token 미제공 시 401을 반환해야 한다.
+- FR-032. 시스템은 권한 부족 시 403을 반환해야 한다.
+- FR-033. 시스템은 JWT 검증 결과를 표준 사용자 구조로 변환해야 한다.
 
-- FR-030. 시스템은 서비스별 헬스체크를 집계 실행할 수 있어야 한다.
-- FR-031. 시스템은 필수 서비스 실패와 선택 서비스 실패를 구분할 수 있어야 한다.
-- FR-032. 시스템은 서비스별 성공 여부, 지연 시간, 마스킹된 오류 메시지를 제공해야 한다.
-- FR-033. 시스템은 필요 시 병렬 헬스체크 실행을 지원해야 한다.
-- FR-034. 시스템은 필수 서비스 실패 시 집계 결과와 함께 명시적 예외를 발생시킬 수 있어야 한다.
+### 6.5 Schema
 
-### 6.5 운영/보안 유틸리티
+- FR-040. 시스템은 `TokenResponse`를 제공해야 한다.
+- FR-041. 시스템은 `UserInfo`를 제공해야 한다.
+- FR-042. 시스템은 `HealthResponse`를 제공해야 한다.
 
-- FR-040. 시스템은 민감정보를 로그/이벤트에 원문으로 남기지 않아야 한다.
-- FR-041. 시스템은 운영 환경에서 TLS 검증을 기본 활성화로 사용해야 한다.
-- FR-042. 시스템은 선택 기능을 환경변수로 비활성화할 수 있어야 한다.
-- FR-043. 시스템은 설정 스냅샷을 민감정보가 마스킹된 형태로 생성할 수 있어야 한다.
-- FR-044. 시스템은 재시도 가능한 동기 작업에 대한 공통 retry 유틸리티를 제공해야 한다.
-- FR-045. 시스템은 복합 값을 JSON 친화 구조로 변환하는 직렬화 유틸리티를 제공해야 한다.
+### 6.6 인프라 연계
 
-### 6.6 프로비저닝
-
-- FR-050. 시스템은 Keycloak realm/client/role 생성·갱신을 위한 선언형 프로비저닝 진입점을 제공할 수 있어야 한다.
-- FR-051. 시스템은 프로비저닝 dry-run을 지원해야 한다.
-- FR-052. 시스템은 프로비저닝 수행 시 관리자 인증정보가 조건부로 필요함을 명확히 검증해야 한다.
-- FR-053. 시스템은 선언에서 제거된 리소스를 자동 삭제하지 않아야 한다.
+- FR-050. 시스템은 외부 의존성 설정 계약을 제공해야 한다.
+- FR-051. 시스템은 메시징/NATS 같은 비동기 연결을 FastAPI startup/shutdown 흐름과 연계할 수 있어야 한다.
+- FR-052. 시스템은 readiness 판단에 필요한 외부 의존성 점검을 수행할 수 있어야 한다.
 
 ---
 
-## 7. API / 인터페이스 요구사항
+## 7. 수용 기준
 
-### 7.1 외부 인터페이스
-
-본 제품은 다음 외부 시스템과 통합될 수 있어야 한다.
-
-- Keycloak
-- PostgreSQL
-- SQLite
-- MinIO
-- Milvus
-- Ollama
-- Langfuse
-- NATS
-
-### 7.2 내부 인터페이스
-
-문서 기준 주요 내부/공개 진입점은 다음을 포함한다.
-
-- `load_settings(env)`
-- `Settings`
-- `SqliteConfig`
-- `ServiceFactoryRegistry(settings)`
-- `ServiceClientWrapper`
-- `NatsConnectionBuilder`
-- `check_all_services(...)`
-- `KeycloakAuthService(...)`
-- `KeycloakProvisioner`
-- `build_settings_snapshot(settings)`
-- `build_service_log_event(...)`
-- `mask_sensitive_value(raw)`
-- `retry_call(...)`
-- `to_serializable(value)`
-- `Page`
-
-### 7.3 메시징 / 이벤트 요구사항
-
-- 시스템은 NATS 연결 구성을 지원해야 한다.
-- 시스템은 NATS 서버 목록을 쉼표 구분 환경변수로 받을 수 있어야 한다.
-- 시스템은 NATS 인증 방식을 user/password, token, creds file 중 하나로 선택할 수 있어야 한다.
-- 시스템은 메시징 통합 상태를 헬스체크에서 진단할 수 있어야 한다.
-- 이벤트 순서 보장, 소비자 재시도 정책, DLQ 정책 등은 상위 서비스 또는 후속 설계 문서에서 구체화한다.
+- AC-001. 개발자는 `create_app()`만으로 기본 FastAPI 앱을 만들 수 있어야 한다.
+- AC-002. 개발자는 별도 구현 없이 `/health/liveness`와 `/health/readiness`를 사용할 수 있어야 한다.
+- AC-003. 개발자는 `Depends(get_current_user)`로 인증된 사용자 정보를 받을 수 있어야 한다.
+- AC-004. 개발자는 `require_permissions(...)`로 권한 검사를 재사용할 수 있어야 한다.
+- AC-005. auth router 사용 시 `/token`과 `/user` endpoint가 제공되어야 한다.
+- AC-006. 공통 schema가 FastAPI response_model로 바로 사용 가능해야 한다.
 
 ---
 
-## 8. 데이터 및 설정 요구사항
+## 8. 제약사항 / 리스크
 
-### 8.1 설정 계약
-
-공통적으로 다음 규칙을 따른다.
-
-- 모든 설정은 환경변수 기반이다.
-- 빈 문자열은 미설정으로 처리한다.
-- Boolean은 `true` / `false`를 사용한다.
-- 숫자형 값은 타입과 범위를 검증한다.
-- 서비스별 timeout/retry는 서비스 단위로 분리한다.
-
-주요 설정 범주:
-
-- 공통: `DOCMESH_ENV`, `DOCMESH_HEALTHCHECK_ENABLED`
-- Keycloak: URL, realm, client, secret, audience, timeout/retry, token grant, provisioning 변수
-- PostgreSQL: DSN 또는 host/db/user/password 조합
-- SQLite: path, readonly, WAL, busy timeout
-- MinIO: endpoint, access key, secret key, secure, timeout/retry
-- Milvus: URI, token, db name, collection, secure, timeout/retry
-- Ollama: host, generation model, embedding model, timeout/retry
-- Langfuse: host, public/secret key, enabled, release, environment, timeout/retry
-- NATS: servers, user/password 또는 token 또는 creds file, connection timeout, reconnect limits
-
-### 8.2 데이터 요구사항
-
-- PostgreSQL과 SQLite는 관계형 저장소 접근 통합 대상으로 고려한다.
-- MinIO는 오브젝트 저장소 접근 통합 대상으로 고려한다.
-- Milvus는 벡터 데이터 저장/조회 통합 대상으로 고려한다.
-- Ollama는 생성/임베딩 모델 호출 통합 대상으로 고려한다.
-- Langfuse는 관측/트레이싱 통합 대상으로 고려한다.
-- NATS는 비동기 메시징 통합 대상으로 고려한다.
-
-### 8.3 보안 데이터 처리
-
-- secret, token, password, 전체 DSN/URI는 로그에 원문 그대로 남기면 안 된다.
-- 설정 스냅샷은 마스킹된 형태로만 노출되어야 한다.
-- Access Token과 Refresh Token 원문은 애플리케이션 로그나 트레이싱 이벤트에 기록되면 안 된다.
-- 운영 환경에서는 TLS 검증 비활성화를 기본값으로 두면 안 된다.
+- 현재 저장소에는 소스 트리 대신 배포 산출물(wheel)이 먼저 존재하므로 문서 정합성은 구현 소스 복원 후 재검증이 필요하다.
+- 현재 FastAPI 계층은 Keycloak 중심 auth 및 health 흐름에 초점이 맞춰져 있으며, 일반화 수준은 아직 제한적일 수 있다.
+- readiness가 현재 특정 외부 의존성(Keycloak) 중심이면 향후 확장 설계가 필요하다.
 
 ---
 
-## 9. 비기능 요구사항
-
-### 9.1 신뢰성
-
-- NFR-001. 설정 오류는 빠르게 감지되고 명확한 오류 메시지를 제공해야 한다.
-- NFR-002. 필수 의존성 실패는 조기에 탐지 가능해야 한다.
-- NFR-003. 서비스 초기화와 점검 흐름은 서비스별로 일관되어야 한다.
-
-### 9.2 보안
-
-- NFR-010. 민감정보는 로그와 운영 이벤트에 마스킹되어야 한다.
-- NFR-011. 운영 기본값은 안전한 방향(TLS 검증 활성화 등)이어야 한다.
-- NFR-012. 인증 검증 실패는 애매한 오류가 아니라 명확한 보안 오류로 구분되어야 한다.
-
-### 9.3 운영성
-
-- NFR-020. 서비스 상태를 점검할 수 있는 표준 헬스체크 모델이 있어야 한다.
-- NFR-021. 환경별 설정 차이를 문서와 계약으로 추적 가능해야 한다.
-- NFR-022. 장애 분석 시 마스킹된 로그와 구조화된 이벤트를 사용할 수 있어야 한다.
-
-### 9.4 확장성
-
-- NFR-030. 새로운 서비스 통합 추가 시 기존 호출부 변경을 최소화해야 한다.
-- NFR-031. 공통 registry 패턴을 유지하면서 통합 대상을 확장할 수 있어야 한다.
-
-### 9.5 개발 생산성
-
-- NFR-040. 신규 서비스는 공통 SDK 사용만으로 빠르게 초기 구성을 완료할 수 있어야 한다.
-- NFR-041. 개발자는 공통 문서와 설정 계약만으로 통합에 필요한 입력값을 이해할 수 있어야 한다.
-
----
-
-## 10. 수용 기준 (Acceptance Criteria)
-
-- AC-001. 개발자는 문서만 보고 필수/선택/조건부 필수 환경변수를 구분할 수 있어야 한다.
-- AC-002. 개발자는 공통 registry를 통해 최소 1개 이상의 외부 서비스 클라이언트를 생성할 수 있어야 한다.
-- AC-003. 시스템은 헬스체크 결과에서 서비스별 성공/실패와 지연 시간을 확인할 수 있어야 한다.
-- AC-004. 인증 실패, 설정 오류, 필수 서비스 장애가 구분된 오류로 드러나야 한다.
-- AC-005. 운영 로그/이벤트에는 token, password, secret, 전체 DSN/URI가 원문으로 남지 않아야 한다.
-- AC-006. Keycloak 토큰 검증 결과는 서비스가 재사용 가능한 표준 사용자 정보 구조로 제공되어야 한다.
-- AC-007. 선택 기능(예: Langfuse)은 비활성화 시 핵심 서비스 흐름을 막지 않아야 한다.
-- AC-008. PostgreSQL은 DSN 또는 개별 필드 조합 중 하나로 설정 가능해야 하며, DSN이 있을 경우 우선 적용되어야 한다.
-- AC-009. NATS는 최소 하나의 인증 방식을 통해 연결 가능해야 한다.
-- AC-010. 설정 스냅샷은 민감정보를 마스킹한 형태로만 출력되어야 한다.
-
----
-
-## 11. 제약사항 / 가정
-
-### 11.1 제약사항
-
-- 외부 의존성(Keycloak, DB, 저장소, 메시징, LLM, 트레이싱)이 정상적으로 운영된다는 전제가 필요하다.
-- 환경변수 및 secret 관리는 배포 플랫폼 또는 별도 secret manager에 의존한다.
-- 각 통합의 세부 성능/가용성은 외부 시스템 상태에 영향을 받는다.
-- 현재 초안은 README와 ingest된 `docmesh-py-core` API/config 문서 기반이며, 실제 소스 코드와 완전 대조한 최종본은 아니다.
-
-### 11.2 가정
-
-- DocMesh 생태계의 FastAPI 서비스들은 유사한 인프라 통합 요구를 가진다고 가정한다.
-- 공통 SDK 채택이 서비스별 독자 구현보다 장기적으로 유지보수 비용을 줄인다고 가정한다.
-- Keycloak, DB, object storage, vector DB, observability, messaging 인프라는 별도로 운영된다고 가정한다.
-- 운영 환경은 TLS와 secret 관리 기본 원칙을 충족하도록 구성된다고 가정한다.
-
----
-
-## 12. 리스크 / 오픈 이슈
-
-### 12.1 리스크
-
-- 서비스별 옵션 증가로 설정 표면이 복잡해질 수 있다.
-- 선택 통합과 필수 통합의 경계가 서비스마다 달라질 수 있다.
-- 환경별 설정 차이로 테스트-운영 불일치가 발생할 수 있다.
-- 공통 SDK에 기능이 과도하게 집중되면 변경 영향 범위가 커질 수 있다.
-- 프로비저닝 기능을 제품 범위에 포함할 경우 보안 검토 요구가 커질 수 있다.
-
-### 12.2 오픈 이슈
-
-- Langfuse와 NATS의 기본 활성화 정책을 어떤 수준으로 둘 것인가?
-- 서비스별 헬스체크 실패를 외부 API 응답에 어느 수준까지 노출할 것인가?
-- Keycloak provisioning을 MVP 범위에 포함할 것인가, 후속 단계로 둘 것인가?
-- `fastapi-core`가 실제 코드베이스에서 어떤 공개 import만 공식 지원 대상으로 삼는지 최종 확정이 필요하다.
-- 서비스별 예외 타입과 오류 응답 표준을 어느 수준까지 제품 요구사항에 포함할지 결정이 필요하다.
-
----
-
-## 13. 릴리즈 범위 / 단계
-
-### 13.1 MVP 범위
-
-- 환경변수 기반 설정 로딩 및 검증
-- Keycloak 인증/토큰 검증 공통 API
-- 서비스 클라이언트 registry
-- PostgreSQL / SQLite / MinIO / Milvus / Ollama / Langfuse / NATS 기본 통합 진입점
-- 서비스별 및 집계형 헬스체크
-- 민감정보 마스킹 및 설정 스냅샷 유틸리티
-
-### 13.2 이후 단계
-
-- Keycloak provisioning 고도화
-- 더 세밀한 오류 모델 및 진단 이벤트 표준화
-- 서비스별 통합 예제/샘플 애플리케이션 제공
-- 추가 외부 시스템 통합 확장
-- 메시징/관측/보안 감사에 대한 세부 운영 가이드 확장
-
----
-
-## 14. 참고 문서
+## 9. 참고 문서
 
 - `README.md`
-- `wiki/entities/docmesh-py-core.md`
-- `wiki/concepts/service-factory-registry.md`
-- `wiki/concepts/service-health-check-aggregation.md`
-- `wiki/concepts/keycloak-authentication-api.md`
-- `wiki/concepts/service-configuration-contracts.md`
-- 향후 작성 예정 문서:
-  - `docs/srs.md`
-  - `docs/api.md`
-  - `docs/config.md`
-  - `docs/messaging.md`
-  - `docs/test.md`
+- `pyproject.toml`
+- `docs/srs.md`
+- `docs/api.md`
+- `docs/config.md`
+- `docs/messaging.md`
 
 ---
 
-## 부록 A. 빠른 작성 체크리스트
+## 부록 A. 문서 상태 메모
 
-- [x] 문제 정의를 명시했다.
-- [x] 목표와 비목표를 분리했다.
-- [x] 사용자/운영 시나리오를 포함했다.
-- [x] 기능 요구사항을 번호로 관리했다.
-- [x] 보안/운영/설정 요구사항을 포함했다.
-- [x] 수용 기준을 검증 가능한 문장으로 작성했다.
-- [x] 리스크와 오픈 이슈를 분리했다.
-
-## 부록 B. 문서 상태 메모
-
-이 초안은 현재 확인 가능한 `README.md` 및 wiki에 ingest된 `docmesh-py-core` API/config 문서를 바탕으로 작성되었다. 실제 구현 코드, 테스트, 추가 설계 문서가 준비되면 SRS/API/config/test 문서와 함께 상호 정합성을 다시 점검해야 한다.
+이 문서는 `pyproject.toml`과 배포 산출물에 포함된 `fastapi_core.factory`, `routers`, `dependencies`, `schemas` 구조를 기준으로 FastAPI 중심으로 다시 정리했다. 이후 실제 소스 디렉터리가 반영되면 endpoint 계약과 lifespan 규칙을 코드 기준으로 재검증해야 한다.
