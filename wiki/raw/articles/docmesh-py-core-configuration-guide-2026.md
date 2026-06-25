@@ -1,0 +1,289 @@
+---
+source_url: https://github.com/kyundae-kim/docmesh-py-core/blob/main/docs/config.md
+ingested: 2026-06-25
+sha256: 5b3ca94814594e21f613a6fd58836ea45e99ae7876308980a05393fe00cc3365
+---
+
+# docmesh-py-core Configuration Guide
+
+이 문서는 `docmesh-py-core`의 공개 환경변수 계약을 설명합니다.
+
+목표는 세 가지입니다.
+
+1. 어떤 값을 설정해야 하는지 빠르게 알 수 있게 하기
+2. 필수 / 선택 / 조건부 필수 값을 구분하기
+3. 공개 문서만으로도 통합 가능한 수준의 설정 가이드를 제공하기
+
+## 1. 공통 원칙
+
+- 모든 설정은 환경변수에서 읽습니다.
+- 공백 문자열은 미설정으로 처리합니다.
+- Boolean 값은 `true` / `false`로 해석합니다.
+- 숫자형 값은 타입과 범위를 검증합니다.
+- 민감정보는 Secret Manager 또는 배포 플랫폼의 secret 기능으로 주입하세요.
+- 운영 환경에서는 TLS 검증을 기본 활성화하세요.
+- 서비스별 timeout/retry는 공통 전역값이 아니라 각 서비스 환경변수로 관리합니다.
+
+## 2. 공통 환경변수
+
+| 환경변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `DOCMESH_ENV` | 아니요 | `development` | 실행 환경 식별자 |
+| `DOCMESH_HEALTHCHECK_ENABLED` | 아니요 | `true` | 헬스체크 활성화 여부 |
+
+권장값 예시:
+
+- 로컬 개발: `DOCMESH_ENV=development`
+- 통합 테스트: `DOCMESH_ENV=integration`
+- 운영: `DOCMESH_ENV=production`
+
+## 3. 서비스별 설정
+
+### 3.1 Keycloak
+
+#### 기본 인증/JWT 검증
+
+| 환경변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `KEYCLOAK_URL` | 예 | 없음 | Keycloak 기본 URL |
+| `KEYCLOAK_REALM` | 예 | 없음 | 인증 Realm |
+| `KEYCLOAK_CLIENT_ID` | 예 | 없음 | OIDC Client ID |
+| `KEYCLOAK_CLIENT_SECRET` | 조건부 | 없음 | Confidential Client 사용 시 secret |
+| `KEYCLOAK_VERIFY_SSL` | 아니요 | `true` | TLS 인증서 검증 여부 |
+| `KEYCLOAK_AUDIENCE` | 아니요 | 없음 | JWT 검증 대상 audience |
+| `KEYCLOAK_REQUEST_TIMEOUT_SECONDS` | 아니요 | `10` | 요청 제한 시간 |
+| `KEYCLOAK_MAX_RETRIES` | 아니요 | `3` | 최대 재시도 횟수 |
+| `KEYCLOAK_JWKS_CACHE_TTL_SECONDS` | 아니요 | `300` | JWKS 캐시 TTL |
+
+#### 토큰 획득
+
+| 환경변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `KEYCLOAK_TOKEN_GRANT_TYPE` | 아니요 | `client_credentials` | 토큰 grant type |
+| `KEYCLOAK_TOKEN_SCOPE` | 아니요 | 없음 | 요청 scope |
+| `KEYCLOAK_TOKEN_USERNAME` | 조건부 | 없음 | password grant 사용자명 |
+| `KEYCLOAK_TOKEN_PASSWORD` | 조건부 | 없음 | password grant 비밀번호 |
+
+규칙:
+
+- 기본 grant는 `client_credentials`입니다.
+- `password` grant를 쓰면 사용자명/비밀번호가 필요합니다.
+- 운영 환경 기본값으로 `password` grant를 두지 않는 것을 권장합니다.
+
+#### 프로비저닝
+
+| 환경변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `KEYCLOAK_PROVISIONING_ENABLED` | 아니요 | `false` | 프로비저닝 활성화 여부 |
+| `KEYCLOAK_PROVISIONING_DRY_RUN` | 아니요 | `false` | 변경 없이 계획만 출력 |
+| `KEYCLOAK_ADMIN_REALM` | 조건부 | `master` | Admin API 인증 Realm |
+| `KEYCLOAK_ADMIN_CLIENT_ID` | 조건부 | `admin-cli` | Admin API 인증 Client ID |
+| `KEYCLOAK_ADMIN_CLIENT_SECRET` | 조건부 | 없음 | Service Account secret |
+| `KEYCLOAK_ADMIN_USERNAME` | 조건부 | 없음 | 관리자 사용자명 |
+| `KEYCLOAK_ADMIN_PASSWORD` | 조건부 | 없음 | 관리자 비밀번호 |
+| `KEYCLOAK_REALM_ENABLED` | 아니요 | `true` | 대상 Realm 활성화 여부 |
+| `KEYCLOAK_REALM_DISPLAY_NAME` | 아니요 | 없음 | Realm 표시 이름 |
+| `KEYCLOAK_CLIENT_PUBLIC` | 아니요 | `false` | Client public 여부 |
+| `KEYCLOAK_CLIENT_REDIRECT_URIS` | 아니요 | 없음 | 쉼표 구분 redirect URI 목록 |
+| `KEYCLOAK_CLIENT_WEB_ORIGINS` | 아니요 | 없음 | 쉼표 구분 web origin 목록 |
+| `KEYCLOAK_REALM_ROLES` | 아니요 | 없음 | 쉼표 구분 realm role 목록 |
+| `KEYCLOAK_CLIENT_ROLES` | 아니요 | 없음 | 쉼표 구분 client role 목록 |
+
+규칙:
+
+- `KEYCLOAK_PROVISIONING_ENABLED=true`이면 Admin API 인증정보가 필요합니다.
+- Service Account 방식 사용을 권장합니다.
+- 선언에서 제거된 리소스는 자동 삭제하지 않습니다.
+
+### 3.2 PostgreSQL
+
+`POSTGRES_DSN`이 있으면 개별 필드보다 우선합니다.
+
+| 환경변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `POSTGRES_DSN` | 조건부 | 없음 | PostgreSQL 연결 URI |
+| `POSTGRES_HOST` | 조건부 | 없음 | 호스트 |
+| `POSTGRES_PORT` | 아니요 | `5432` | 포트 |
+| `POSTGRES_DB` | 조건부 | 없음 | 데이터베이스 이름 |
+| `POSTGRES_USER` | 조건부 | 없음 | 사용자명 |
+| `POSTGRES_PASSWORD` | 조건부 | 없음 | 비밀번호 |
+| `POSTGRES_SSLMODE` | 아니요 | `prefer` | SSL 모드 |
+| `POSTGRES_CONNECT_TIMEOUT_SECONDS` | 아니요 | `10` | 연결 제한 시간 |
+| `POSTGRES_POOL_SIZE` | 아니요 | `5` | 기본 풀 크기 |
+| `POSTGRES_MAX_OVERFLOW` | 아니요 | `10` | 추가 허용 연결 수 |
+
+규칙:
+
+- DSN을 쓰지 않으면 host/db/user/password 조합이 필요합니다.
+- 기본 헬스체크는 `SELECT 1`입니다.
+
+### 3.3 SQLite
+
+SQLite는 로컬 개발, 단위 테스트, 경량 통합 테스트에 적합합니다.
+
+| 환경변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `SQLITE_PATH` | 조건부 | 없음 | 파일 경로 또는 `:memory:` |
+| `SQLITE_READONLY` | 아니요 | `false` | 읽기 전용 모드 |
+| `SQLITE_ENABLE_WAL` | 아니요 | `false` | WAL 활성화 여부 |
+| `SQLITE_BUSY_TIMEOUT_MS` | 아니요 | `5000` | 잠금 대기 시간(ms) |
+
+규칙:
+
+- 상대경로는 애플리케이션 작업 디렉터리 기준으로 해석합니다.
+- 파일이 없으면 생성 가능해야 합니다.
+- 상위 디렉터리가 없으면 명확한 오류가 발생해야 합니다.
+- 기본 헬스체크는 `SELECT 1`입니다.
+
+### 3.4 MinIO
+
+| 환경변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `MINIO_ENDPOINT` | 예 | 없음 | `host:port` 형식 endpoint |
+| `MINIO_ACCESS_KEY` | 예 | 없음 | access key |
+| `MINIO_SECRET_KEY` | 예 | 없음 | secret key |
+| `MINIO_SECURE` | 아니요 | `true` | HTTPS 사용 여부 |
+| `MINIO_REGION` | 아니요 | 없음 | region |
+| `MINIO_BUCKET` | 아니요 | 없음 | 기본 bucket |
+| `MINIO_REQUEST_TIMEOUT_SECONDS` | 아니요 | `30` | 요청 제한 시간 |
+| `MINIO_MAX_RETRIES` | 아니요 | `3` | 최대 재시도 횟수 |
+
+기본 헬스체크는 `list_buckets()`입니다.
+
+### 3.5 Milvus
+
+| 환경변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `MILVUS_URI` | 예 | 없음 | Milvus 서버 URI |
+| `MILVUS_TOKEN` | 조건부 | 없음 | 인증 토큰 |
+| `MILVUS_DB_NAME` | 아니요 | `default` | 데이터베이스 이름 |
+| `MILVUS_COLLECTION` | 아니요 | 없음 | 기본 collection |
+| `MILVUS_SECURE` | 아니요 | `false` | TLS 사용 여부 |
+| `MILVUS_CONNECT_TIMEOUT_SECONDS` | 아니요 | `10` | 연결 제한 시간 |
+| `MILVUS_REQUEST_TIMEOUT_SECONDS` | 아니요 | `30` | 요청 제한 시간 |
+| `MILVUS_MAX_RETRIES` | 아니요 | `3` | 최대 재시도 횟수 |
+
+기본 헬스체크는 `list_collections()`입니다.
+
+### 3.6 Ollama
+
+| 환경변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `OLLAMA_HOST` | 예 | 없음 | Ollama API 기본 URL |
+| `OLLAMA_GENERATION_MODEL` | 아니요 | 없음 | 기본 생성 모델 |
+| `OLLAMA_EMBEDDING_MODEL` | 아니요 | 없음 | 기본 임베딩 모델 |
+| `OLLAMA_REQUEST_TIMEOUT_SECONDS` | 아니요 | `120` | 요청 제한 시간 |
+| `OLLAMA_MAX_RETRIES` | 아니요 | `2` | 최대 재시도 횟수 |
+
+기본 헬스체크는 `ps()`입니다.
+
+### 3.7 Langfuse
+
+| 환경변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `LANGFUSE_HOST` | 예 | 없음 | Langfuse API 기본 URL |
+| `LANGFUSE_PUBLIC_KEY` | 예 | 없음 | public key |
+| `LANGFUSE_SECRET_KEY` | 예 | 없음 | secret key |
+| `LANGFUSE_ENABLED` | 아니요 | `true` | 활성화 여부 |
+| `LANGFUSE_RELEASE` | 아니요 | 없음 | 릴리스 식별자 |
+| `LANGFUSE_ENVIRONMENT` | 아니요 | `DOCMESH_ENV` 값 | 환경 식별자 |
+| `LANGFUSE_REQUEST_TIMEOUT_SECONDS` | 아니요 | `10` | 요청 제한 시간 |
+| `LANGFUSE_MAX_RETRIES` | 아니요 | `3` | 최대 재시도 횟수 |
+
+규칙:
+
+- `LANGFUSE_ENABLED=false`이면 Langfuse를 선택 기능으로 비활성화할 수 있습니다.
+- 기본 헬스체크는 `auth_check()`입니다.
+
+### 3.8 NATS
+
+| 환경변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `NATS_SERVERS` | 예 | 없음 | 쉼표 구분 서버 URL 목록 |
+| `NATS_USER` | 조건부 | 없음 | 사용자명 인증 |
+| `NATS_PASSWORD` | 조건부 | 없음 | 비밀번호 인증 |
+| `NATS_TOKEN` | 조건부 | 없음 | 토큰 인증 |
+| `NATS_CREDS_FILE` | 조건부 | 없음 | credentials 파일 경로 |
+| `NATS_NAME` | 아니요 | `docmesh-py-core` | 연결 이름 |
+| `NATS_CONNECT_TIMEOUT_SECONDS` | 아니요 | `10` | 연결 제한 시간 |
+| `NATS_MAX_RECONNECT_ATTEMPTS` | 아니요 | `10` | 최대 재연결 횟수 |
+
+규칙:
+
+- 인증 방식은 user/password, token, creds file 중 하나를 선택합니다.
+- `NATS_SERVERS`는 쉼표 구분 목록입니다.
+- 헬스체크는 connect 후 `flush()` 확인입니다.
+
+## 4. 최소 설정 예시
+
+### PostgreSQL 기반 예시
+
+```env
+DOCMESH_ENV=development
+DOCMESH_HEALTHCHECK_ENABLED=true
+
+KEYCLOAK_URL=https://keycloak.example.com
+KEYCLOAK_REALM=docmesh
+KEYCLOAK_CLIENT_ID=docmesh-backend
+KEYCLOAK_CLIENT_SECRET=***
+
+POSTGRES_HOST=postgres.example.com
+POSTGRES_PORT=5432
+POSTGRES_DB=docmesh
+POSTGRES_USER=docmesh
+POSTGRES_PASSWORD=***
+
+MINIO_ENDPOINT=minio.example.com:9000
+MINIO_ACCESS_KEY=replace-me
+MINIO_SECRET_KEY=***
+
+MILVUS_URI=http://milvus.example.com:19530
+OLLAMA_HOST=http://ollama.example.com:11434
+LANGFUSE_HOST=https://langfuse.example.com
+LANGFUSE_PUBLIC_KEY=replace-me
+LANGFUSE_SECRET_KEY=***
+NATS_SERVERS=nats://n1.example.com:4222
+```
+
+### SQLite 기반 예시
+
+```env
+DOCMESH_ENV=development
+DOCMESH_HEALTHCHECK_ENABLED=true
+
+KEYCLOAK_URL=https://keycloak.example.com
+KEYCLOAK_REALM=docmesh
+KEYCLOAK_CLIENT_ID=docmesh-backend
+KEYCLOAK_CLIENT_SECRET=***
+
+SQLITE_PATH=./data/docmesh.sqlite3
+SQLITE_READONLY=false
+SQLITE_ENABLE_WAL=true
+SQLITE_BUSY_TIMEOUT_MS=5000
+
+MINIO_ENDPOINT=minio.example.com:9000
+MINIO_ACCESS_KEY=replace-me
+MINIO_SECRET_KEY=***
+
+MILVUS_URI=http://milvus.example.com:19530
+OLLAMA_HOST=http://ollama.example.com:11434
+LANGFUSE_HOST=https://langfuse.example.com
+LANGFUSE_PUBLIC_KEY=replace-me
+LANGFUSE_SECRET_KEY=***
+NATS_SERVERS=nats://n1.example.com:4222
+```
+
+## 5. 보안 운영 가이드
+
+- 실제 secret 값이 들어간 `.env` 파일은 버전 관리에 포함하지 마세요.
+- 비밀번호, token, secret, 전체 DSN/URI를 로그에 그대로 남기지 마세요.
+- 운영 환경에서는 TLS 검증 비활성화를 기본값으로 두지 마세요.
+- Keycloak 프로비저닝은 가능하면 최소 권한 Service Account로 수행하세요.
+- Access Token, Refresh Token 원문은 애플리케이션 로그나 트레이싱 이벤트에 기록하지 마세요.
+
+## 6. 문서 연계
+
+- 사용 흐름: [README](../README.md)
+- 공개 API: [api.md](./api.md)
+- 통합 예제: [sdk.md](./sdk.md)
+- 테스트 전략: [test.md](./test.md)
