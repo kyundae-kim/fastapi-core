@@ -10,6 +10,11 @@
 
 이 문서는 외부 서비스 SDK 래퍼보다, FastAPI 서비스 작성자가 직접 사용하는 API를 우선 설명한다.
 
+- 작성일: `2026-06-25`
+- 작성자: `Hermes Agent 초안 / 사용자 검토 필요`
+- 버전: `v0.2`
+- 상태: `draft`
+
 핵심 범주는 다음과 같다.
 
 - app factory
@@ -133,6 +138,11 @@ tag: `health`
 #### 응답 모델
 - `HealthResponse`
 
+#### 기본 계약
+- 최소 `status: str` 필드를 포함한다.
+- 필요 시 의존성별 세부 상태를 확장 필드로 포함할 수 있다.
+- 현재 문서 기준 기본 readiness 관찰 대상은 인증 계층(Keycloak)이며, NATS 같은 메시징 의존성은 서비스 정책에 따라 선택적으로 포함될 수 있다.
+
 #### 실패
 - 503 Service Unavailable
 
@@ -221,7 +231,10 @@ class UserInfo(BaseModel):
 ```python
 class HealthResponse(BaseModel):
     status: str
+    details: dict[str, str] | None = None
 ```
+
+`details`는 선택 필드다. 최소 계약은 `status`이며, readiness에서 의존성별 상태를 노출해야 할 때만 확장적으로 사용한다.
 
 ---
 
@@ -243,6 +256,8 @@ class HealthResponse(BaseModel):
 - startup에서 NATS 연결
 - shutdown에서 외부 자원 정리
 - app.state에 provider/registry 주입
+
+메시징 관련 객체(예: registry, builder, connection)는 현재 문서 세트에서 **1차 공개 FastAPI API**라기보다, lifespan/startup 통합에 사용하는 구현/확장 지점으로 취급한다. 세부 타입과 메서드명은 `docs/messaging.md`의 통합 패턴을 따르되, package-root 공개 API로 확정된 것은 아니다.
 
 ---
 

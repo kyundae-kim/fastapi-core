@@ -55,7 +55,9 @@
 
 ---
 
-## 4. Public surface
+## 4. 메시징 통합에 쓰이는 확장 지점
+
+이 절의 항목들은 현재 문서 세트에서 **FastAPI 1차 공개 표면**이라기보다, startup/lifespan 통합에서 참조할 수 있는 구현/확장 지점으로 취급한다.
 
 ## 4.1 `ServiceFactoryRegistry(settings)`
 
@@ -71,6 +73,8 @@
 - `await connect()` 또는 동등한 메서드 제공
 - `await check()` 또는 동등한 readiness 메서드 제공
 - 종료 메서드 또는 종료 대상 객체 반환
+
+> 주의: 위 타입과 메서드명은 메시징 통합 패턴을 설명하기 위한 문서 레벨 참조다. `docs/api.md`에서 우선 공개 표면으로 정의한 `create_app`, router, dependency, schema와 동일한 수준의 package-root 공개 API로 확정된 것은 아니다.
 
 ---
 
@@ -117,12 +121,18 @@ FastAPI의 `/health/readiness`는 메시징이 필수 의존성일 경우 NATS �
 - startup 때 연결된 NATS 객체가 존재하는지
 - `flush()` 또는 동등한 lightweight check 성공 여부
 
+기본 계약:
+- readiness 응답은 최소 `status` 필드를 포함한다.
+- 메시징 상태는 `details` 같은 확장 필드에 의존성별로 포함할 수 있다.
+- 기본 관찰 대상은 인증 계층(Keycloak)이며, NATS는 서비스에서 필수 의존성으로 채택한 경우에만 readiness 실패 기준에 포함될 수 있다.
+
 ### 6.2 Optional dependency
 
 NATS가 선택 의존성인 서비스라면 readiness 실패가 전체 서비스 실패를 의미하지 않을 수 있다. 이 경우:
 
 - 응답에는 실패 정보를 남긴다.
 - 서비스 기동 자체는 유지할 수 있다.
+- HTTP 503 대신 degraded 정보만 반환하는 정책도 가능하다.
 
 ---
 
