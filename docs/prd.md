@@ -1,7 +1,8 @@
 # fastapi-core 제품 요구사항 정의서 (PRD)
 
 > 문서 목적: `fastapi-core`를 **FastAPI 애플리케이션 조립용 공통 코어**로 정의한다.
-> 문서 상태: 초안(v0.2)
+> 문서 상태: 수정안(v0.3)
+> 문서 원칙: 이 문서는 capability 중심 PRD이며, 구체 함수명·endpoint 경로·schema 클래스명·호출 시그니처는 `docs/srs.md`와 `docs/api.md`에서 관리한다.
 
 ---
 
@@ -10,26 +11,26 @@
 - 문서명: `fastapi-core 제품 요구사항 정의서`
 - 작성일: `2026-06-25`
 - 작성자: `Hermes Agent 초안 / 사용자 검토 필요`
-- 버전: `v0.2`
-- 상태: `draft`
+- 버전: `v0.3`
+- 상태: `draft-revised`
 
 ### 1.1 배경
 
-`fastapi-core`는 단순한 인프라 SDK 문서 묶음이 아니라, **DocMesh 계열 FastAPI 서비스가 공통으로 사용하는 애플리케이션 코어**여야 한다. 실제 패키지 메타데이터와 배포 산출물 기준으로 이 프로젝트는 FastAPI 의존성을 가지며, `fastapi_core.factory:create_app`를 엔트리포인트로 사용하고, 공통 router / dependency / schema 계층을 포함한다.
+`fastapi-core`는 단순한 인프라 SDK 문서 묶음이 아니라, **DocMesh 계열 FastAPI 서비스가 공통으로 사용하는 애플리케이션 코어**여야 한다.
 
-즉 이 프로젝트의 핵심 가치는 단순히 Keycloak·DB·NATS 같은 외부 의존성에 연결하는 것이 아니라, 다음을 서비스마다 반복 구현하지 않도록 만드는 데 있다.
+이 프로젝트의 핵심 가치는 외부 의존성에 연결하는 것 자체보다, FastAPI 서비스에서 반복적으로 구현되는 공통 웹 애플리케이션 조립 문제를 줄이는 데 있다. 예를 들면 다음과 같다.
 
 - FastAPI 앱 초기화
-- 공통 CORS / 예외 핸들러 설정
-- 인증 라우터와 헬스 라우터 등록
-- 인증 dependency / current user 해석
-- Pydantic 응답 스키마 표준화
+- 공통 CORS / 오류 처리 정책 적용
+- 공통 인증 및 헬스체크 기능 연결
+- 현재 사용자 해석 및 권한 검사 흐름 표준화
+- 표준 응답 모델 제공
 - startup / shutdown 수명주기와 외부 의존성 연결의 결합
 
 ### 1.2 문제 정의
 
-- 서비스마다 `FastAPI()` 초기화와 middleware / router 조립이 중복될 수 있다.
-- 인증 라우터(`/token`, `/user`)와 health 라우터(`/health/liveness`, `/health/readiness`)의 동작이 서비스별로 달라질 수 있다.
+- 서비스마다 FastAPI 앱 초기화와 middleware / router 조립이 중복될 수 있다.
+- 공통 인증 및 헬스체크 엔드포인트의 동작이 서비스별로 달라질 수 있다.
 - `Depends(...)` 기반 인증/설정 dependency가 서비스마다 달라지면 보안과 유지보수 품질이 흔들린다.
 - 외부 인프라 연결 규칙은 공유하더라도, FastAPI 계층이 표준화되지 않으면 실제 서비스 개발 생산성은 충분히 올라가지 않는다.
 
@@ -39,12 +40,12 @@
 
 ### 2.1 목표
 
-- FastAPI 서비스가 `create_app(...)` 중심의 공통 앱 조립 경로를 사용할 수 있어야 한다.
-- 공통 auth / health router를 재사용 가능해야 한다.
-- 공통 dependency(`get_config`, `get_settings`, `get_auth_provider`, `get_current_user`, `require_permissions`)를 제공해야 한다.
-- 공통 응답 스키마(`TokenResponse`, `UserInfo`, `HealthResponse`)를 제공해야 한다.
+- FastAPI 서비스가 공통 앱 팩토리 중심의 조립 경로를 사용할 수 있어야 한다.
+- 공통 인증 및 헬스체크 라우팅 표면을 재사용 가능해야 한다.
+- 설정 접근, 인증 provider 접근, 현재 사용자 해석, 권한 검사를 위한 공통 dependency를 제공해야 한다.
+- 인증 응답, 사용자 정보, 헬스 상태에 대한 표준 응답 모델을 제공해야 한다.
 - 설정/인증/메시징/스토리지 같은 인프라 기능이 FastAPI startup/shutdown 및 request lifecycle과 자연스럽게 통합되어야 한다.
-- py-core 계층의 재사용과 별개로, FastAPI 서비스 작성자가 바로 사용할 수 있는 **웹 애플리케이션 표면**을 제공해야 한다.
+- FastAPI 서비스 작성자가 바로 사용할 수 있는 **웹 애플리케이션 표면**을 제공해야 한다.
 
 ### 2.2 비목표
 
@@ -76,13 +77,13 @@
 
 ### 4.1 포함 범위
 
-- FastAPI 앱 팩토리 제공 (`create_app`)
+- 공통 FastAPI 앱 팩토리 제공
 - CORS middleware 설정
-- 공통 auth router 제공
-- 공통 health router 제공
+- 공통 인증 라우팅 표면 제공
+- 공통 헬스체크 라우팅 표면 제공
 - 공통 dependency 제공
-- 공통 Pydantic schema 제공
-- Keycloak 인증 연동
+- 공통 Pydantic 응답 모델 제공
+- Keycloak 기반 인증 연동
 - 설정 로딩 및 검증
 - 서비스별 인프라 연결 보조
 - NATS 등 비동기 통합의 startup/lifespan 연계 기반 제공
@@ -99,23 +100,22 @@
 ## 5. 대표 사용자 시나리오
 
 ### 5.1 공통 앱 조립
-1. 개발자는 `create_app()`을 호출한다.
-2. `fastapi-core`는 설정을 읽고 logging / middleware / exception handler를 등록한다.
-3. health router가 기본 포함된다.
-4. 옵션에 따라 auth router가 포함된다.
-5. 개발자는 여기에 자신의 domain router만 추가한다.
+1. 개발자는 공통 앱 팩토리를 호출한다.
+2. `fastapi-core`는 설정을 읽고 공통 middleware, 오류 처리, 헬스체크 기능을 포함한 기본 애플리케이션을 생성한다.
+3. 공통 인증 기능은 옵션에 따라 포함된다.
+4. 개발자는 여기에 자신의 domain router만 추가한다.
 
 ### 5.2 인증 보호 endpoint 작성
-1. 개발자는 endpoint에서 `Depends(get_current_user)` 또는 `Depends(require_permissions(...))`를 사용한다.
+1. 개발자는 공통 인증 dependency를 사용해 현재 사용자 또는 권한 검사를 적용한다.
 2. `fastapi-core`는 bearer token을 읽고 검증한다.
-3. endpoint는 표준 `UserInfo` 구조를 사용한다.
+3. endpoint는 표준 사용자 정보 구조를 사용한다.
 
 ### 5.3 운영 readiness 확인
-1. 운영자는 `/health/liveness`, `/health/readiness`를 호출한다.
+1. 운영자는 표준 liveness/readiness 엔드포인트를 호출한다.
 2. 서비스는 기본 프로세스 상태와 외부 인증 의존성 준비 여부를 표준 응답으로 제공한다.
 
 ### 5.4 startup 연계 메시징/외부 연결
-1. 서비스는 startup 단계에서 registry / builder를 이용해 외부 의존성을 준비한다.
+1. 서비스는 startup 단계에서 외부 의존성을 준비한다.
 2. FastAPI lifespan과 연결되어 정상 종료 시 자원을 정리한다.
 
 ---
@@ -124,40 +124,40 @@
 
 ### 6.1 FastAPI 앱 팩토리
 
-- FR-001. 시스템은 `create_app(...) -> FastAPI`를 제공해야 한다.
-- FR-002. 시스템은 `config`, `settings`, `lifespan`, `include_auth_router`를 입력으로 받을 수 있어야 한다.
+- FR-001. 시스템은 공통 앱 팩토리 진입점을 제공해야 한다.
+- FR-002. 시스템은 설정, 사용자 정의 lifecycle, 공통 라우트 활성화 옵션을 입력으로 받을 수 있어야 한다.
 - FR-003. 시스템은 CORS middleware를 공통 설정으로 등록해야 한다.
-- FR-004. 시스템은 공통 auth 예외 핸들러를 등록할 수 있어야 한다.
-- FR-005. 시스템은 health router를 기본 포함해야 한다.
-- FR-006. 시스템은 옵션에 따라 auth router를 포함/제외할 수 있어야 한다.
+- FR-004. 시스템은 공통 인증 관련 오류 처리 정책을 적용할 수 있어야 한다.
+- FR-005. 시스템은 공통 헬스체크 라우팅 표면을 기본 포함해야 한다.
+- FR-006. 시스템은 옵션에 따라 공통 인증 라우팅 표면을 포함/제외할 수 있어야 한다.
 
 ### 6.2 Router
 
-- FR-010. 시스템은 `/token` endpoint를 제공해야 한다.
-- FR-011. 시스템은 `/user` endpoint를 제공해야 한다.
-- FR-012. 시스템은 `/health/liveness` endpoint를 제공해야 한다.
-- FR-013. 시스템은 `/health/readiness` endpoint를 제공해야 한다.
+- FR-010. 시스템은 토큰 발급 엔드포인트를 제공해야 한다.
+- FR-011. 시스템은 현재 사용자 조회 엔드포인트를 제공해야 한다.
+- FR-012. 시스템은 liveness 엔드포인트를 제공해야 한다.
+- FR-013. 시스템은 readiness 엔드포인트를 제공해야 한다.
 
 ### 6.3 Dependency
 
-- FR-020. 시스템은 `get_config()` dependency를 제공해야 한다.
-- FR-021. 시스템은 `get_settings()` dependency를 제공해야 한다.
-- FR-022. 시스템은 `get_auth_provider()` dependency를 제공해야 한다.
-- FR-023. 시스템은 `get_current_user()` dependency를 제공해야 한다.
-- FR-024. 시스템은 `require_permissions(*roles)` dependency factory를 제공해야 한다.
+- FR-020. 시스템은 설정 객체 접근 dependency를 제공해야 한다.
+- FR-021. 시스템은 서비스 설정 접근 dependency를 제공해야 한다.
+- FR-022. 시스템은 인증 provider 접근 dependency를 제공해야 한다.
+- FR-023. 시스템은 현재 사용자 해석 dependency를 제공해야 한다.
+- FR-024. 시스템은 권한 검사 dependency factory를 제공해야 한다.
 
 ### 6.4 Auth / Security
 
 - FR-030. 시스템은 OAuth2 bearer token 기반 인증 흐름을 제공해야 한다.
 - FR-031. 시스템은 token 미제공 시 401을 반환해야 한다.
 - FR-032. 시스템은 권한 부족 시 403을 반환해야 한다.
-- FR-033. 시스템은 JWT 검증 결과를 표준 사용자 구조로 변환해야 한다.
+- FR-033. 시스템은 인증 결과를 표준 사용자 구조로 변환해야 한다.
 
 ### 6.5 Schema
 
-- FR-040. 시스템은 `TokenResponse`를 제공해야 한다.
-- FR-041. 시스템은 `UserInfo`를 제공해야 한다.
-- FR-042. 시스템은 `HealthResponse`를 제공해야 한다.
+- FR-040. 시스템은 토큰 응답 모델을 제공해야 한다.
+- FR-041. 시스템은 사용자 정보 응답 모델을 제공해야 한다.
+- FR-042. 시스템은 헬스 응답 모델을 제공해야 한다.
 
 ### 6.6 인프라 연계
 
@@ -169,12 +169,12 @@
 
 ## 7. 수용 기준
 
-- AC-001. 개발자는 `create_app()`만으로 기본 FastAPI 앱을 만들 수 있어야 한다.
-- AC-002. 개발자는 별도 구현 없이 `/health/liveness`와 `/health/readiness`를 사용할 수 있어야 한다.
-- AC-003. 개발자는 `Depends(get_current_user)`로 인증된 사용자 정보를 받을 수 있어야 한다.
-- AC-004. 개발자는 `require_permissions(...)`로 권한 검사를 재사용할 수 있어야 한다.
-- AC-005. auth router 사용 시 `/token`과 `/user` endpoint가 제공되어야 한다.
-- AC-006. 공통 schema가 FastAPI response_model로 바로 사용 가능해야 한다.
+- AC-001. 개발자는 공통 앱 팩토리만으로 기본 FastAPI 앱을 만들 수 있어야 한다.
+- AC-002. 개발자는 별도 구현 없이 기본 헬스체크 엔드포인트를 사용할 수 있어야 한다.
+- AC-003. 개발자는 공통 인증 dependency로 인증된 사용자 정보를 받을 수 있어야 한다.
+- AC-004. 개발자는 공통 권한 검사 dependency를 재사용할 수 있어야 한다.
+- AC-005. 인증 라우팅 표면 사용 시 토큰 발급과 사용자 조회 엔드포인트가 제공되어야 한다.
+- AC-006. 공통 응답 모델이 FastAPI `response_model`로 바로 사용 가능해야 한다.
 
 ---
 
@@ -182,7 +182,7 @@
 
 - 현재 저장소에는 소스 트리 대신 배포 산출물(wheel)이 먼저 존재하므로 문서 정합성은 구현 소스 복원 후 재검증이 필요하다.
 - 현재 FastAPI 계층은 Keycloak 중심 auth 및 health 흐름에 초점이 맞춰져 있으며, 일반화 수준은 아직 제한적일 수 있다.
-- readiness가 현재 특정 외부 의존성(Keycloak) 중심이면 향후 확장 설계가 필요하다.
+- readiness가 현재 특정 외부 의존성 중심이면 향후 확장 설계가 필요하다.
 
 ---
 
@@ -199,4 +199,4 @@
 
 ## 부록 A. 문서 상태 메모
 
-이 문서는 `pyproject.toml`과 배포 산출물에 포함된 `fastapi_core.factory`, `routers`, `dependencies`, `schemas` 구조를 기준으로 FastAPI 중심으로 다시 정리했다. 이후 실제 소스 디렉터리가 반영되면 endpoint 계약과 lifespan 규칙을 코드 기준으로 재검증해야 한다.
+이 문서는 `fastapi-core`를 FastAPI 중심 공통 코어 제품으로 정의하기 위한 PRD이며, 구체 함수명, endpoint 경로, schema 클래스명, 호출 시그니처 같은 공개 인터페이스 세부 계약은 SRS와 API 문서에서 관리하는 것을 원칙으로 한다.

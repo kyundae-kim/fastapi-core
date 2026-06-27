@@ -1,8 +1,8 @@
 # fastapi-core 소프트웨어 요구사항 정의서 (SRS)
 
-> 문서 목적: `fastapi-core`의 FastAPI 계층을 구현 가능한 요구사항으로 구체화한다.
+> 문서 목적: `fastapi-core`의 FastAPI 계층을 **구현 가능한 요구사항과 공개 인터페이스 계약**으로 구체화한다.
 > 기준 문서: `docs/prd.md`
-> 문서 상태: 초안(v0.2)
+> 문서 상태: 정렬본(v0.3)
 
 ---
 
@@ -10,15 +10,23 @@
 
 - 문서명: `fastapi-core 소프트웨어 요구사항 정의서`
 - 작성일: `2026-06-25`
-- 작성자: `Hermes Agent 초안 / 사용자 검토 필요`
-- 버전: `v0.2`
-- 상태: `draft`
+- 작성자: `Hermes Agent`
+- 버전: `v0.3`
+- 상태: `aligned-to-prd`
 
 ### 1.1 목적
 
-본 문서는 `fastapi-core`를 **FastAPI 애플리케이션 조립 라이브러리**로 구현하기 위한 요구사항을 정의한다. 특히 app factory, router, dependency, schema, startup/lifespan, auth 처리, health 처리에 초점을 둔다.
+본 문서는 `fastapi-core`를 **FastAPI 애플리케이션 조립 라이브러리**로 구현하기 위한 요구사항을 정의한다.
+PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 구현 가능한 함수, endpoint, dependency, schema, lifecycle 요구로 내려 적는 역할을 가진다.
 
-### 1.2 범위
+### 1.2 문서 역할 원칙
+
+- PRD는 제품 목적, 사용자 가치, capability 범위를 정의한다.
+- SRS는 구체 함수명, endpoint 경로, schema 이름, 동작 제약, 상태 코드 요구를 정의한다.
+- API 문서는 현재 구현된 표면을 문서화한다.
+- 구현이 SRS보다 앞서거나 뒤처질 수 있으므로, SRS는 목표 계약이고 API 문서는 현재 상태다.
+
+### 1.3 범위
 
 - `create_app(...)`
 - auth / health router
@@ -33,30 +41,52 @@
 
 `fastapi-core`는 두 층으로 이해한다.
 
-1. **인프라 재사용층**: 설정, 인증 provider, 외부 서비스 연결
-2. **FastAPI 통합층**: app factory, router, dependency, schema, exception handler
+1. **인프라 재사용층**
+   - 설정, 인증 provider, 외부 서비스 연결
+2. **FastAPI 통합층**
+   - app factory, router, dependency, schema, lifecycle, 오류 처리
 
 이 문서는 두 번째 층을 중심으로 정의한다.
 
 ---
 
-## 3. 아키텍처 요구사항
+## 3. 공개 인터페이스 정책
 
-### 3.1 App factory
+### 3.1 정책
+
+- `fastapi-core`의 공개 인터페이스는 app factory, router endpoint, dependency 함수, schema 모델로 구성된다.
+- 정확한 symbol 이름과 endpoint 경로는 이 문서와 API 문서에서 관리한다.
+- PRD에는 capability를 남기고, symbol 세부는 이 문서에서 관리한다.
+
+### 3.2 현재 공개 대상
+
+- app factory: `create_app(...)`
+- dependency: `get_config()`, `get_settings()`, `get_auth_provider()`, `get_current_user()`, `require_permissions(...)`
+- schema: `TokenResponse`, `UserInfo`, `HealthResponse`
+- endpoint: `/token`, `/user`, `/health/liveness`, `/health/readiness`
+
+---
+
+## 4. 아키텍처 요구사항
+
+### 4.1 App factory
 
 - SR-001. 시스템은 `create_app(config=None, settings=None, lifespan=None, include_auth_router=True) -> FastAPI`를 제공해야 한다.
 - SR-002. `config is None`이면 기본 환경 설정 객체를 생성해야 한다.
-- SR-003. `settings is None`이면 설정 파일 또는 환경기반 서비스 설정을 로딩해야 한다.
+- SR-003. `settings is None`이면 환경기반 서비스 설정을 로딩해야 한다.
 - SR-004. 생성된 앱은 `root_path`를 설정할 수 있어야 한다.
 - SR-005. 커스텀 lifespan을 주입할 수 있어야 한다.
+- SR-006. 생성된 앱은 `app.state.config`, `app.state.settings`를 저장할 수 있어야 한다.
+- SR-007. readiness 제어용 상태(`app.state.readiness_parallel` 등)를 저장할 수 있어야 한다.
 
-### 3.2 Middleware / exception handling
+### 4.2 Middleware / exception handling
 
 - SR-010. 시스템은 CORS middleware를 등록해야 한다.
-- SR-011. CORS 설정은 서비스 설정 객체에서 읽어야 한다.
-- SR-012. auth 관련 커스텀 예외 핸들러를 등록할 수 있어야 한다.
+- SR-011. CORS 설정은 앱 설정 객체에서 읽어야 한다.
+- SR-012. 인증 관련 오류는 일관된 HTTP 예외 정책으로 반환되어야 한다.
+- SR-013. 공통 auth 예외 핸들러 등록 여부는 구현 선택사항이지만, 외부 계약은 401/403 동작 일관성을 만족해야 한다.
 
-### 3.3 Router registration
+### 4.3 Router registration
 
 - SR-020. health router는 기본적으로 앱에 포함되어야 한다.
 - SR-021. auth router는 `include_auth_router=True`일 때 포함되어야 한다.
@@ -64,93 +94,100 @@
 
 ---
 
-## 4. Router 요구사항
+## 5. Router 요구사항
 
-### 4.1 Auth router
+### 5.1 Auth router
 
-- SR-030. `/token` POST endpoint를 제공해야 한다.
+- SR-030. `POST /token` endpoint를 제공해야 한다.
 - SR-031. `/token`은 `OAuth2PasswordRequestForm` 입력을 사용해야 한다.
 - SR-032. `/token` 성공 응답은 `TokenResponse`여야 한다.
 - SR-033. 인증 실패 시 401과 `WWW-Authenticate: Bearer` 헤더를 반환해야 한다.
-- SR-034. `/user` GET endpoint를 제공해야 한다.
+- SR-034. `GET /user` endpoint를 제공해야 한다.
 - SR-035. `/user` 응답은 `UserInfo`여야 한다.
+- SR-036. `/user`는 현재 사용자 dependency를 통해 인증 정보를 해석해야 한다.
 
-### 4.2 Health router
+### 5.2 Health router
 
-- SR-040. `/health/liveness`는 프로세스 자체 생존 여부를 반환해야 한다.
-- SR-041. `/health/readiness`는 외부 준비 상태를 확인해야 한다.
+- SR-040. `GET /health/liveness`는 프로세스 자체 생존 여부를 반환해야 한다.
+- SR-041. `GET /health/readiness`는 외부 준비 상태를 확인해야 한다.
 - SR-042. readiness 실패 시 503을 반환할 수 있어야 한다.
 - SR-043. readiness 응답은 `HealthResponse`를 사용해야 한다.
+- SR-044. readiness는 `app.state.readiness_checks`와 같은 주입식 확장 지점을 허용해야 한다.
 
 ---
 
-## 5. Dependency 요구사항
+## 6. Dependency 요구사항
 
-### 5.1 Config / settings dependency
+### 6.1 Config / settings dependency
 
-- SR-050. `get_config()`는 캐시 가능한 설정 객체를 반환해야 한다.
+- SR-050. `get_config()`는 설정 객체를 반환해야 한다.
 - SR-051. `get_settings()`는 서비스 설정 객체를 반환해야 한다.
 - SR-052. dependency는 FastAPI `Depends(...)`로 바로 사용할 수 있어야 한다.
+- SR-053. request context에 app state 설정이 있으면 우선 사용해야 한다.
 
-### 5.2 Auth dependency
+### 6.2 Auth dependency
 
 - SR-060. `get_auth_provider()`는 앱 상태 또는 설정 기반으로 auth provider를 획득해야 한다.
 - SR-061. 앱 상태에 provider가 있으면 재사용해야 한다.
 - SR-062. 앱 상태에 없으면 설정 기반 기본 provider를 생성해야 한다.
 
-### 5.3 Current user dependency
+### 6.3 Current user dependency
 
 - SR-070. `get_current_user()`는 bearer token을 읽어야 한다.
 - SR-071. token이 없으면 401을 반환해야 한다.
-- SR-072. 설정에 따라 secure decode / insecure decode 분기를 지원할 수 있어야 한다.
-- SR-073. decode 결과를 `UserInfo`로 변환해야 한다.
+- SR-072. token validation 실패를 401로 매핑해야 한다.
+- SR-073. validation 결과를 `UserInfo`로 변환해야 한다.
+- SR-074. secure decode / insecure decode / introspection 분기 지원 여부는 구현 단계에서 선택될 수 있으나, 외부 계약은 401/성공 변환 동작을 유지해야 한다.
 
-### 5.4 Permission dependency
+### 6.4 Permission dependency
 
 - SR-080. `require_permissions(*roles)`는 dependency factory여야 한다.
 - SR-081. 필요한 role이 없으면 403을 반환해야 한다.
+- SR-082. 통과 시 현재 사용자 정보를 그대로 반환할 수 있어야 한다.
 
 ---
 
-## 6. Schema 요구사항
+## 7. Schema 요구사항
 
-### 6.1 `TokenResponse`
+### 7.1 `TokenResponse`
 
 - SR-090. `access_token: str`를 포함해야 한다.
 - SR-091. `refresh_token: str | None`를 포함할 수 있어야 한다.
 - SR-092. `token_type` 기본값은 `bearer`여야 한다.
 
-### 6.2 `UserInfo`
+### 7.2 `UserInfo`
 
 - SR-100. `sub`, `username`을 포함해야 한다.
 - SR-101. `email`, `name`은 optional일 수 있어야 한다.
 - SR-102. `roles`, `scopes`는 list 기본값을 가져야 한다.
 
-### 6.3 `HealthResponse`
+### 7.3 `HealthResponse`
 
 - SR-110. 최소 `status: str` 필드를 포함해야 한다.
+- SR-111. 필요 시 `details` 확장 필드를 포함할 수 있어야 한다.
 
 ---
 
-## 7. Auth 처리 요구사항
+## 8. Auth 처리 요구사항
 
-- SR-120. auth router는 Keycloak provider 기반으로 토큰 발급을 수행해야 한다.
+- SR-120. auth router는 Keycloak provider 기반 토큰 발급 경로를 지원해야 한다.
 - SR-121. dependency 계층은 bearer token 기반 current user 해석을 지원해야 한다.
 - SR-122. 401과 403 오류 경계를 명확히 나눠야 한다.
 - SR-123. 오류 메시지는 과도한 민감정보를 노출하면 안 된다.
 
 ---
 
-## 8. Health / readiness 요구사항
+## 9. Health / readiness 요구사항
 
 - SR-130. liveness는 경량이어야 한다.
 - SR-131. readiness는 외부 인증/핵심 의존성 준비 여부를 확인할 수 있어야 한다.
-- SR-132. readiness는 network timeout을 명시적으로 가져야 한다.
+- SR-132. readiness는 주입식 check 집계 구조를 지원해야 한다.
 - SR-133. readiness 오류는 HTTP 503으로 매핑 가능해야 한다.
+- SR-134. readiness의 필수 서비스 집합을 분리해 표현할 수 있어야 한다.
 
 ---
 
-## 9. Lifespan / startup 요구사항
+## 10. Lifespan / startup 요구사항
 
 - SR-140. app factory는 lifespan 주입을 허용해야 한다.
 - SR-141. 메시징/NATS 같은 비동기 연결은 startup 단계에서 초기화될 수 있어야 한다.
@@ -159,7 +196,7 @@
 
 ---
 
-## 10. 비기능 요구사항
+## 11. 비기능 요구사항
 
 - NFR-001. FastAPI 서비스가 최소한의 boilerplate로 앱을 조립할 수 있어야 한다.
 - NFR-002. dependency는 테스트 대체가 쉬워야 한다.
@@ -169,10 +206,10 @@
 
 ---
 
-## 11. 테스트 요구사항
+## 12. 테스트 요구사항
 
-- auth router `/token`, `/user` 응답 검증
-- health router `/health/liveness`, `/health/readiness` 응답 검증
+- `POST /token`, `GET /user` 응답 검증
+- `GET /health/liveness`, `GET /health/readiness` 응답 검증
 - `get_current_user()`의 401 경로 검증
 - `require_permissions()`의 403 경로 검증
 - `create_app(include_auth_router=False)` 동작 검증
@@ -180,7 +217,19 @@
 
 ---
 
-## 12. 참고 문서
+## 13. 구현 상태 메모
+
+이 문서는 목표 계약을 정의한다. 현재 구현 상태는 `docs/api.md`가 authoritative한 현황 문서다.
+현재 구현과 비교하면 다음은 SRS 목표 대비 부분 구현 또는 미구현일 수 있다.
+
+- auth 전용 exception handler 등록 방식
+- `/token`의 username/password 직접 provider 전달
+- secure/insecure decode 세부 분기
+- readiness의 자동 Keycloak/NATS 등록
+
+---
+
+## 14. 참고 문서
 
 - `docs/prd.md`
 - `docs/api.md`
@@ -192,4 +241,4 @@
 
 ## 부록 A. 문서 상태 메모
 
-이 문서는 배포 산출물에서 확인된 `factory.py`, `routers/`, `dependencies/`, `schemas/` 구조를 기준으로 FastAPI 관점으로 재정리했다. 실제 소스 트리가 복원되면 타입명과 예외명, lifecycle 규칙을 코드 기준으로 다시 정렬해야 한다.
+이 문서는 PRD에서 의도적으로 낮춘 capability를 다시 구체 symbol/경로/타입 계약으로 내린 SRS다. 실제 코드와의 차이는 API 문서에서 별도로 관리하며, SRS는 목표 인터페이스 계약을 유지한다.
