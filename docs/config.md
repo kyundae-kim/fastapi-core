@@ -1,385 +1,331 @@
 # fastapi-core 설정 정의서
 
-> 문서 목적: `fastapi-core`의 설정을 **FastAPI 앱 조립과 request/auth/lifecycle 관점**에서 정의한다.
-> 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`, `docs/messaging.md`
-> 문서 상태: 초안(v0.2)
+> 문서 목적: `fastapi-core`의 설정을 **현재 구현된 FastAPI 앱 조립 / dependency / readiness 관점**에서 설명한다.
+> 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`
+> 문서 상태: 구현 반영본(v0.3)
 
 ---
 
 ## 1. 문서 개요
 
-이 문서는 단순히 환경변수 목록을 나열하는 문서가 아니라, `fastapi-core`가 FastAPI 앱을 조립할 때 어떤 설정이 어떤 계층에 영향을 주는지 설명한다.
+이 문서는 계획 단계의 전체 플랫폼 설정 카탈로그가 아니라, **현재 저장소 구현이 실제로 읽고 사용하는 설정**을 우선 정리한다.
+특히 `create_app(...)`, `AppConfig`, `load_default_settings()`, `app.state` 연계 지점을 중심으로 본다.
 
 - 작성일: `2026-06-25`
-- 작성자: `Hermes Agent 초안 / 사용자 검토 필요`
-- 버전: `v0.2`
-- 상태: `draft`
+- 작성자: `Hermes Agent`
+- 버전: `v0.3`
+- 상태: `implemented-surface`
 
-핵심 관점은 다음과 같다.
-
-- `create_app(...)`가 어떤 설정을 소비하는가
-- auth router / health router / dependency가 어떤 설정에 의존하는가
-- startup / shutdown / lifespan에서 어떤 외부 설정이 필요한가
-- 운영자가 어떤 설정을 필수로 관리해야 하는가
-
----
-
-## 2. 설정 계층 모델
-
-`fastapi-core`의 설정은 크게 네 층으로 나눈다.
-
-1. **FastAPI 앱 설정**
-   - `root_path`
-   - CORS
-   - health endpoint 동작
-2. **인증 설정**
-   - Keycloak URL / realm / client
-   - JWT 검증 / token 발급 방식
-3. **외부 의존성 설정**
-   - PostgreSQL / SQLite / MinIO / Milvus / Ollama / Langfuse / NATS
-4. **운영/보안 설정**
-   - timeout / retry / TLS / secret 처리 원칙
-
-즉, 설정은 단순한 SDK 연결값이 아니라 **FastAPI 애플리케이션의 조립 규칙**에 직접 연결된다.
+핵심 관점:
+- `create_app(...)`가 어떤 설정을 직접 소비하는가
+- FastAPI dependency가 어떤 설정 객체를 참조하는가
+- readiness가 어떤 방식으로 설정과 연결되는가
+- 테스트 환경에서 어떤 최소 설정이 필요했는가
 
 ---
 
-## 3. FastAPI 앱 설정
+## 2. 현재 구현의 설정 계층
 
-## 3.1 App factory 연계
+현재 구현은 설정을 두 층으로 나눈다.
 
-`create_app(config=None, settings=None, lifespan=None, include_auth_router=True)`는 설정을 기반으로 다음을 결정한다.
+1. **앱 조립 설정 (`AppConfig`)**
+   - `fastapi_core.config.AppConfig`
+   - FastAPI app 자체의 동작을 제어한다.
+   - 예: `root_path`, CORS, readiness 병렬 플래그
 
-- `FastAPI(root_path=...)` 생성
-- CORS middleware 등록
-- auth router 포함 여부
-- health router 포함
-- auth provider / external dependency의 lifecycle 연결
+2. **서비스/외부 의존성 설정 (`docmesh_py_core.Settings`)**
+   - `docmesh_py_core.load_settings(...)` 결과
+   - Keycloak / SQLite / MinIO / Milvus / Ollama / Langfuse / NATS 등 외부 시스템 설정을 포함한다.
+   - 현재 `fastapi_core`는 이 객체를 주로 auth provider 생성과 테스트/앱 상태 보관에 사용한다.
 
-## 3.2 핵심 앱 설정 항목
-
-| 설정 항목 | 적용 위치 | 설명 |
-| --- | --- | --- |
-| `root_path` | `FastAPI(...)` | reverse proxy 하위 경로 배포 시 사용 |
-| CORS origins | `CORSMiddleware` | 허용 origin 목록 |
-| CORS credentials | `CORSMiddleware` | credential 허용 여부 |
-| `include_auth_router` | app factory 옵션 | `/token`, `/user` 라우터 포함 여부 |
-| custom lifespan | app factory 옵션 | startup/shutdown 자원 초기화 로직 주입 |
-
-> 주의: 이 문서의 일부 설정은 현재 공개된 wheel 구조와 문서 기준으로 정리한 것이다. 실제 필드명은 구현 소스 기준으로 최종 고정해야 한다.
+즉, 현재 코드에서 FastAPI 앱은:
+- `AppConfig`로 앱 조립 방식을 결정하고
+- `Settings`로 외부 시스템 설정을 보관/전달한다.
 
 ---
 
-## 4. 공통 설정 원칙
-
-### 4.1 입력 원칙
-
-- 설정은 환경변수 또는 환경 기반 설정 객체에서 읽는다.
-- 빈 문자열은 미설정으로 처리한다.
-- Boolean은 `true` / `false` 문자열을 사용한다.
-- 숫자형 값은 타입과 범위를 검증해야 한다.
-- 설정 오류는 앱 기동 초기에 발견되어야 한다.
-
-### 4.2 보안 원칙
-
-- `token`, `password`, `secret`, 전체 DSN/URI는 로그에 원문 노출 금지
-- 설정 스냅샷은 반드시 마스킹
-- 운영 환경 기본값은 안전한 방향이어야 함
-- TLS 검증 비활성화는 기본값이 아니어야 함
-
-### 4.3 FastAPI 관점 원칙
-
-- auth dependency가 기대하는 설정은 앱 기동 전에 유효해야 한다.
-- readiness가 참조하는 외부 의존성 설정은 startup 정책과 일치해야 한다.
-- `app.state`에 저장되는 provider/connection은 설정 검증이 끝난 뒤 주입되어야 한다.
-
----
-
-## 5. 인증 설정 (Keycloak)
-
-이 설정군은 다음 계층에 직접 영향을 준다.
-
-- `POST /token`
-- `GET /user`
-- `get_auth_provider()`
-- `get_current_user()`
-- readiness의 인증 의존성 확인
-
-## 5.1 필수 핵심 설정
-
-| 환경변수 | 필수 여부 | 설명 |
-| --- | --- | --- |
-| `KEYCLOAK_URL` | 필수 | Keycloak base URL |
-| `KEYCLOAK_REALM` | 필수 | realm 이름 |
-| `KEYCLOAK_CLIENT_ID` | 필수 | auth client id |
-| `KEYCLOAK_CLIENT_SECRET` | 조건부 | confidential client 사용 시 필요 |
-
-## 5.2 JWT / token 검증 설정
-
-| 환경변수 | 필수 여부 | 설명 |
-| --- | --- | --- |
-| `KEYCLOAK_AUDIENCE` | 선택 | audience 검증 값 |
-| `KEYCLOAK_VERIFY_SSL` | 선택 | TLS 검증 여부 |
-| `KEYCLOAK_ALLOWED_ALGORITHMS` | 선택 | 허용 JWT 알고리즘 |
-| `KEYCLOAK_TIMEOUT_SECONDS` | 선택 | Keycloak HTTP timeout |
-| `KEYCLOAK_RETRY_COUNT` | 선택 | 재시도 횟수 |
-
-## 5.3 Token grant 설정
-
-| 환경변수 | 필수 여부 | 설명 |
-| --- | --- | --- |
-| `KEYCLOAK_TOKEN_GRANT_TYPE` | 선택 | 기본 `client_credentials`, 필요 시 `password` |
-| `KEYCLOAK_USERNAME` | 조건부 | `password` grant 사용 시 필요 |
-| `KEYCLOAK_PASSWORD` | 조건부 | `password` grant 사용 시 필요 |
-| `KEYCLOAK_SCOPE` | 선택 | 기본 scope |
-
-## 5.4 FastAPI 계층 영향
-
-- `/token`은 Keycloak 토큰 발급 설정에 직접 의존한다.
-- `get_current_user()`는 JWT 검증 관련 설정에 의존한다.
-- `require_permissions(...)`는 토큰에서 추출된 roles 구조에 의존한다.
-- 잘못된 인증 설정은 라우터 동작 실패 또는 401 증가로 나타난다.
-
-## 5.5 권장 정책
-
-- 운영 기본 grant는 `client_credentials`
-- `password` grant는 제한적으로만 사용
-- `KEYCLOAK_VERIFY_SSL=true` 기본 유지
-- client secret과 password는 반드시 secret 관리 체계로 주입
-
----
-
-## 6. Health / readiness 관련 설정
-
-현재 문서 기준 readiness는 외부 인증 또는 핵심 의존성 준비 상태와 연결된다.
-
-기본 계약:
-- readiness 응답은 최소 `status` 필드를 포함한다.
-- 의존성별 세부 상태는 선택적으로 `details` 같은 확장 필드에 포함할 수 있다.
-- 현재 기본 관찰 대상은 인증 계층(Keycloak)이다.
-- NATS 같은 메시징 의존성은 서비스가 이를 필수 의존성으로 채택한 경우에만 readiness 실패 기준에 포함될 수 있다.
-
-### 핵심 요구
-
-- `/health/liveness`는 설정 의존성이 최소여야 한다.
-- `/health/readiness`는 timeout과 의존성 URL 설정에 민감하다.
-- readiness가 인증 시스템을 확인한다면 Keycloak 관련 URL/timeout이 올바르게 구성되어야 한다.
-
-### 관련 설정 예시
-
-| 환경변수 | 설명 |
-| --- | --- |
-| `DOCMESH_HEALTHCHECK_ENABLED` | health 기능 활성화 여부 |
-| `KEYCLOAK_URL` | readiness가 인증 시스템을 보는 경우 필요 |
-| `KEYCLOAK_TIMEOUT_SECONDS` | readiness HTTP timeout |
-
----
-
-## 7. CORS 설정
-
-`create_app()`는 CORS middleware를 등록하므로, 앱 설정에는 최소 다음 값이 필요하다.
-
-| 설정 항목 | 설명 |
-| --- | --- |
-| `CORS_ORIGINS` 또는 동등 설정 | 허용 origin 목록 |
-| `CORS_CREDENTIALS` 또는 동등 설정 | credential 허용 여부 |
-
-FastAPI 계층 영향:
-
-- 브라우저 기반 클라이언트 접근 허용 범위 결정
-- auth cookie / credential 전달 가능 여부 결정
-
-권장 원칙:
-
-- 운영에서는 wildcard 대신 명시 origin 사용
-- credentials 사용 시 origin을 더 엄격히 제한
-
----
-
-## 8. 데이터 저장소 설정
-
-이 설정군은 FastAPI app factory가 직접 사용하기보다, startup/lifespan 또는 service layer에서 사용될 가능성이 높다.
-
-## 8.1 PostgreSQL
-
-| 환경변수 | 필수 여부 | 설명 |
-| --- | --- | --- |
-| `POSTGRES_DSN` | 조건부 | 전체 DSN |
-| `POSTGRES_HOST` | 조건부 | host |
-| `POSTGRES_PORT` | 선택 | port |
-| `POSTGRES_DB` | 조건부 | database |
-| `POSTGRES_USER` | 조건부 | user |
-| `POSTGRES_PASSWORD` | 조건부 | password |
-| `POSTGRES_CONNECT_TIMEOUT_SECONDS` | 선택 | connect timeout |
-
-규칙:
-
-- `POSTGRES_DSN` 우선
-- DSN이 없으면 host/db/user/password 조합 필요
-- DSN 원문 로깅 금지
-
-## 8.2 SQLite
-
-| 환경변수 | 필수 여부 | 설명 |
-| --- | --- | --- |
-| `SQLITE_PATH` | 필수 | 파일 경로 또는 `:memory:` |
-| `SQLITE_READONLY` | 선택 | readonly 여부 |
-| `SQLITE_ENABLE_WAL` | 선택 | WAL 사용 여부 |
-| `SQLITE_BUSY_TIMEOUT_MS` | 선택 | busy timeout |
-
-FastAPI 계층 활용 예:
-
-- 로컬 개발용 앱 실행
-- 테스트 환경의 lightweight persistence
-
----
-
-## 9. 외부 플랫폼 설정
-
-## 9.1 MinIO
-
-| 환경변수 | 필수 여부 | 설명 |
-| --- | --- | --- |
-| `MINIO_ENDPOINT` | 필수 | endpoint |
-| `MINIO_ACCESS_KEY` | 필수 | access key |
-| `MINIO_SECRET_KEY` | 필수 | secret key |
-| `MINIO_SECURE` | 선택 | HTTPS 여부 |
-| `MINIO_TIMEOUT_SECONDS` | 선택 | timeout |
-
-## 9.2 Milvus
-
-| 환경변수 | 필수 여부 | 설명 |
-| --- | --- | --- |
-| `MILVUS_URI` | 필수 | 접속 URI |
-| `MILVUS_TOKEN` | 선택 | 인증 token |
-| `MILVUS_DB_NAME` | 선택 | DB 이름 |
-| `MILVUS_COLLECTION` | 선택 | 기본 collection |
-| `MILVUS_TIMEOUT_SECONDS` | 선택 | timeout |
-
-## 9.3 Ollama
-
-| 환경변수 | 필수 여부 | 설명 |
-| --- | --- | --- |
-| `OLLAMA_HOST` | 필수 | base URL |
-| `OLLAMA_GENERATION_MODEL` | 선택 | 생성 모델 |
-| `OLLAMA_EMBEDDING_MODEL` | 선택 | 임베딩 모델 |
-| `OLLAMA_TIMEOUT_SECONDS` | 선택 | timeout |
-
-## 9.4 Langfuse
-
-| 환경변수 | 필수 여부 | 설명 |
-| --- | --- | --- |
-| `LANGFUSE_ENABLED` | 선택 | 기능 활성화 여부 |
-| `LANGFUSE_HOST` | 조건부 | host |
-| `LANGFUSE_PUBLIC_KEY` | 조건부 | public key |
-| `LANGFUSE_SECRET_KEY` | 조건부 | secret key |
-
-규칙:
-
-- `LANGFUSE_ENABLED=false`면 앱 자체 기동은 가능해야 함
-- 선택 기능 비활성화가 request/auth 흐름을 깨면 안 됨
-
----
-
-## 10. 메시징 설정 (NATS)
-
-이 설정군은 FastAPI request handler보다 **startup/shutdown / lifespan**과 더 강하게 연결된다.
-
-| 환경변수 | 필수 여부 | 설명 |
-| --- | --- | --- |
-| `NATS_SERVERS` | 필수 | 쉼표 구분 서버 목록 |
-| `NATS_USER` | 조건부 | user/password 인증 |
-| `NATS_PASSWORD` | 조건부 | user/password 인증 |
-| `NATS_TOKEN` | 조건부 | token 인증 |
-| `NATS_CREDS_FILE` | 조건부 | creds file 인증 |
-| `NATS_NAME` | 선택 | 연결 이름 |
-| `NATS_CONNECT_TIMEOUT_SECONDS` | 선택 | 연결 timeout |
-| `NATS_MAX_RECONNECT_ATTEMPTS` | 선택 | 최대 재연결 횟수 |
-
-### FastAPI 계층 영향
-
-- lifespan startup에서 연결 가능 여부 결정
-- readiness에 메시징 상태 반영 여부 결정
-- `app.state` 저장 객체의 생명주기 결정
-
-### 규칙
-
-- 인증 방식은 user/password, token, creds file 중 최소 하나
-- 서버 목록은 쉼표 구분
-- 민감정보 로그 노출 금지
-
----
-
-## 11. 권장 배포 패턴
-
-### 11.1 로컬 개발
-
-- SQLite 또는 로컬 PostgreSQL 사용
-- self-signed 개발 환경에서만 제한적으로 SSL 완화 허용
-- auth router 테스트 시 로컬 Keycloak 또는 mock provider 고려
-
-### 11.2 테스트 환경
-
-- `pytest-asyncio` 기반 async 테스트 사용
-- dependency override로 auth/config/provider 대체 가능해야 함
-- SQLite `:memory:` 또는 테스트 전용 인스턴스 사용
-
-### 11.3 운영 환경
-
-- root path / reverse proxy 설정 검토
-- CORS origin 명시적 설정
-- auth secret/token을 secret manager로 주입
-- readiness가 보는 외부 의존성을 명시적으로 결정
-- NATS/DB 연결을 startup 정책과 일치시킴
-
----
-
-## 12. 설정 오류 처리 기준
-
-설정 오류는 FastAPI 앱이 요청을 받기 전에 드러나는 것이 바람직하다.
-
-대표 오류 예:
-
-- `KEYCLOAK_URL` 누락
-- `KEYCLOAK_TOKEN_GRANT_TYPE=password`인데 username/password 누락
-- `POSTGRES_DSN`도 없고 host/db/user/password도 불완전
-- `NATS_SERVERS` 누락
-- timeout 값이 음수 또는 비정상
-
-오류 메시지 원칙:
-
-- 어떤 설정이 잘못됐는지 식별 가능
-- 민감정보 원문 비노출
-- 가능하면 수정 방향 포함
-
----
-
-## 13. 샘플 FastAPI 서비스 관점 구성
-
-### 13.1 최소 auth + health 앱
-
-```env
-KEYCLOAK_URL=http://keycloak:8080
-KEYCLOAK_REALM=docmesh
-KEYCLOAK_CLIENT_ID=fastapi-core
-KEYCLOAK_CLIENT_SECRET=[REDACTED]
-KEYCLOAK_VERIFY_SSL=false
-DOCMESH_HEALTHCHECK_ENABLED=true
+## 3. AppConfig
+
+정의 위치: `fastapi_core/config.py`
+
+```python
+class AppConfig(BaseModel):
+    root_path: str = ""
+    cors_origins: list[str] = ["*"]
+    cors_credentials: bool = False
+    readiness_parallel: bool = False
 ```
 
-### 13.2 startup에서 NATS 연결을 가지는 앱
+### 3.1 필드 의미
+
+| 필드 | 적용 위치 | 현재 동작 |
+| --- | --- | --- |
+| `root_path` | `FastAPI(root_path=...)` | reverse proxy 하위 경로 배포 시 사용 |
+| `cors_origins` | `CORSMiddleware` | 허용 origin 목록 |
+| `cors_credentials` | `CORSMiddleware` | credential 허용 여부 |
+| `readiness_parallel` | `app.state.readiness_parallel` | readiness check 병렬 실행 여부 |
+
+### 3.2 로더
+
+`load_app_config()`는 환경변수에서 `AppConfig`를 구성한다.
+
+읽는 환경변수:
+- `ROOT_PATH`
+- `CORS_ORIGINS`
+- `CORS_CREDENTIALS`
+- `READINESS_PARALLEL`
+
+### 3.3 파싱 규칙
+
+- `CORS_ORIGINS`는 쉼표 구분 문자열로 읽는다.
+- 비어 있으면 기본값 `[*]`를 사용한다.
+- `CORS_CREDENTIALS`, `READINESS_PARALLEL`은 문자열이 `true`일 때만 `True`다.
+- `load_app_config()`는 `lru_cache(maxsize=1)`로 캐시된다.
+
+예시:
 
 ```env
-KEYCLOAK_URL=https://keycloak.example.com
+ROOT_PATH=/api
+CORS_ORIGINS=https://app.example.com,https://admin.example.com
+CORS_CREDENTIALS=true
+READINESS_PARALLEL=true
+```
+
+---
+
+## 4. `create_app(...)`와 설정 연결
+
+현재 구현의 `create_app(config=None, settings=None, lifespan=None, include_auth_router=True)`는 다음 순서로 설정을 사용한다.
+
+1. `config`가 없으면 `load_app_config()` 사용
+2. `settings`가 없으면 `load_default_settings()` 사용
+3. `FastAPI(root_path=config.root_path, lifespan=lifespan)` 생성
+4. `app.state.config = config`
+5. `app.state.settings = settings`
+6. `app.state.readiness_parallel = config.readiness_parallel`
+7. CORS middleware 등록
+8. health router 포함
+9. 필요 시 auth router 포함
+
+현재 구현에 **없는 것**:
+- logging 초기화
+- auth 전용 exception handler 등록
+- 기본 readiness check 자동 주입
+
+즉, 설정은 현재 코드에서 주로 **앱 조립**, **상태 저장**, **의존성 생성 기반값** 용도로 쓰인다.
+
+---
+
+## 5. `Settings` 기본 로더
+
+정의 위치: `fastapi_core/config.py`
+
+`load_default_settings()`는 현재 환경변수를 복사한 뒤, `docmesh_py_core.load_settings(...)`가 실패하지 않도록 여러 필수값에 개발용 기본값을 채운다.
+
+대표 기본값:
+- `KEYCLOAK_URL=http://keycloak.local`
+- `KEYCLOAK_REALM=docmesh`
+- `KEYCLOAK_CLIENT_ID=fastapi-core`
+- `KEYCLOAK_CLIENT_SECRET=[development default]`
+- `SQLITE_PATH=:memory:`
+- `MINIO_ENDPOINT=minio.local:9000`
+- `MINIO_ACCESS_KEY=minio`
+- `MINIO_SECRET_KEY=[development default]`
+- `MILVUS_URI=http://milvus.local:19530`
+- `OLLAMA_HOST=http://ollama.local:11434`
+- `LANGFUSE_HOST=http://langfuse.local:3000`
+- `LANGFUSE_PUBLIC_KEY=[development default]`
+- `LANGFUSE_SECRET_KEY=[development default]`
+- `NATS_SERVERS=nats://nats.local:4222`
+- `NATS_TOKEN=[development default]`
+
+### 중요 해석
+
+이 기본값들은 **운영 권장값이 아니라 개발/테스트용 fallback**이다.
+운영 환경에서는 반드시 명시적 환경변수 또는 외부 secret 주입으로 대체해야 한다.
+
+---
+
+## 6. 인증 설정 (현재 구현 관점)
+
+현재 auth 경로에 직접 연결되는 설정은 `docmesh_py_core.Settings` 내부의 Keycloak 관련 값들이다.
+
+핵심 필수값:
+- `KEYCLOAK_URL`
+- `KEYCLOAK_REALM`
+- `KEYCLOAK_CLIENT_ID`
+- `KEYCLOAK_CLIENT_SECRET`
+
+현재 구현 기준 영향 범위:
+- `get_auth_provider()`가 `KeycloakAuthService(settings)` 생성에 사용
+- `/token` endpoint의 provider 호출 기반값
+- `/user` / `get_current_user()`의 token 해석 기반값
+
+### 현재 문서화 시 주의할 점
+
+문서 초안에 있던 다음 항목들은 **현재 fastapi_core 코드에서 직접 분기하지 않는다**:
+- `KEYCLOAK_TOKEN_GRANT_TYPE`
+- secure/insecure decode 분기
+- introspection 모드 분기
+- timeout/retry 정책의 FastAPI 계층 직접 반영
+
+이 값들은 `docmesh_py_core` 내부에서는 의미가 있을 수 있지만, 현재 `fastapi_core` 공개 표면 문서에서는 **직접 구현된 동작으로 과장하면 안 된다**.
+
+---
+
+## 7. readiness / health 관련 설정
+
+현재 readiness는 환경변수만으로 자동 구성되지 않는다.
+
+실제 동작:
+- `/health/liveness`는 설정 의존성이 거의 없다.
+- `/health/readiness`는 아래 `app.state` 값을 읽는다.
+  - `app.state.readiness_checks`
+  - `app.state.required_services`
+  - `app.state.readiness_parallel`
+
+### 7.1 현재 설정 연결 방식
+
+| 항목 | 공급 방식 | 설명 |
+| --- | --- | --- |
+| `readiness_checks` | 사용자/lifespan 주입 | 서비스명 → callable 매핑 |
+| `required_services` | 사용자/lifespan 주입 | 실패 시 503을 유발하는 필수 서비스 집합 |
+| `readiness_parallel` | `AppConfig` 또는 직접 state 설정 | 병렬 실행 여부 |
+
+### 7.2 구현상 의미
+
+- `READINESS_PARALLEL`은 실제로 사용된다.
+- `KEYCLOAK_URL`, `NATS_SERVERS` 같은 값은 readiness가 자동으로 읽지 않는다.
+- Keycloak/NATS readiness를 쓰려면 lifespan 또는 startup 코드에서 check를 등록해야 한다.
+
+예시:
+
+```python
+app.state.readiness_checks = {
+    "keycloak": lambda: None,
+    "nats": lambda: None,
+}
+app.state.required_services = {"keycloak"}
+```
+
+---
+
+## 8. CORS 설정
+
+현재 CORS는 `create_app()`에서 항상 등록된다.
+
+직접 연결되는 설정:
+- `CORS_ORIGINS`
+- `CORS_CREDENTIALS`
+
+적용 코드:
+- `allow_origins=app_config.cors_origins`
+- `allow_credentials=app_config.cors_credentials`
+- `allow_methods=["*"]`
+- `allow_headers=["*"]`
+
+운영 권장:
+- wildcard 대신 명시 origin 사용
+- credential 허용 시 origin 범위를 엄격하게 제한
+
+---
+
+## 9. 외부 의존성 설정 범위
+
+`load_default_settings()`는 다음 외부 시스템의 필수값을 채운다.
+
+- SQLite
+- MinIO
+- Milvus
+- Ollama
+- Langfuse
+- NATS
+
+하지만 현재 `fastapi_core` 자체는 이들을 다음 정도로만 직접 다룬다.
+
+| 시스템 | 현재 fastapi_core 직접 사용 여부 | 비고 |
+| --- | --- | --- |
+| SQLite | 간접 | `Settings` 생성 성공용 기본값 |
+| MinIO | 간접 | 동일 |
+| Milvus | 간접 | 동일 |
+| Ollama | 간접 | 동일 |
+| Langfuse | 간접 | 동일 |
+| NATS | 간접 | `Settings` 보관, readiness/user-lifespan 확장 지점 |
+
+즉, 현재 구현에서 이 값들은 **app factory가 즉시 클라이언트를 만들기 위한 설정**이 아니라, `Settings` 객체의 유효성 충족과 향후 확장 지점을 위한 값이다.
+
+---
+
+## 10. 테스트 환경에서 확인된 최소 설정
+
+`test_fastapi_core/conftest.py`의 `build_test_settings()` 기준, 테스트용 `Settings`를 만들기 위해 다음 값들이 제공되었다.
+
+- `KEYCLOAK_URL`
+- `KEYCLOAK_REALM`
+- `KEYCLOAK_CLIENT_ID`
+- `KEYCLOAK_CLIENT_SECRET`
+- `SQLITE_PATH`
+- `MINIO_ENDPOINT`
+- `MINIO_ACCESS_KEY`
+- `MINIO_SECRET_KEY`
+- `MILVUS_URI`
+- `OLLAMA_HOST`
+- `LANGFUSE_HOST`
+- `LANGFUSE_PUBLIC_KEY`
+- `LANGFUSE_SECRET_KEY`
+- `NATS_SERVERS`
+- `NATS_TOKEN`
+
+문서상 의미:
+- 현재 `docmesh_py_core.load_settings(...)`를 통과하려면 위 수준의 필수 세트가 필요했다.
+- 따라서 `fastapi_core` 테스트/로컬 실행 예시도 이 사실을 반영해야 한다.
+
+---
+
+## 11. 운영/보안 원칙
+
+- secret / token / password / 전체 URI는 문서 예시와 로그에서 원문 노출 금지
+- 개발 fallback를 운영 기본값처럼 안내하지 말 것
+- readiness 관찰 대상을 운영 정책으로 명시할 것
+- `app.state` 주입 객체는 startup/lifespan과 정합성을 맞출 것
+
+---
+
+## 12. 현재 구현 기준 제한 사항
+
+문서 초안과 달리, 아직 다음은 설정으로 연결되어 있지 않다.
+
+- logging 설정 계층
+- auth exception handler 설정
+- `/token`의 username/password 직접 전달 정책
+- readiness의 자동 Keycloak/NATS 등록
+- secure/insecure JWT decode 분기 설정
+
+이 항목들은 목표 문서에는 남아 있어도, 현재 구현 기준 설정 정의에서는 **미구현**으로 취급해야 한다.
+
+---
+
+## 13. 최소 예시
+
+### 13.1 AppConfig 환경변수
+
+```env
+ROOT_PATH=/api
+CORS_ORIGINS=https://app.example.com
+CORS_CREDENTIALS=true
+READINESS_PARALLEL=false
+```
+
+### 13.2 테스트/개발용 개념 예시
+
+```env
+KEYCLOAK_URL=http://keycloak.local
 KEYCLOAK_REALM=docmesh
 KEYCLOAK_CLIENT_ID=fastapi-core
 KEYCLOAK_CLIENT_SECRET=[REDACTED]
-KEYCLOAK_VERIFY_SSL=true
-
-NATS_SERVERS=nats://nats-a:4222,nats://nats-b:4222
-NATS_CREDS_FILE=/run/secrets/nats.creds
-NATS_CONNECT_TIMEOUT_SECONDS=3
-NATS_MAX_RECONNECT_ATTEMPTS=10
+SQLITE_PATH=:memory:
+NATS_SERVERS=nats://nats.local:4222
+NATS_TOKEN=[REDACTED]
 ```
 
 ---
@@ -389,11 +335,14 @@ NATS_MAX_RECONNECT_ATTEMPTS=10
 - `docs/prd.md`
 - `docs/srs.md`
 - `docs/api.md`
-- `docs/messaging.md`
-- `pyproject.toml`
+- `README.md`
+- `fastapi_core/config.py`
+- `fastapi_core/factory.py`
+- `test_fastapi_core/conftest.py`
 
 ---
 
-## 부록 A. 문서 상태 메모
+## 15. 문서 상태 메모
 
-이 문서는 기존의 인프라 설정 카탈로그 중심 서술에서 벗어나, `create_app`, auth/health router, dependency, lifespan, `app.state` 연계 관점으로 다시 작성했다. 정확한 필드명과 설정 모델은 실제 소스 트리 기준으로 한 번 더 맞춰야 한다.
+이 문서는 기존의 광범위한 플랫폼 설정 계획 문서를, **현재 저장소에서 실제 확인된 설정 소비 경로** 중심으로 축소/정렬한 것이다.
+운영 수준의 상세 필드 카탈로그는 향후 `docmesh_py_core`와 실제 서비스 조립 코드가 확장된 뒤 다시 넓히는 것이 맞다.

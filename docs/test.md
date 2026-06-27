@@ -1,333 +1,301 @@
 # fastapi-core 테스트 정의서
 
-> 문서 목적: `fastapi-core`의 FastAPI 앱 계층을 어떤 수준으로 검증해야 하는지 정의한다.
-> 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`, `docs/config.md`, `docs/messaging.md`
-> 문서 상태: 초안(v0.1)
+> 문서 목적: `fastapi-core`의 **현재 구현된 FastAPI 앱 계층**을 어떤 수준으로 검증하는지 정리한다.
+> 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`, `docs/config.md`
+> 문서 상태: 구현 반영본(v0.3)
 
 ---
 
 ## 1. 문서 개요
 
-이 문서는 `fastapi-core`를 단순 유틸리티 패키지가 아니라 **FastAPI 애플리케이션 코어**로 보고 테스트 범위를 정의한다.
-
-- 작성일: `2026-06-25`
-- 작성자: `Hermes Agent 초안 / 사용자 검토 필요`
-- 버전: `v0.1`
-- 상태: `draft`
-
-핵심 검증 대상은 다음과 같다.
+이 문서는 계획 단계의 이상적인 테스트 목록이 아니라, 현재 저장소에 존재하는 테스트와 검증 범위를 기준으로 정리한다.
+핵심 대상은 다음과 같다.
 
 - `create_app(...)`
 - auth router (`/token`, `/user`)
 - health router (`/health/liveness`, `/health/readiness`)
-- dependency (`get_config`, `get_settings`, `get_auth_provider`, `get_current_user`, `require_permissions`)
+- dependency (`get_current_user`, `require_permissions`)
 - schema (`TokenResponse`, `UserInfo`, `HealthResponse`)
-- lifespan / startup / shutdown 연계
-- 설정 오류 및 인증 오류 처리
+- custom lifespan 연계
+
+- 작성일: `2026-06-25`
+- 작성자: `Hermes Agent`
+- 버전: `v0.3`
+- 상태: `implemented-surface`
 
 ---
 
-## 2. 테스트 목표
+## 2. 현재 테스트 인벤토리
 
-- FastAPI 앱이 최소 boilerplate로 생성되는지 확인한다.
-- 공통 router가 의도대로 포함/제외되는지 확인한다.
-- dependency 계층이 request context에서 올바르게 동작하는지 확인한다.
-- auth / health endpoint의 상태 코드와 response model이 일관적인지 확인한다.
-- startup/shutdown에서 외부 자원 초기화/정리가 가능한지 확인한다.
-- 설정/보안 오류가 조기에 드러나는지 확인한다.
-
----
-
-## 3. 테스트 분류
-
-## 3.1 단위 테스트
-
-목적:
-- schema, helper, dependency의 좁은 단위 동작 검증
-
-대상 예:
-- `TokenResponse` 기본값
-- `UserInfo.roles`, `UserInfo.scopes` 기본값
-- `HealthResponse.status` 검증
-- `require_permissions(...)`의 role 검사 분기
-- `get_current_user()`의 token 없음 경로
-
-## 3.2 통합 테스트
-
-목적:
-- app factory + router + dependency가 함께 동작하는지 확인
-
-대상 예:
-- `create_app()` 결과 앱 인스턴스 검증
-- `/health/liveness` 응답 검증
-- `/token`, `/user` endpoint 검증
-- dependency override를 통한 auth/provider 대체 검증
-
-## 3.3 수명주기 테스트
-
-목적:
-- lifespan 기반 startup/shutdown 처리 검증
-
-대상 예:
-- custom lifespan 호출 여부
-- startup에서 `app.state` 설정 여부
-- shutdown에서 cleanup 수행 여부
-
-## 3.4 외부 연동 테스트
-
-목적:
-- Keycloak, NATS 등 외부 의존성과의 실제 또는 준실제 연동 검증
-
-대상 예:
-- Keycloak 토큰 발급 성공/실패
-- readiness의 외부 의존성 실패 처리
-- NATS startup 연결 및 종료
-
-> 외부 연동 테스트는 `integration` marker로 분리하는 것이 바람직하다.
-
----
-
-## 4. 테스트 환경 원칙
-
-- 테스트 러너는 `pytest`를 사용한다.
-- 비동기 테스트는 `pytest-asyncio` 기반 async test function으로 작성한다.
-- 외부 의존성이 없는 테스트는 로컬에서 바로 실행 가능해야 한다.
-- 외부 서비스가 필요한 테스트는 명시적으로 분리해야 한다.
-- secret/token/password는 테스트 fixture나 로그에 원문 노출하지 않는다.
-
-`pyproject.toml` 기준 확인된 사항:
-- `pytest-asyncio` dev dependency 사용
-- `testpaths = ["test_fastapi_core"]`
-- `integration` marker 사용
-- `anyio_mode = "auto"`
-
----
-
-## 5. App factory 테스트 요구사항
-
-## 5.1 기본 앱 생성
-
-검증 포인트:
-- `create_app()`이 `FastAPI` 인스턴스를 반환한다.
-- health router가 기본 포함된다.
-- auth router가 기본 포함된다.
-
-예상 테스트:
-- `/health/liveness`가 200 반환
-- `/token` route가 존재
-- `/user` route가 존재
-
-## 5.2 auth router 제외
-
-검증 포인트:
-- `create_app(include_auth_router=False)`일 때 auth endpoint가 노출되지 않는다.
-- health router는 계속 사용 가능하다.
-
-예상 테스트:
-- `/token` → 404
-- `/user` → 404
-- `/health/liveness` → 200
-
-## 5.3 root_path / lifespan 주입
-
-검증 포인트:
-- `root_path`가 앱 설정에 반영된다.
-- custom lifespan이 호출된다.
-
----
-
-## 6. Router 테스트 요구사항
-
-## 6.1 Auth router
-
-### `/token`
-검증 항목:
-- 정상 credential 입력 시 `TokenResponse` 구조 반환
-- 실패 시 401 반환
-- `WWW-Authenticate: Bearer` 헤더 포함
-
-### `/user`
-검증 항목:
-- 인증 성공 시 `UserInfo` 반환
-- token 없음 시 401 반환
-- 권한 또는 token 오류 시 적절한 오류 반환
-
-## 6.2 Health router
-
-### `/health/liveness`
-검증 항목:
-- 항상 경량 200 응답
-- `HealthResponse` 구조 사용
-
-### `/health/readiness`
-검증 항목:
-- 외부 의존성 준비 시 200 가능
-- 외부 의존성 미준비 시 503 가능
-- timeout/네트워크 오류가 적절한 상태 코드로 매핑됨
-- 최소 `status` 필드 존재 확인
-- 선택 의존성 사용 시 `details` 같은 확장 필드와 degraded 정책 검증
-
----
-
-## 7. Dependency 테스트 요구사항
-
-## 7.1 `get_config()`
-
-검증 항목:
-- 설정 객체 반환
-- 동일 실행 문맥에서 캐시 재사용 가능
-
-## 7.2 `get_settings()`
-
-검증 항목:
-- config 기반 서비스 설정 반환
-- 필요한 경우 dependency override 가능
-
-## 7.3 `get_auth_provider()`
-
-검증 항목:
-- `app.state`에 provider가 있으면 재사용
-- 없으면 설정 기반 기본 provider 생성
-
-## 7.4 `get_current_user()`
-
-검증 항목:
-- token 없음 → 401
-- secure decode 성공 → `UserInfo`
-- decode 실패 → 401
-
-## 7.5 `require_permissions(...)`
-
-검증 항목:
-- 요구 role 존재 시 통과
-- 요구 role 부재 시 403
-
----
-
-## 8. Schema 테스트 요구사항
-
-## 8.1 `TokenResponse`
-
-검증 항목:
-- `access_token` 필수
-- `refresh_token` optional
-- `token_type` 기본값 `bearer`
-
-## 8.2 `UserInfo`
-
-검증 항목:
-- `sub`, `username` 필드 직렬화
-- `roles`, `scopes` 기본 리스트 초기화
-- optional 필드가 없어도 모델 생성 가능
-
-## 8.3 `HealthResponse`
-
-검증 항목:
-- `status` 필드 포함
-- FastAPI response model로 사용 가능
-
----
-
-## 9. Lifespan / startup / shutdown 테스트
-
-## 9.1 Startup
-
-검증 항목:
-- custom lifespan startup 블록이 실행된다.
-- startup에서 `app.state`에 provider/connection을 저장할 수 있다.
-
-## 9.2 Shutdown
-
-검증 항목:
-- shutdown cleanup이 호출된다.
-- 종료 예외가 필요 이상으로 전파되지 않는지 검토한다.
-
-## 9.3 메시징 연계
-
-검증 항목:
-- NATS builder/connection을 startup에서 초기화 가능
-- shutdown에서 close 가능
-- readiness가 메시징 상태를 반영하도록 확장 가능한 구조인지 확인
-
----
-
-## 10. 설정 및 오류 테스트
-
-검증 대상 예:
-- 필수 Keycloak 설정 누락
-- 잘못된 token grant 조합
-- 잘못된 timeout 값
-- NATS 인증 방식 누락
-- DSN/secret이 오류 메시지에 원문 노출되지 않는지 확인
-
-오류 테스트 원칙:
-- 어떤 설정이 잘못됐는지 식별 가능해야 함
-- 민감정보 비노출
-- 가능한 경우 수정 방향 유추 가능
-
----
-
-## 11. 권장 테스트 구조
-
-예시 디렉터리:
+실제 테스트 파일:
 
 ```text
 test_fastapi_core/
+  conftest.py
   test_factory.py
   test_auth_router.py
   test_health_router.py
   test_dependencies.py
   test_schemas.py
-  test_lifespan.py
-  test_config.py
-  test_messaging_integration.py
 ```
 
-권장 fixture 예:
-- `app`
-- `client`
-- `mock_auth_provider`
-- `mock_settings`
-- `mock_config`
+현재는 다음 파일이 **없다**:
+- `test_lifespan.py`
+- `test_config.py`
+- `test_messaging_integration.py`
+
+즉, 문서는 없는 테스트를 이미 갖춘 것처럼 서술하면 안 된다.
 
 ---
 
-## 12. 권장 작성 스타일
+## 3. 테스트 실행 기준
 
-- 비동기 검증은 `async def` 테스트 함수로 작성
-- `asyncio.run(...)` 래퍼 대신 `pytest-asyncio` 사용
-- dependency override를 우선 활용
-- 외부 서비스가 필요한 테스트는 marker 분리
-- endpoint contract 검증 시 status code + response body를 함께 확인
+현재 저장소 검증 명령:
 
----
+```bash
+uv run pytest -q
+```
 
-## 13. 최소 검증 체크리스트
+최근 실제 실행 결과:
+- `12 passed`
 
-- [ ] `create_app()`이 FastAPI 앱을 반환한다.
-- [ ] `/health/liveness`가 200과 `HealthResponse`를 반환한다.
-- [ ] `/health/readiness`가 준비 상태를 반영한다.
-- [ ] `/token`이 `TokenResponse`를 반환한다.
-- [ ] `/user`가 `UserInfo`를 반환한다.
-- [ ] `get_current_user()`의 401 경로가 검증되었다.
-- [ ] `require_permissions(...)`의 403 경로가 검증되었다.
-- [ ] `include_auth_router=False` 경로가 검증되었다.
-- [ ] lifespan startup/shutdown이 검증되었다.
-- [ ] 설정 오류 메시지에 민감정보가 포함되지 않는다.
+테스트 러너/환경 특성:
+- `pytest` 사용
+- FastAPI endpoint 검증은 `fastapi.testclient.TestClient` 사용
+- 현재 테스트 파일들은 모두 동기 테스트 함수(`def`) 기반
+- 비동기 테스트는 아직 없음
+- import 안정화를 위해 `test_fastapi_core/conftest.py`에서 저장소 루트를 `sys.path`에 추가함
 
 ---
 
-## 14. 참고 문서
+## 4. 공통 테스트 fixture
+
+정의 위치: `test_fastapi_core/conftest.py`
+
+### 4.1 `build_test_settings()`
+
+`docmesh_py_core.load_settings(...)`를 직접 호출해 테스트용 `Settings`를 구성한다.
+
+포함되는 최소 설정 범위:
+- Keycloak
+- SQLite
+- MinIO
+- Milvus
+- Ollama
+- Langfuse
+- NATS
+
+의미:
+- 현재 구현에서 `Settings` 생성이 성립하도록 필수 환경값 세트를 코드로 고정한 것
+- 테스트는 mock이 아니라 **실제 설정 모델 생성 경로**를 통과한다.
+
+### 4.2 `settings` fixture
+
+각 테스트에서 `create_app(settings=settings)` 형태로 주입된다.
+
+---
+
+## 5. 실제 검증 범위
+
+## 5.1 app factory 테스트
+
+정의 위치: `test_fastapi_core/test_factory.py`
+
+현재 검증하는 항목:
+- `create_app()`이 liveness route를 포함한다.
+- auth route(`/token`, `/user`)가 기본 포함된다.
+- `app.state.settings`에 전달한 settings가 저장된다.
+- `include_auth_router=False`일 때 `/token`, `/user`가 404다.
+- custom lifespan startup/shutdown이 호출된다.
+
+현재 검증하지 않는 항목:
+- CORS middleware 세부 동작
+- `root_path` 값 반영
+- `app.state.config` 저장 여부
+- `readiness_parallel` 상태 저장 여부
+
+## 5.2 auth router 테스트
+
+정의 위치: `test_fastapi_core/test_auth_router.py`
+
+현재 검증하는 항목:
+- `/token`이 `TokenResponse` 구조를 반환한다.
+- `/user`가 `UserInfo` 구조를 반환한다.
+- fake auth provider를 `app.state.auth_provider`로 주입해 동작을 대체할 수 있다.
+- `/token` 요청의 `scope`가 provider로 전달된다.
+- `/user`는 bearer token 기반 사용자 변환 결과를 반환한다.
+
+현재 검증하지 않는 항목:
+- provider 예외 시 `/token`의 401 경로
+- `/user`에서 invalid token 예외 매핑
+- 실제 Keycloak 연동
+
+## 5.3 health router 테스트
+
+정의 위치: `test_fastapi_core/test_health_router.py`
+
+현재 검증하는 항목:
+- readiness check가 성공하면 200
+- 필수 readiness check가 실패하면 503
+- 성공 시 `details`에 서비스별 상태 구조가 들어간다.
+- 실패 시 `status == "error"`
+
+현재 검증하지 않는 항목:
+- `/health/liveness` 단독 파일 수준 재검증(간접적으로 factory 테스트에서 검증)
+- `READINESS_PARALLEL` 플래그 전달 효과
+- timeout/네트워크 오류의 세부 분기
+- 선택 서비스(degraded) 정책
+
+## 5.4 dependency 테스트
+
+정의 위치: `test_fastapi_core/test_dependencies.py`
+
+현재 검증하는 항목:
+- `get_current_user()`의 token 없음 경로 → 401
+- `WWW-Authenticate: Bearer` 헤더 검증
+- `require_permissions("admin")`의 role 부족 경로 → 403
+
+현재 검증하지 않는 항목:
+- `get_config()` 직접 테스트
+- `get_settings()` 직접 테스트
+- `get_auth_provider()` 캐시/재사용 테스트
+- invalid token 예외 매핑
+
+## 5.5 schema 테스트
+
+정의 위치: `test_fastapi_core/test_schemas.py`
+
+현재 검증하는 항목:
+- `TokenResponse.token_type == "bearer"`
+- `TokenResponse.refresh_token is None`
+- `UserInfo.roles/scopes` 기본값이 빈 리스트
+- `HealthResponse(status="ok")` 생성 가능
+- `HealthResponse.details is None`
+
+---
+
+## 6. 현재 테스트 설계 원칙
+
+### 6.1 실제 구현 우선
+
+문서 계획이 아니라 현재 구현된 계약을 검증한다.
+예를 들어:
+- readiness는 자동 Keycloak/NATS 등록이 아니라 `app.state.readiness_checks` 주입을 기준으로 검증한다.
+- auth는 실제 Keycloak 서버 대신 fake provider 주입으로 계약을 고정한다.
+
+### 6.2 좁고 빠른 회귀 우선
+
+현재 테스트는 대부분 다음 계층의 계약 검증에 집중한다.
+- response status
+- response body shape
+- route 포함/제외
+- dependency failure branch
+- lifespan 호출 여부
+
+### 6.3 실제 설정 모델 경로 사용
+
+테스트는 단순 dict mock 대신 `load_settings(...)`를 통해 `Settings`를 만든다.
+따라서 설정 유효성 제약이 테스트에도 반영된다.
+
+---
+
+## 7. 현재 구현 기준의 테스트 갭
+
+문서와 비교했을 때 아직 없는 검증:
+
+1. `get_config()` / `get_settings()` 직접 테스트
+2. `AppConfig` 로딩(`ROOT_PATH`, `CORS_ORIGINS`, `READINESS_PARALLEL`) 테스트
+3. `/token` 실패 경로 테스트
+4. invalid token → 401 매핑 테스트
+5. `get_auth_provider()` 재사용/생성 분기 테스트
+6. CORS middleware 동작 테스트
+7. 실제 외부 연동(Keycloak/NATS) integration test
+8. 비동기 테스트 함수 기반 검증
+9. 메시징 startup/shutdown 연동 테스트
+10. `root_path` 반영 테스트
+
+이 항목들은 향후 추가 대상이지, 현재 완료된 테스트 범위는 아니다.
+
+---
+
+## 8. 권장 추가 테스트 우선순위
+
+현재 구현을 기준으로 다음 순서를 권장한다.
+
+### 우선순위 1
+- `test_config.py` 추가
+  - `load_app_config()` 환경변수 파싱
+  - `cors_origins` 분리
+  - `readiness_parallel` bool 파싱
+
+### 우선순위 2
+- dependency 직접 테스트 보강
+  - `get_auth_provider()` state 재사용
+  - invalid token 예외 매핑
+
+### 우선순위 3
+- router 실패 경로 보강
+  - `/token` provider failure → 401
+  - readiness optional/required 서비스 분기
+
+### 우선순위 4
+- 통합/외부 연동 테스트 분리
+  - 실제 Keycloak 또는 준실제 stub
+  - NATS startup/lifespan 연동
+
+---
+
+## 9. 작성 스타일 기준
+
+현재 사용자 선호와 저장소 방향을 반영한 기준:
+- 비동기 테스트가 필요할 때는 `pytest-asyncio`의 `async def` 테스트 함수 사용
+- `asyncio.run(...)` 래퍼는 사용하지 않음
+- FastAPI dependency 검증은 `Depends(...)` + `TestClient` 또는 async client로 수행
+- 상태 코드와 응답 본문을 함께 검증
+- 외부 의존성 테스트는 기본 회귀와 분리
+
+---
+
+## 10. 최소 체크리스트 (현재 완료 기준)
+
+- [x] `create_app()`이 FastAPI 앱을 생성한다.
+- [x] health route가 기본 포함된다.
+- [x] auth route가 기본 포함된다.
+- [x] `include_auth_router=False` 경로가 검증되었다.
+- [x] custom lifespan startup/shutdown이 검증되었다.
+- [x] `/token`이 `TokenResponse` 구조를 반환한다.
+- [x] `/user`가 `UserInfo` 구조를 반환한다.
+- [x] readiness 성공/실패가 검증되었다.
+- [x] `get_current_user()`의 401 경로가 검증되었다.
+- [x] `require_permissions(...)`의 403 경로가 검증되었다.
+- [x] schema 기본값이 검증되었다.
+
+미완료 체크:
+- [ ] config 로더 직접 테스트
+- [ ] invalid token 401 테스트
+- [ ] `/token` 실패 경로 테스트
+- [ ] 외부 연동 integration test
+- [ ] 비동기 테스트 함수 기반 coverage
+
+---
+
+## 11. 참고 문서
 
 - `docs/prd.md`
 - `docs/srs.md`
 - `docs/api.md`
 - `docs/config.md`
-- `docs/messaging.md`
-- `pyproject.toml`
+- `README.md`
+- `test_fastapi_core/conftest.py`
+- `test_fastapi_core/test_factory.py`
+- `test_fastapi_core/test_auth_router.py`
+- `test_fastapi_core/test_health_router.py`
+- `test_fastapi_core/test_dependencies.py`
+- `test_fastapi_core/test_schemas.py`
 
 ---
 
-## 부록 A. 문서 상태 메모
+## 12. 문서 상태 메모
 
-이 문서는 현재 확인된 FastAPI 공개 표면(`create_app`, router, dependency, schema, lifespan 연계)을 기준으로 작성했다. 실제 테스트 코드를 추가할 때는 wheel 또는 소스 트리 기준의 import path, fixture 전략, 외부 서비스 준비 절차를 함께 고정해야 한다.
+이 문서는 기존의 넓은 테스트 계획 초안을, **현재 저장소에 실제 존재하는 테스트와 이미 검증된 계약** 중심으로 재정렬한 것이다.
+향후 테스트가 추가되면 이 문서도 “계획”이 아니라 “실제 회귀 범위” 기준으로 계속 갱신하는 것이 맞다.
