@@ -87,6 +87,8 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 - `cors_credentials: bool = False`
 - `readiness_parallel: bool = False`
 
+환경변수 예시는 저장소 루트의 `.env.example`를 참고하세요.
+
 환경변수:
 - `ROOT_PATH`
 - `CORS_ORIGINS`
