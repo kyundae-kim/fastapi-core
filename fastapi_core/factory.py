@@ -9,8 +9,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from docmesh_py_core import ServiceFactoryRegistry, Settings, configure_logging
 
-from fastapi_core.config import AppConfig, load_app_config, load_default_settings
+from fastapi_core.config import AppConfig, load_app_config
 from fastapi_core.dependencies.auth import set_oauth2_token_url
+from fastapi_core.docmesh_settings import load_docmesh_settings
 from fastapi_core.routers.auth import router as auth_router
 from fastapi_core.routers.health import router as health_router
 
@@ -95,7 +96,7 @@ def create_app(
 ) -> FastAPI:
     app_config = config or load_app_config()
     root_logger = _configure_application_logging(app_config)
-    app_settings = settings or load_default_settings(tuple(app_config.enabled_services))
+    app_settings = settings or load_docmesh_settings(tuple(app_config.enabled_services))
     registry = ServiceFactoryRegistry(app_settings)
 
     app = FastAPI(

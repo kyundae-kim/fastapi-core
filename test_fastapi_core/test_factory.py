@@ -6,7 +6,8 @@ import logging
 
 from fastapi.testclient import TestClient
 
-from fastapi_core.config import AppConfig, load_default_settings
+from fastapi_core.config import AppConfig
+from fastapi_core.docmesh_settings import load_docmesh_settings
 from fastapi_core.factory import create_app
 
 
@@ -40,7 +41,6 @@ def test_create_app_applies_configured_token_url_to_openapi(settings):
     assert security_scheme["flows"]["password"]["tokenUrl"] == "/api/v1/auth/token"
 
 
-
 def test_create_app_can_exclude_auth_router(settings):
     app = create_app(settings=settings, include_auth_router=False)
 
@@ -52,7 +52,6 @@ def test_create_app_can_exclude_auth_router(settings):
     assert liveness_response.status_code == 200
     assert user_response.status_code == 404
     assert token_response.status_code == 404
-
 
 
 def test_create_app_runs_custom_lifespan(settings):
@@ -74,14 +73,13 @@ def test_create_app_runs_custom_lifespan(settings):
     assert events == ["startup", "shutdown"]
 
 
-
 def test_create_app_uses_selected_services_for_readiness_and_settings():
     config = AppConfig(
         enabled_services=["sqlite"],
         required_services=["sqlite"],
     )
 
-    settings = load_default_settings(("sqlite",))
+    settings = load_docmesh_settings(("sqlite",))
     app = create_app(config=config, settings=settings, include_auth_router=False)
 
     assert app.state.settings.sqlite is not None
@@ -93,7 +91,6 @@ def test_create_app_uses_selected_services_for_readiness_and_settings():
     assert app.state.required_services == {"sqlite"}
 
 
-
 def test_create_app_configures_json_logging_to_file(tmp_path):
     log_path = tmp_path / "app.log"
     config = AppConfig(
@@ -103,7 +100,7 @@ def test_create_app_configures_json_logging_to_file(tmp_path):
         enabled_services=["sqlite"],
         required_services=["sqlite"],
     )
-    settings = load_default_settings(("sqlite",))
+    settings = load_docmesh_settings(("sqlite",))
 
     app = create_app(config=config, settings=settings, include_auth_router=False)
     logger = logging.getLogger("fastapi_core.test")
