@@ -44,6 +44,12 @@ def get_auth_provider(
 ) -> KeycloakAuthService:
     if hasattr(request.app.state, "auth_provider"):
         return request.app.state.auth_provider
+    registry = getattr(request.app.state, "registry", None)
+    if registry is not None:
+        client = registry.create_client("keycloak")
+        provider = client.client
+        request.app.state.auth_provider = provider
+        return provider
     provider = KeycloakAuthService(settings)
     request.app.state.auth_provider = provider
     return provider

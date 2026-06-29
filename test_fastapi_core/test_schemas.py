@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from fastapi_core.schemas.health import HealthResponse
+from fastapi_core.schemas.health import HealthResponse, HealthServiceDetail
 from fastapi_core.schemas.token import TokenResponse
 from fastapi_core.schemas.user import UserInfo
-
 
 
 def test_token_response_defaults_to_bearer():
@@ -13,7 +12,6 @@ def test_token_response_defaults_to_bearer():
     assert model.token_type == "bearer"
 
 
-
 def test_user_info_defaults_roles_and_scopes_to_empty_lists():
     model = UserInfo(sub="user-1", username="alice")
 
@@ -21,9 +19,27 @@ def test_user_info_defaults_roles_and_scopes_to_empty_lists():
     assert model.scopes == []
 
 
-
 def test_health_response_requires_status():
     model = HealthResponse(status="ok")
 
     assert model.status == "ok"
     assert model.details is None
+
+
+def test_health_response_parses_explicit_service_details():
+    model = HealthResponse(
+        status="degraded",
+        details={
+            "nats": HealthServiceDetail(
+                ok=False,
+                error="nats unavailable",
+                required=False,
+                enabled=True,
+            )
+        },
+    )
+
+    assert model.details is not None
+    assert model.details["nats"].ok is False
+    assert model.details["nats"].required is False
+    assert model.details["nats"].enabled is True

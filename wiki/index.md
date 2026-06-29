@@ -2,7 +2,7 @@
 
 > Content catalog. Every wiki page listed under its type with a one-line summary.
 > Read this first to find relevant pages for any query.
-> Last updated: 2026-06-29 | Total pages: 7
+> Last updated: 2026-06-29 | Total pages: 8
 
 ## Entities
 <!-- Alphabetical within section -->
@@ -21,3 +21,5 @@
 ## Comparisons
 
 ## Queries
+
+- [[docmesh-py-core-vs-fastapi-core-usage-comparison]] - docmesh-py-core 엔티티 설명을 실제 fastapi-core 코드와 대조해 채택 범위와 누락된 export 정보를 정리한 비교 메모.

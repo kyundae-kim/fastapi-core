@@ -46,3 +46,11 @@
 - Wiki file created: concepts/application-integration-patterns.md
 - Wiki files updated: entities/docmesh-py-core.md, concepts/keycloak-authentication-api.md, concepts/operational-logging-and-retry-utilities.md, concepts/service-configuration-contracts.md, concepts/service-factory-registry.md, concepts/service-health-check-aggregation.md
 - Navigation updated: index.md
+
+## [2026-06-29] query | docmesh-py-core vs fastapi-core usage comparison
+- Re-read orientation files: SCHEMA.md, index.md, log.md
+- Compared files: pyproject.toml, .venv/lib/python3.11/site-packages/docmesh_py_core/__init__.py, fastapi_core/config.py, fastapi_core/dependencies/auth.py, fastapi_core/routers/health.py, fastapi_core/factory.py, test_fastapi_core/conftest.py
+- Verification command: `uv run pytest -q` → `12 passed, 1 warning in 0.24s`
+- Wiki file created: queries/docmesh-py-core-vs-fastapi-core-usage-comparison.md
+- Wiki file updated: entities/docmesh-py-core.md
+- Navigation updated: index.md

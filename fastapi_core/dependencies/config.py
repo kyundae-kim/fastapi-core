@@ -16,7 +16,6 @@ def get_settings(
     request: Request,
     config: AppConfig = Depends(get_config),
 ) -> Settings:
-    del config
     if hasattr(request.app.state, "settings"):
         return request.app.state.settings
-    return load_default_settings()
+    return load_default_settings(tuple(config.enabled_services))

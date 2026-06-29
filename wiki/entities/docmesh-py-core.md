@@ -14,15 +14,17 @@ confidence: medium
 
 ## What it exposes
 
-2026-06-29 기준 공개 루트 import는 `docmesh_py_core/__init__.py`의 `__all__`을 기준으로 하며, 대표적으로 `Settings`, `SqliteConfig`, `load_settings`, `ServiceFactoryRegistry`, `ServiceClientWrapper`, `NatsConnectionBuilder`, `KeycloakAuthService`, `KeycloakProvisioner`, `check_all_services`, `configure_logging`, `retry_call`, `build_service_log_event`, `mask_sensitive_value`를 포함한다.
+현재 fastapi-core 저장소는 `pyproject.toml`에서 `docmesh-py-core`를 `v0.1.3`으로 고정하고 있으며, 설치된 패키지 버전도 `uv run python` 기준 `0.1.3`이다.
+
+2026-06-29 기준 공개 루트 import는 `docmesh_py_core/__init__.py`의 `__all__`을 기준으로 한다. 핵심 설정/통합 API(`Settings`, `SqliteConfig`, `load_settings`, `ServiceFactoryRegistry`, `ServiceClientWrapper`, `NatsConnectionBuilder`, `KeycloakAuthService`, `KeycloakProvisioner`, `check_all_services`, `configure_logging`, `retry_call`, `build_service_log_event`, `mask_sensitive_value`) 외에도 `AccessTokenResult`, `ConfigError`, `ServiceClientError`, `ServiceClientWrapperError`, `UnsupportedServiceError`, `KeycloakTokenAuthenticationError`, `KeycloakTokenConfigurationError`, `KeycloakTokenError`, `KeycloakTokenTemporaryError`, `TokenValidationError`, `AuthenticatedUser` 같은 결과/오류 타입을 함께 노출한다.
 
 ## Recommended consumption flow
 
-문서는 소비 애플리케이션의 기본 순서를 `환경변수 준비 → load_settings(env) → ServiceFactoryRegistry(settings) 생성 → 필요한 서비스만 create_client()로 획득 → 시작 시 check()/check_all_services() 실행 → 종료 시 close_all()`로 제시한다.
+라이브러리 문서는 소비 애플리케이션의 기본 순서를 `환경변수 준비 → load_settings(env) → ServiceFactoryRegistry(settings) 생성 → 필요한 서비스만 create_client()로 획득 → 시작 시 check()/check_all_services() 실행 → 종료 시 close_all()`로 제시한다.
 
-이 흐름은 fastapi-core가 서비스별 클라이언트를 ad-hoc하게 직접 만들기보다 설정 로딩, 클라이언트 생성, 헬스체크, 종료 정리를 하나의 SDK 수명주기로 묶도록 유도한다.
+다만 현재 fastapi-core 코드베이스는 이 전체 흐름을 채택하지 않는다. 실제 앱은 `Settings`를 app state에 저장하고, 인증에서는 `KeycloakAuthService`, readiness에서는 `check_all_services()`를 직접 사용하지만 `ServiceFactoryRegistry`, `ServiceClientWrapper`, `NatsConnectionBuilder`, `close_all()` 호출은 확인되지 않았다.
 
-예제 문서는 이 흐름을 FastAPI `lifespan`, health endpoint, SQLite 로컬 개발, Keycloak 토큰 발급/JWT 검증, Langfuse optional 분기, NATS async 연결, 공용 로깅 초기화까지 실제 애플리케이션 조합 예제로 확장한다.
+예제 문서는 이 권장 흐름을 FastAPI `lifespan`, health endpoint, SQLite 로컬 개발, Keycloak 토큰 발급/JWT 검증, Langfuse optional 분기, NATS async 연결, 공용 로깅 초기화까지 확장하지만, 이는 라이브러리 capability 설명으로 보는 편이 현재 fastapi-core의 실제 채택 상태보다 정확하다.
 
 ## Main responsibilities
 
@@ -43,9 +45,12 @@ confidence: medium
 
 ## Integration notes for fastapi-core
 
-API 레퍼런스와 설정 가이드를 함께 보면 fastapi-core가 서비스 접근을 각 서비스별 커스텀 생성 로직 대신 registry/wrapper 패턴 위에 올리고, 인증은 Keycloak 전용 고수준 API로 분리하며, 로깅/재시도/헬스체크 오류 메시지까지 SDK 공용 유틸리티로 통일하고, 배포별 환경차이는 명시적 환경변수 계약과 선택적 서비스 로딩으로 제어하는 방향을 암시한다.
+API 레퍼런스와 설정 가이드를 함께 보면 fastapi-core가 장기적으로는 서비스 접근을 registry/wrapper 패턴 위에 올리고, 인증을 Keycloak 전용 고수준 API로 분리하며, 로깅/재시도/헬스체크 오류 메시지까지 SDK 유틸리티로 통일할 수 있는 방향을 제공한다.
 
-## Open questions
+하지만 현재 fastapi-core에서 실제 코드로 확인되는 채택 범위는 더 좁다. `fastapi_core/config.py`와 `test_fastapi_core/conftest.py`는 `Settings`/`load_settings()`를 사용하고, `fastapi_core/dependencies/auth.py`는 `KeycloakAuthService`·`TokenValidationError`·`AuthenticatedUser`를 사용하며, `fastapi_core/routers/health.py`는 `HealthCheckError`·`check_all_services()`를 사용한다. 반면 registry/wrapper, NATS builder, 공용 로깅/재시도 유틸리티의 직접 사용은 현재 저장소에서 확인되지 않았다.
 
-- fastapi-core가 실제로 어떤 공개 import만 사용하고 있는지는 코드 대조가 필요하다.
-- `langfuse`와 `nats`가 runtime에서 어떤 활성화 규칙을 갖는지는 별도 문서/코드 확인이 필요하다.
+## Observed fastapi-core usage
+
+- 현재 확인된 공개 import 사용 항목은 `Settings`, `load_settings`, `AuthenticatedUser`, `KeycloakAuthService`, `TokenValidationError`, `HealthCheckError`, `check_all_services`다.
+- 현재 앱 팩토리는 `Settings`를 app state에 저장하지만 `ServiceFactoryRegistry`를 생성하지 않는다.
+- 현재 코드 기준으로 `langfuse`와 `nats`는 설정 기본값에는 포함되지만, fastapi-core 내부에서 해당 클라이언트를 실제 생성/주입하는 경로는 확인되지 않았다.
