@@ -54,3 +54,9 @@
 - Wiki file created: queries/docmesh-py-core-vs-fastapi-core-usage-comparison.md
 - Wiki file updated: entities/docmesh-py-core.md
 - Navigation updated: index.md
+
+## [2026-06-29] update | doc and wiki sync after source comparison
+- Re-verified source/docs alignment for README.md, docs/api.md, docs/config.md, docs/messaging.md, docs/test.md, docs/srs.md, docs/examples.md
+- Re-read comparison artifact: queries/docmesh-py-core-vs-fastapi-core-usage-comparison.md
+- Wiki files updated: queries/docmesh-py-core-vs-fastapi-core-usage-comparison.md, entities/docmesh-py-core.md
+- Verification command: `uv run pytest -q` → `25 passed, 1 warning`

@@ -22,9 +22,13 @@ confidence: medium
 
 라이브러리 문서는 소비 애플리케이션의 기본 순서를 `환경변수 준비 → load_settings(env) → ServiceFactoryRegistry(settings) 생성 → 필요한 서비스만 create_client()로 획득 → 시작 시 check()/check_all_services() 실행 → 종료 시 close_all()`로 제시한다.
 
-다만 현재 fastapi-core 코드베이스는 이 전체 흐름을 채택하지 않는다. 실제 앱은 `Settings`를 app state에 저장하고, 인증에서는 `KeycloakAuthService`, readiness에서는 `check_all_services()`를 직접 사용하지만 `ServiceFactoryRegistry`, `ServiceClientWrapper`, `NatsConnectionBuilder`, `close_all()` 호출은 확인되지 않았다.
+현재 fastapi-core 코드베이스는 이 흐름의 상당 부분을 실제로 채택한다.
+- `fastapi_core/docmesh_settings.py`는 `load_settings()`를 감싸는 로더를 제공한다.
+- `fastapi_core/factory.py`는 `ServiceFactoryRegistry(settings)`를 생성한다.
+- readiness 기본 구성은 `registry.create_client(service_name).check()`를 사용한다.
+- shutdown 경로에서 `registry.close_all()`을 호출한다.
 
-예제 문서는 이 권장 흐름을 FastAPI `lifespan`, health endpoint, SQLite 로컬 개발, Keycloak 토큰 발급/JWT 검증, Langfuse optional 분기, NATS async 연결, 공용 로깅 초기화까지 확장하지만, 이는 라이브러리 capability 설명으로 보는 편이 현재 fastapi-core의 실제 채택 상태보다 정확하다.
+다만 라이브러리 예제 문서에 있는 모든 capability가 fastapi-core의 1차 공개 API가 된 것은 아니다. 예를 들어 NATS 전용 dependency, publisher/subscriber helper, 특정 서비스의 고수준 helper는 여전히 서비스별 확장 지점으로 보는 편이 정확하다.
 
 ## Main responsibilities
 
@@ -45,12 +49,22 @@ confidence: medium
 
 ## Integration notes for fastapi-core
 
-API 레퍼런스와 설정 가이드를 함께 보면 fastapi-core가 장기적으로는 서비스 접근을 registry/wrapper 패턴 위에 올리고, 인증을 Keycloak 전용 고수준 API로 분리하며, 로깅/재시도/헬스체크 오류 메시지까지 SDK 유틸리티로 통일할 수 있는 방향을 제공한다.
+API 레퍼런스와 설정 가이드를 함께 보면 fastapi-core가 장기적으로는 서비스 접근을 registry/wrapper 패턴 위에 올리고, 인증을 Keycloak 전용 고수준 API로 분리하며, 로깅/헬스체크 오류 메시지까지 SDK 유틸리티로 통일할 수 있는 방향을 제공한다.
 
-하지만 현재 fastapi-core에서 실제 코드로 확인되는 채택 범위는 더 좁다. `fastapi_core/config.py`와 `test_fastapi_core/conftest.py`는 `Settings`/`load_settings()`를 사용하고, `fastapi_core/dependencies/auth.py`는 `KeycloakAuthService`·`TokenValidationError`·`AuthenticatedUser`를 사용하며, `fastapi_core/routers/health.py`는 `HealthCheckError`·`check_all_services()`를 사용한다. 반면 registry/wrapper, NATS builder, 공용 로깅/재시도 유틸리티의 직접 사용은 현재 저장소에서 확인되지 않았다.
+현재 fastapi-core에서 실제 코드로 확인되는 채택 범위는 다음과 같다.
+- `fastapi_core/docmesh_settings.py`, `test_fastapi_core/conftest.py`: `Settings`, `load_settings()`
+- `fastapi_core/factory.py`: `ServiceFactoryRegistry`, `configure_logging`, 서비스별 readiness check 구성, `close_all()`
+- `fastapi_core/dependencies/auth.py`, `fastapi_core/routers/auth.py`: `KeycloakAuthService`, `AuthenticatedUser`, `TokenValidationError`, 각종 token error 타입
+- `fastapi_core/routers/health.py`: `HealthCheckError`, `check_all_services()`, optional failure의 `degraded` 처리
+
+반면 현재도 직접 확인되지 않은 채택 범위는 있다.
+- `retry_call`의 직접 사용
+- NATS builder를 1차 FastAPI dependency/API로 노출하는 경로
+- Langfuse/NATS/기타 서비스별 고수준 helper를 패키지 공개 표면으로 승격하는 경로
 
 ## Observed fastapi-core usage
 
-- 현재 확인된 공개 import 사용 항목은 `Settings`, `load_settings`, `AuthenticatedUser`, `KeycloakAuthService`, `TokenValidationError`, `HealthCheckError`, `check_all_services`다.
-- 현재 앱 팩토리는 `Settings`를 app state에 저장하지만 `ServiceFactoryRegistry`를 생성하지 않는다.
-- 현재 코드 기준으로 `langfuse`와 `nats`는 설정 기본값에는 포함되지만, fastapi-core 내부에서 해당 클라이언트를 실제 생성/주입하는 경로는 확인되지 않았다.
+- 현재 확인된 공개 import 사용 항목은 `Settings`, `load_settings`, `ServiceFactoryRegistry`, `configure_logging`, `AuthenticatedUser`, `KeycloakAuthService`, `TokenValidationError`, `HealthCheckError`, `check_all_services`, token error 타입들이다.
+- 현재 앱 팩토리는 `settings`, `registry`, `root_logger`, readiness state를 app state에 저장한다.
+- 기본 readiness는 `enabled_services`를 기준으로 registry-backed service check를 자동 구성한다.
+- `langfuse`, `nats` 같은 서비스는 settings/registry/readiness 층에서 간접 채택될 수 있지만, 현재 fastapi-core가 이들 각각에 대해 별도 FastAPI dependency를 제공하지는 않는다.

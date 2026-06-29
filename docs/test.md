@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`의 **현재 구현된 FastAPI 앱 계층**을 어떤 수준으로 검증하는지 정리한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`, `docs/config.md`
-> 문서 상태: 구현 반영본(v0.3)
+> 문서 상태: 구현 반영본(v0.4)
 
 ---
 
@@ -14,13 +14,15 @@
 - `create_app(...)`
 - auth router (`/token`, `/user`)
 - health router (`/health/liveness`, `/health/readiness`)
-- dependency (`get_current_user`, `require_permissions`)
-- schema (`TokenResponse`, `UserInfo`, `HealthResponse`)
+- dependency (`get_current_user`, `require_permissions`, registry-backed `get_auth_provider` 경로)
+- schema (`TokenResponse`, `UserInfo`, `HealthResponse`, `HealthServiceDetail`)
+- config / settings loader
 - custom lifespan 연계
+- 구조화 로깅
 
-- 작성일: `2026-06-25`
+- 작성일: `2026-06-29`
 - 작성자: `Hermes Agent`
-- 버전: `v0.3`
+- 버전: `v0.4`
 - 상태: `implemented-surface`
 
 ---
@@ -32,6 +34,7 @@
 ```text
 test_fastapi_core/
   conftest.py
+  test_config.py
   test_factory.py
   test_auth_router.py
   test_health_router.py
@@ -41,8 +44,8 @@ test_fastapi_core/
 
 현재는 다음 파일이 **없다**:
 - `test_lifespan.py`
-- `test_config.py`
 - `test_messaging_integration.py`
+- 실제 외부 서비스 통합 전용 테스트 파일
 
 즉, 문서는 없는 테스트를 이미 갖춘 것처럼 서술하면 안 된다.
 
@@ -57,7 +60,7 @@ uv run pytest -q
 ```
 
 최근 실제 실행 결과:
-- `12 passed`
+- `25 passed`
 
 테스트 러너/환경 특성:
 - `pytest` 사용
@@ -104,15 +107,21 @@ uv run pytest -q
 현재 검증하는 항목:
 - `create_app()`이 liveness route를 포함한다.
 - auth route(`/token`, `/user`)가 기본 포함된다.
-- `app.state.settings`에 전달한 settings가 저장된다.
+- `app.state.settings`가 저장된다.
+- `app.state.config.token_url`이 기본값으로 반영된다.
+- `app.state.registry`가 생성된다.
+- `app.state.root_logger`가 생성된다.
+- 기본 readiness state가 `keycloak` 기준으로 구성된다.
+- custom `token_url`이 OpenAPI security scheme에 반영된다.
 - `include_auth_router=False`일 때 `/token`, `/user`가 404다.
 - custom lifespan startup/shutdown이 호출된다.
+- 선택 서비스(`sqlite`)만 로딩하는 설정 경로가 동작한다.
+- JSON 파일 로깅이 실제로 기록된다.
 
 현재 검증하지 않는 항목:
-- CORS middleware 세부 동작
-- `root_path` 값 반영
-- `app.state.config` 저장 여부
-- `readiness_parallel` 상태 저장 여부
+- CORS middleware 세부 응답 헤더 동작
+- `root_path` 기반 reverse proxy 실제 동작
+- 여러 서비스 조합에서의 광범위한 registry matrix
 
 ## 5.2 auth router 테스트
 
@@ -120,14 +129,19 @@ uv run pytest -q
 
 현재 검증하는 항목:
 - `/token`이 `TokenResponse` 구조를 반환한다.
+- `/token` 요청의 `scope`, `username`, `password`가 provider로 전달된다.
+- `/token`이 인증 실패를 `401 Authentication failed`로 매핑한다.
+- `/token`이 설정 오류를 `500 Authentication service misconfigured`로 매핑한다.
+- `/token`이 일시 오류를 `503 Authentication service unavailable`로 매핑한다.
+- 실패 응답에 `WWW-Authenticate: Bearer` 헤더가 포함된다.
+- 실패 로그가 `token_issue_failed` 구조화 이벤트로 남고, secret이 마스킹된다.
 - `/user`가 `UserInfo` 구조를 반환한다.
 - fake auth provider를 `app.state.auth_provider`로 주입해 동작을 대체할 수 있다.
-- `/token` 요청의 `scope`가 provider로 전달된다.
 - `/user`는 bearer token 기반 사용자 변환 결과를 반환한다.
 
 현재 검증하지 않는 항목:
-- provider 예외 시 `/token`의 401 경로
-- `/user`에서 invalid token 예외 매핑
+- `/token`의 `KeycloakTokenError -> 502` 경로
+- `/token`의 예상 밖 예외 `500` 경로
 - 실제 Keycloak 연동
 
 ## 5.3 health router 테스트
@@ -135,16 +149,18 @@ uv run pytest -q
 정의 위치: `test_fastapi_core/test_health_router.py`
 
 현재 검증하는 항목:
-- readiness check가 성공하면 200
-- 필수 readiness check가 실패하면 503
-- 성공 시 `details`에 서비스별 상태 구조가 들어간다.
-- 실패 시 `status == "error"`
+- readiness check가 모두 성공하면 `200 + status="ok"`
+- 선택 서비스 실패 시 `200 + status="degraded"`
+- 필수 서비스 실패 시 `503 + status="error"`
+- 성공/실패 시 `details`에 서비스별 상태 구조가 들어간다.
+- readiness 실패 로그가 `readiness_check_failed` 구조화 이벤트로 남는다.
+- 오류 문자열에서 secret이 마스킹된다.
 
 현재 검증하지 않는 항목:
 - `/health/liveness` 단독 파일 수준 재검증(간접적으로 factory 테스트에서 검증)
-- `READINESS_PARALLEL` 플래그 전달 효과
-- timeout/네트워크 오류의 세부 분기
-- 선택 서비스(degraded) 정책
+- `READINESS_PARALLEL` 플래그의 병렬성 효과 자체
+- timeout/네트워크 오류의 상세 분기
+- 실제 외부 서비스 check 함수 연동
 
 ## 5.4 dependency 테스트
 
@@ -154,14 +170,28 @@ uv run pytest -q
 - `get_current_user()`의 token 없음 경로 → 401
 - `WWW-Authenticate: Bearer` 헤더 검증
 - `require_permissions("admin")`의 role 부족 경로 → 403
+- registry-backed auth provider 경로에서 `keycloak` client가 요청된다.
+- registry에서 받은 provider가 token 해석에 사용된다.
 
 현재 검증하지 않는 항목:
 - `get_config()` 직접 테스트
 - `get_settings()` 직접 테스트
-- `get_auth_provider()` 캐시/재사용 테스트
+- `app.state.auth_provider`가 이미 있을 때의 재사용 경로 직접 테스트
 - invalid token 예외 매핑
 
-## 5.5 schema 테스트
+## 5.5 config / settings 테스트
+
+정의 위치: `test_fastapi_core/test_config.py`
+
+현재 검증하는 항목:
+- `load_app_config()`가 `ROOT_PATH`, `TOKEN_URL`, `CORS_ORIGINS`, `CORS_CREDENTIALS`, `READINESS_PARALLEL`을 읽는다.
+- `DOCMESH_LOG_LEVEL`, `APP_LOG_PATH`, `APP_LOG_JSON`, `APP_LOG_FORCE`를 읽는다.
+- `DOCMESH_SERVICES`, `READINESS_REQUIRED_SERVICES`를 읽는다.
+- 기본 `AppConfig` 값이 현재 구현과 일치한다.
+- `build_docmesh_env_overlay()`가 기본값을 채우되 기존 환경변수를 덮어쓰지 않는다.
+- `load_docmesh_settings(("sqlite",))`가 선택 서비스만 로딩한다.
+
+## 5.6 schema 테스트
 
 정의 위치: `test_fastapi_core/test_schemas.py`
 
@@ -180,8 +210,9 @@ uv run pytest -q
 
 문서 계획이 아니라 현재 구현된 계약을 검증한다.
 예를 들어:
-- readiness는 자동 Keycloak/NATS 등록이 아니라 `app.state.readiness_checks` 주입을 기준으로 검증한다.
+- readiness는 `app.state.readiness_checks`와 `readiness_services` 조합을 기준으로 검증한다.
 - auth는 실제 Keycloak 서버 대신 fake provider 주입으로 계약을 고정한다.
+- config는 실제 `AppConfig` 및 `docmesh_settings` 로더를 직접 통과시킨다.
 
 ### 6.2 좁고 빠른 회귀 우선
 
@@ -190,11 +221,12 @@ uv run pytest -q
 - response body shape
 - route 포함/제외
 - dependency failure branch
-- lifespan 호출 여부
+- 구성 값 파싱
+- 로그/상태 side effect
 
 ### 6.3 실제 설정 모델 경로 사용
 
-테스트는 단순 dict mock 대신 `load_settings(...)`를 통해 `Settings`를 만든다.
+테스트는 단순 dict mock 대신 `load_settings(...)` 또는 실제 로더를 통해 `Settings`를 만든다.
 따라서 설정 유효성 제약이 테스트에도 반영된다.
 
 ---
@@ -204,15 +236,15 @@ uv run pytest -q
 문서와 비교했을 때 아직 없는 검증:
 
 1. `get_config()` / `get_settings()` 직접 테스트
-2. `AppConfig` 로딩(`ROOT_PATH`, `CORS_ORIGINS`, `READINESS_PARALLEL`) 테스트
-3. `/token` 실패 경로 테스트
-4. invalid token → 401 매핑 테스트
-5. `get_auth_provider()` 재사용/생성 분기 테스트
-6. CORS middleware 동작 테스트
+2. `app.state.auth_provider` 선행 주입 재사용 경로의 직접 테스트
+3. invalid token → 401 매핑 테스트
+4. `/token`의 `502` 및 unexpected `500` 분기 테스트
+5. CORS middleware 응답 헤더 테스트
+6. `root_path` 반영 테스트
 7. 실제 외부 연동(Keycloak/NATS) integration test
 8. 비동기 테스트 함수 기반 검증
 9. 메시징 startup/shutdown 연동 테스트
-10. `root_path` 반영 테스트
+10. `READINESS_PARALLEL`의 실제 병렬성 효과 검증
 
 이 항목들은 향후 추가 대상이지, 현재 완료된 테스트 범위는 아니다.
 
@@ -223,20 +255,21 @@ uv run pytest -q
 현재 구현을 기준으로 다음 순서를 권장한다.
 
 ### 우선순위 1
-- `test_config.py` 추가
-  - `load_app_config()` 환경변수 파싱
-  - `cors_origins` 분리
-  - `readiness_parallel` bool 파싱
-
-### 우선순위 2
 - dependency 직접 테스트 보강
-  - `get_auth_provider()` state 재사용
+  - `get_config()` / `get_settings()`
+  - `app.state.auth_provider` 재사용 경로
   - invalid token 예외 매핑
 
-### 우선순위 3
+### 우선순위 2
 - router 실패 경로 보강
-  - `/token` provider failure → 401
-  - readiness optional/required 서비스 분기
+  - `/token`의 `KeycloakTokenError -> 502`
+  - `/token`의 unexpected 예외 `500`
+
+### 우선순위 3
+- app factory / middleware 보강
+  - CORS 응답 헤더
+  - `root_path` 반영
+  - `READINESS_PARALLEL` 전달 효과
 
 ### 우선순위 4
 - 통합/외부 연동 테스트 분리
@@ -252,6 +285,7 @@ uv run pytest -q
 - `asyncio.run(...)` 래퍼는 사용하지 않음
 - FastAPI dependency 검증은 `Depends(...)` + `TestClient` 또는 async client로 수행
 - 상태 코드와 응답 본문을 함께 검증
+- 로그/민감정보 마스킹 검증은 회귀 가치가 높으므로 유지
 - 외부 의존성 테스트는 기본 회귀와 분리
 
 ---
@@ -263,17 +297,24 @@ uv run pytest -q
 - [x] auth route가 기본 포함된다.
 - [x] `include_auth_router=False` 경로가 검증되었다.
 - [x] custom lifespan startup/shutdown이 검증되었다.
+- [x] OpenAPI `tokenUrl` 반영이 검증되었다.
+- [x] 기본 readiness state 구성이 검증되었다.
+- [x] 선택 서비스 로딩이 검증되었다.
+- [x] JSON 로깅이 검증되었다.
 - [x] `/token`이 `TokenResponse` 구조를 반환한다.
+- [x] `/token` 실패 경로 일부가 검증되었다.
 - [x] `/user`가 `UserInfo` 구조를 반환한다.
-- [x] readiness 성공/실패가 검증되었다.
+- [x] readiness `ok/degraded/error`가 검증되었다.
 - [x] `get_current_user()`의 401 경로가 검증되었다.
 - [x] `require_permissions(...)`의 403 경로가 검증되었다.
+- [x] config 로더 직접 테스트가 있다.
 - [x] schema 기본값이 검증되었다.
 
 미완료 체크:
-- [ ] config 로더 직접 테스트
 - [ ] invalid token 401 테스트
-- [ ] `/token` 실패 경로 테스트
+- [ ] `/token`의 502/unexpected 500 테스트
+- [ ] CORS 응답 헤더 테스트
+- [ ] `root_path` 반영 테스트
 - [ ] 외부 연동 integration test
 - [ ] 비동기 테스트 함수 기반 coverage
 
@@ -285,8 +326,11 @@ uv run pytest -q
 - `docs/srs.md`
 - `docs/api.md`
 - `docs/config.md`
+- `docs/examples.md`
+- `docs/consistency-checklist.md`
 - `README.md`
 - `test_fastapi_core/conftest.py`
+- `test_fastapi_core/test_config.py`
 - `test_fastapi_core/test_factory.py`
 - `test_fastapi_core/test_auth_router.py`
 - `test_fastapi_core/test_health_router.py`
@@ -298,4 +342,4 @@ uv run pytest -q
 ## 12. 문서 상태 메모
 
 이 문서는 기존의 넓은 테스트 계획 초안을, **현재 저장소에 실제 존재하는 테스트와 이미 검증된 계약** 중심으로 재정렬한 것이다.
-향후 테스트가 추가되면 이 문서도 “계획”이 아니라 “실제 회귀 범위” 기준으로 계속 갱신하는 것이 맞다.
+특히 `test_config.py` 추가, readiness `degraded` 검증, auth 실패 매핑, registry-backed dependency 경로, JSON 로깅 검증을 반영해 최신 코드와 맞췄다.

@@ -2,18 +2,18 @@
 
 > 문서 목적: `fastapi-core`의 **현재 구현된 FastAPI 공개 표면**을 문서화한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`
-> 문서 상태: 구현 반영본(v0.3)
+> 문서 상태: 구현 반영본(v0.4)
 
 ---
 
 ## 1. 문서 개요
 
-이 문서는 계획 문서가 아니라 현재 저장소에 구현된 FastAPI API를 기준으로 정리한다.
+이 문서는 계획 문서가 아니라 현재 저장소 코드와 테스트를 기준으로 정리한 **실구현 API 문서**다.
 외부 서비스 SDK 래퍼보다, FastAPI 서비스 작성자가 직접 사용하는 공개 표면을 우선 설명한다.
 
-- 작성일: `2026-06-25`
+- 작성일: `2026-06-29`
 - 작성자: `Hermes Agent`
-- 버전: `v0.3`
+- 버전: `v0.4`
 - 상태: `implemented-surface`
 
 핵심 범주:
@@ -21,6 +21,7 @@
 - router
 - dependency
 - schema
+- config / settings loader
 - `app.state` 기반 통합 지점
 
 ---
@@ -34,7 +35,11 @@
 entrypoint = "fastapi_core.factory:create_app"
 ```
 
-패키지 루트에서 보장하는 공개 re-export는 현재 `create_app`이다.
+패키지 루트에서 보장하는 공개 re-export는 현재 `create_app` 하나다.
+
+```python
+from fastapi_core import create_app
+```
 
 ---
 
@@ -48,22 +53,39 @@ entrypoint = "fastapi_core.factory:create_app"
 - `config: AppConfig | None`
 - `settings: docmesh_py_core.Settings | None`
 - `lifespan: Callable | None`
-- `include_auth_router: bool`
+- `include_auth_router: bool = True`
 
 #### 현재 구현 동작
 - `config is None`이면 `load_app_config()`를 사용한다.
-- `settings is None`이면 `load_default_settings()`를 사용한다.
-- `FastAPI(root_path=config.root_path, lifespan=lifespan)` 인스턴스를 생성한다.
-- `app.state.config`, `app.state.settings`를 저장한다.
-- `app.state.readiness_parallel`을 저장한다.
+- `settings is None`이면 `load_docmesh_settings(tuple(config.enabled_services))`를 사용한다.
+- `_configure_application_logging(config)`로 앱 로깅을 초기화한다.
+- `ServiceFactoryRegistry(settings)`를 생성한다.
+- `FastAPI(root_path=config.root_path, lifespan=_build_lifespan(lifespan, registry))` 인스턴스를 생성한다.
+- `app.state`에 아래 값을 저장한다.
+  - `config`
+  - `root_logger`
+  - `settings`
+  - `registry`
+  - `readiness_parallel`
+  - `readiness_checks`
+  - `readiness_services`
+  - `required_services`
+- `set_oauth2_token_url(config.token_url)`을 호출해 OpenAPI password flow의 token URL을 반영한다.
 - CORS middleware를 등록한다.
 - health router를 기본 포함한다.
 - `include_auth_router=True`일 때 auth router를 포함한다.
 
-#### 현재 구현에 없는 것
-- logging 초기화
-- auth 전용 exception handler 등록
-- startup 단계의 기본 Keycloak/NATS readiness check 자동 등록
+#### readiness 기본 구성
+기본 `create_app()` 경로는 `config.enabled_services`를 기준으로 registry-backed readiness check를 자동 생성한다.
+
+- `app.state.readiness_checks[service_name] = lambda: registry.create_client(service_name).check()`
+- `app.state.readiness_services[service_name] = {"enabled": True, "required": ...}`
+- `app.state.required_services = set(config.required_services)`
+
+기본 `AppConfig`에서는 `enabled_services == ["keycloak"]`, `required_services == ["keycloak"]`다.
+
+#### lifespan 동작
+내부 lifespan wrapper는 사용자가 전달한 custom lifespan을 먼저 실행하고, 종료 시 항상 `registry.close_all()`을 호출한다.
 
 #### 반환값
 - `FastAPI`
@@ -71,7 +93,7 @@ entrypoint = "fastapi_core.factory:create_app"
 #### 예시
 
 ```python
-from fastapi_core.factory import create_app
+from fastapi_core import create_app
 
 app = create_app()
 ```
@@ -96,12 +118,24 @@ app = create_app(include_auth_router=False)
 `OAuth2PasswordRequestForm`을 입력으로 받아 token provider 결과를 `TokenResponse`로 변환한다.
 
 ##### 입력
-- `OAuth2PasswordRequestForm`
+- form field: `username`
+- form field: `password`
+- form field: `scope`
 
 ##### 현재 구현 세부사항
-- 현재 구현은 `form_data.scopes`를 공백으로 join한 값을 `provider.fetch_access_token(scope=...)`에 전달한다.
-- `username`, `password` 필드는 폼에서 받지만 provider 호출 인자로 직접 넘기지 않는다.
-- provider 예외 발생 시 `401 Unauthorized`와 `WWW-Authenticate: Bearer`를 반환한다.
+- `scope = " ".join(form_data.scopes) or None`
+- provider의 `fetch_access_token(scope=scope, username=form_data.username, password=form_data.password)`를 호출한다.
+- 실패 시 route 내부에서 예외 유형별 HTTP 상태 코드와 메시지를 매핑한다.
+
+##### 실패 매핑
+- `KeycloakTokenAuthenticationError` → `401 Authentication failed`
+- `KeycloakTokenConfigurationError` → `500 Authentication service misconfigured`
+- `KeycloakTokenTemporaryError` → `503 Authentication service unavailable`
+- `KeycloakTokenError` → `502 Authentication service error`
+- 기타 예외 → `500 Authentication service error`
+
+모든 실패 응답에는 `WWW-Authenticate: Bearer` 헤더가 포함된다.
+로그는 `token_issue_failed` 메시지와 구조화 `event` payload로 남는다.
 
 ##### 응답 모델
 - `TokenResponse`
@@ -160,30 +194,44 @@ app = create_app(include_auth_router=False)
 
 ##### 현재 구현 동작
 - `app.state.readiness_checks`에서 서비스명 → check callable 매핑을 읽는다.
+- `app.state.readiness_services`에서 서비스별 메타데이터(`required`, `enabled`)를 읽는다.
 - `app.state.required_services`에서 필수 서비스 집합을 읽는다.
 - `app.state.readiness_parallel`에서 병렬 실행 여부를 읽는다.
 - readiness check가 비어 있으면 `{"status": "ok", "details": null}`을 반환한다.
 - readiness check가 있으면 `docmesh_py_core.check_all_services(...)`로 집계한다.
-- 필수 서비스 실패 시 `503 Service Unavailable`을 반환한다.
+- 필수 서비스 실패 시 `503 + status="error"`를 반환한다.
+- 선택 서비스만 실패 시 `200 + status="degraded"`를 반환한다.
+- 모두 성공 시 `200 + status="ok"`를 반환한다.
 
 ##### 세부 응답 형식
-성공 시 `details`는 서비스별 구조를 가진다.
+성공/실패 공통으로 `details`는 서비스별 `HealthServiceDetail` 구조를 가진다.
 
 ```json
 {
-  "status": "ok",
+  "status": "degraded",
   "details": {
     "keycloak": {
       "ok": true,
       "latency_ms": 3,
-      "error": null
+      "error": null,
+      "required": true,
+      "enabled": true
+    },
+    "nats": {
+      "ok": false,
+      "latency_ms": null,
+      "error": "masked error",
+      "required": false,
+      "enabled": true
     }
   }
 }
 ```
 
-실패 시 `details`는 `HealthCheckError` 또는 집계 결과를 그대로 반영한다.
-에러 메시지는 `docmesh_py_core`의 마스킹 정책 영향을 받을 수 있다.
+##### 로깅
+- 실패한 서비스마다 `readiness_check_failed` 경고 로그를 남긴다.
+- 구조화 `event`에는 `service`, `operation`, `outcome`, `required`, `enabled`, `latency_ms`, `error` 등이 들어간다.
+- `error` 값은 `docmesh_py_core`의 마스킹 정책 영향을 받을 수 있다.
 
 ---
 
@@ -207,8 +255,8 @@ app = create_app(include_auth_router=False)
 
 #### 동작
 - `request.app.state.settings`가 있으면 그것을 반환한다.
-- 없으면 `load_default_settings()`를 사용한다.
-- 현재 `config` 인자는 dependency wiring 목적이며 함수 본문에서는 직접 사용하지 않는다.
+- 없으면 `load_docmesh_settings(tuple(config.enabled_services))`를 사용한다.
+- 현재 `config` 인자는 dependency wiring 목적이며 함수 본문에서는 `enabled_services` 계산 외 직접 사용하지 않는다.
 
 ### 5.3 `get_auth_provider(request: Request, settings: Settings = Depends(get_settings)) -> KeycloakAuthService`
 
@@ -216,7 +264,9 @@ app = create_app(include_auth_router=False)
 
 #### 동작
 - `app.state.auth_provider`가 있으면 재사용한다.
-- 없으면 `KeycloakAuthService(settings)`를 생성해 `app.state.auth_provider`에 저장한다.
+- 없으면 `app.state.registry`가 있는지 먼저 확인한다.
+- registry가 있으면 `registry.create_client("keycloak").client`를 provider로 사용하고 `app.state.auth_provider`에 저장한다.
+- registry가 없으면 `KeycloakAuthService(settings)`를 직접 생성하고 `app.state.auth_provider`에 저장한다.
 
 ### 5.4 `get_current_user(token=Depends(oauth2_scheme), provider=Depends(get_auth_provider), settings=Depends(get_settings)) -> UserInfo`
 
@@ -226,7 +276,7 @@ app = create_app(include_auth_router=False)
 - `OAuth2PasswordBearer(tokenUrl="/token", auto_error=False)`를 사용한다.
 - bearer token이 없으면 401과 `WWW-Authenticate: Bearer`를 반환한다.
 - provider의 `extract_user_info(token)`을 호출한다.
-- `docmesh_py_core.TokenValidationError`를 401로 매핑한다.
+- `docmesh_py_core.TokenValidationError`를 401 `Invalid token`으로 매핑한다.
 - 결과 `AuthenticatedUser`를 `UserInfo`로 변환한다.
 
 #### 현재 변환 규칙
@@ -252,8 +302,7 @@ app = create_app(include_auth_router=False)
 #### 예시
 
 ```python
-from fastapi import Depends
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi_core.dependencies.auth import require_permissions
 from fastapi_core.schemas.user import UserInfo
 
@@ -293,57 +342,111 @@ class UserInfo(BaseModel):
     scopes: list[str] = Field(default_factory=list)
 ```
 
-### 6.3 `HealthResponse`
+### 6.3 `HealthStatus`
+
+정의 위치: `fastapi_core.schemas.health`
+
+```python
+HealthStatus = Literal["ok", "degraded", "error"]
+```
+
+### 6.4 `HealthServiceDetail`
+
+정의 위치: `fastapi_core.schemas.health`
+
+```python
+class HealthServiceDetail(BaseModel):
+    ok: bool
+    latency_ms: int | None = None
+    error: str | None = None
+    required: bool = False
+    enabled: bool = True
+```
+
+### 6.5 `HealthResponse`
 
 정의 위치: `fastapi_core.schemas.health`
 
 ```python
 class HealthResponse(BaseModel):
-    status: str
-    details: dict[str, Any] | None = None
+    status: HealthStatus
+    details: dict[str, HealthServiceDetail] | None = None
 ```
-
-`details`는 선택 필드다. 현재 구현에서는 readiness 성공 시 서비스별 상세 구조를, 실패 시 오류 구조를 담을 수 있다.
 
 ---
 
-## 7. Config API
+## 7. Config / settings API
 
 ### 7.1 `AppConfig`
 
 정의 위치: `fastapi_core.config`
 
 ```python
-class AppConfig(BaseModel):
+class AppConfig(BaseSettings):
     root_path: str = ""
+    token_url: str = "/token"
     cors_origins: list[str] = ["*"]
     cors_credentials: bool = False
     readiness_parallel: bool = False
+    log_level: str | None = "WARNING"
+    log_path: str | None = None
+    log_json: bool = True
+    log_force: bool = False
+    enabled_services: list[str] = ["keycloak"]
+    required_services: list[str] = ["keycloak"]
 ```
+
+#### 관련 환경변수
+- `ROOT_PATH`
+- `TOKEN_URL`
+- `CORS_ORIGINS`
+- `CORS_CREDENTIALS`
+- `READINESS_PARALLEL`
+- `DOCMESH_LOG_LEVEL` (`log_level` alias)
+- `APP_LOG_PATH` (`log_path` alias)
+- `APP_LOG_JSON` (`log_json` alias)
+- `APP_LOG_FORCE` (`log_force` alias)
+- `DOCMESH_SERVICES` (`enabled_services` alias)
+- `READINESS_REQUIRED_SERVICES` (`required_services` alias)
 
 ### 7.2 `load_app_config() -> AppConfig`
 
 환경변수 기반 앱 설정 로더.
 
-읽는 환경변수:
-- `ROOT_PATH`
-- `CORS_ORIGINS`
-- `CORS_CREDENTIALS`
-- `READINESS_PARALLEL`
+#### 파싱 규칙
+- `cors_origins`, `enabled_services`, `required_services`는 CSV 문자열을 list로 파싱한다.
+- 빈 문자열은 기본값 처리로 넘긴다.
+- 함수는 `lru_cache(maxsize=1)`로 캐시된다.
 
-### 7.3 `load_default_settings() -> docmesh_py_core.Settings`
+### 7.3 `build_docmesh_env_overlay() -> dict[str, str]`
 
-`docmesh_py_core.load_settings(...)`를 감싸는 기본 설정 로더.
-현재 구현은 로컬 개발/테스트를 위해 여러 필수 환경변수에 dev 기본값을 넣는다.
+정의 위치: `fastapi_core.docmesh_settings`
+
+현재 환경변수를 복사한 뒤, `docmesh_py_core.load_settings(...)`가 실패하지 않도록 개발/테스트용 fallback 값을 채운다.
 
 대표 기본값 예:
 - `KEYCLOAK_URL=http://keycloak.local`
+- `KEYCLOAK_REALM=docmesh`
+- `KEYCLOAK_CLIENT_ID=fastapi-core`
+- `KEYCLOAK_CLIENT_SECRET=dev-secret`
 - `SQLITE_PATH=:memory:`
 - `MINIO_ENDPOINT=minio.local:9000`
 - `MILVUS_URI=http://milvus.local:19530`
 - `OLLAMA_HOST=http://ollama.local:11434`
 - `LANGFUSE_HOST=http://langfuse.local:3000`
 - `NATS_SERVERS=nats://nats.local:4222`
+- `NATS_TOKEN=dev-token`
+
+### 7.4 `load_docmesh_settings(enabled_services: tuple[str, ...] | None = None) -> Settings`
+
+정의 위치: `fastapi_core.docmesh_settings`
+
+`build_docmesh_env_overlay()` 결과를 바탕으로 `docmesh_py_core.load_settings(...)`를 호출한다.
+
+#### 동작
+- `enabled_services`가 주어지면 해당 서비스 집합만 선택적으로 로딩한다.
+- 예: `("sqlite",)`를 넘기면 `settings.sqlite`는 채워지고 `settings.keycloak`은 `None`일 수 있다.
+- 함수는 `lru_cache(maxsize=1)`로 캐시된다.
 
 ---
 
@@ -351,67 +454,52 @@ class AppConfig(BaseModel):
 
 `create_app(..., lifespan=...)`는 외부 의존성 초기화를 FastAPI 수명주기와 연결하는 핵심 진입점이다.
 
-현재 코드에서 기본 제공되는 startup/shutdown orchestration은 없고, 사용자가 custom lifespan을 주입하는 방식으로 확장한다.
-권장 통합 지점은 다음과 같다.
+현재 코드의 통합 포인트:
+- startup 이전에 registry / logging / readiness metadata가 app assembly 단계에서 준비된다.
+- custom lifespan이 있으면 내부 wrapper가 이를 감싼다.
+- 종료 시 registry 자원 정리를 보장한다.
 
-- startup에서 registry / builder / connection 생성
-- `app.state.auth_provider`, `app.state.readiness_checks`, `app.state.required_services` 주입
-- shutdown에서 외부 자원 정리
+권장 통합 지점:
+- startup에서 추가 연결 객체를 `app.state`에 저장
+- 필요 시 `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services`를 덮어써 서비스 정책을 세밀화
+- shutdown에서 custom 자원 정리
 
 ---
 
-## 9. Minimal usage examples
+## 9. Usage examples
 
-### 9.1 기본 앱 생성
+- 기본 예제 모음: `docs/examples.md`
+- 문서 교차 점검 기준: `docs/consistency-checklist.md`
+- README quick start: `README.md`
 
-```python
-from fastapi_core.factory import create_app
-
-app = create_app()
-```
-
-### 9.2 auth router 제외
+대표 예시:
 
 ```python
+from fastapi_core import create_app
+
 app = create_app(include_auth_router=False)
 ```
 
-### 9.3 현재 사용자 주입
-
 ```python
-from fastapi import APIRouter, Depends
-from fastapi_core.dependencies.auth import get_current_user
-from fastapi_core.schemas.user import UserInfo
-
-router = APIRouter()
-
-@router.get("/me")
-async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
-    return user
-```
-
-### 9.4 readiness check 주입
-
-```python
+from fastapi_core.config import AppConfig
 from fastapi_core.factory import create_app
 
-app = create_app(include_auth_router=False)
-app.state.readiness_checks = {
-    "keycloak": lambda: None,
-}
-app.state.required_services = {"keycloak"}
+config = AppConfig(
+    token_url="/api/v1/auth/token",
+    enabled_services=["keycloak", "nats"],
+    required_services=["keycloak"],
+)
+app = create_app(config=config)
 ```
 
 ---
 
-## 10. 코드-문서 차이 요약
+## 10. 현재 구현 기준 주의점
 
-현재 구현은 PRD/SRS의 핵심 공개 표면 일부를 충족하지만, 아직 다음 항목은 미구현 또는 부분 구현이다.
+아직 `fastapi-core`가 직접 제공하지 않는 항목:
+- auth 전용 exception handler 등록 API
+- secure/insecure decode 분기나 introspection 모드 선택 API
+- `get_nats_connection` 같은 메시징 전용 FastAPI dependency
+- 실제 외부 서비스 통합을 포함한 기본 회귀 테스트
 
-- logging 초기화
-- auth exception handler 등록
-- `get_current_user()`의 secure/insecure decode 분기
-- 기본 readiness check 자동 구성
-- `/token`의 사용자명/비밀번호 기반 직접 provider 연계
-
-따라서 PRD/SRS는 목표 문서로 읽고, 실제 사용 계약은 이 API 문서를 우선 참고해야 한다.
+따라서 실제 사용 계약은 이 문서를 우선 참고하되, 통합 확장은 custom lifespan과 `app.state` 지점을 통해 수행하는 것이 현재 코드 구조와 맞다.
