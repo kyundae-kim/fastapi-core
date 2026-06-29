@@ -168,6 +168,39 @@ app = create_app(lifespan=lifespan)
 
 현재 `fastapi-core`는 A를 기본 제공하고, B는 서비스별 확장 지점으로 남겨둔다.
 
+개발 시 바로 참고할 수 있는 최소 패턴 예시:
+
+```python
+from contextlib import asynccontextmanager
+
+from fastapi import Depends, FastAPI, Request
+from fastapi_core import create_app
+
+
+def get_nats_connection(request: Request):
+    return request.app.state.nats
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.nats = object()  # 실제 NATS client/wrapper로 교체
+    try:
+        yield
+    finally:
+        app.state.nats = None
+
+
+app = create_app(lifespan=lifespan)
+
+
+@app.get("/internal/nats-status")
+async def nats_status(conn=Depends(get_nats_connection)):
+    return {"configured": conn is not None}
+```
+
+이 예시는 현재 `fastapi-core`가 메시징 전용 dependency를 기본 제공하지 않는다는 점을 유지하면서,
+서비스 레이어에서 어떤 방식으로 `app.state` 확장을 붙여야 하는지 보여준다.
+
 ---
 
 ## 8. 설정 계약 요약
