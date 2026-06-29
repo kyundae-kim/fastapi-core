@@ -26,3 +26,23 @@
 - Wiki files created: concepts/service-configuration-contracts.md
 - Wiki files updated: entities/docmesh-py-core.md, concepts/keycloak-authentication-api.md
 - Navigation updated: index.md
+
+## [2026-06-29] ingest | docmesh-py-core API Reference
+- Source URL: https://github.com/kyundae-kim/docmesh-py-core/blob/main/docs/api.md
+- Raw file updated: raw/articles/docmesh-py-core-api-reference-2026.md
+- Wiki file created: concepts/operational-logging-and-retry-utilities.md
+- Wiki files updated: entities/docmesh-py-core.md, concepts/keycloak-authentication-api.md, concepts/service-configuration-contracts.md, concepts/service-factory-registry.md, concepts/service-health-check-aggregation.md
+- Navigation updated: index.md
+
+## [2026-06-29] ingest | docmesh-py-core Configuration Guide
+- Source URL: https://github.com/kyundae-kim/docmesh-py-core/blob/main/docs/config.md
+- Raw file updated: raw/articles/docmesh-py-core-configuration-guide-2026.md
+- Wiki files updated: concepts/keycloak-authentication-api.md, concepts/operational-logging-and-retry-utilities.md, concepts/service-configuration-contracts.md
+- Navigation updated: index.md (no entry changes required)
+
+## [2026-06-29] ingest | docmesh-py-core Examples
+- Source URL: https://github.com/kyundae-kim/docmesh-py-core/blob/main/docs/examples.md
+- Raw file created: raw/articles/docmesh-py-core-examples-guide-2026.md
+- Wiki file created: concepts/application-integration-patterns.md
+- Wiki files updated: entities/docmesh-py-core.md, concepts/keycloak-authentication-api.md, concepts/operational-logging-and-retry-utilities.md, concepts/service-configuration-contracts.md, concepts/service-factory-registry.md, concepts/service-health-check-aggregation.md
+- Navigation updated: index.md

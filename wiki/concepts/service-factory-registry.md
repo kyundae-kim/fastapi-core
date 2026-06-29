@@ -1,10 +1,10 @@
 ---
 title: ServiceFactoryRegistry
 created: 2026-06-25
-updated: 2026-06-25
+updated: 2026-06-29
 type: concept
 tags: [service, module, integration, api, implementation]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-examples-guide-2026.md]
 confidence: medium
 ---
 
@@ -20,9 +20,25 @@ confidence: medium
 
 대부분의 서비스는 `ServiceClientWrapper`를 반환하고, `nats`는 비동기 `NatsConnectionBuilder`를 반환한다. `langfuse`는 `ServiceClientWrapper | None`일 수 있어 선택적 통합 지점을 암시한다.
 
+## Lifecycle details
+
+- `create_client()`는 동일 서비스에 대해 이미 생성한 클라이언트를 재사용한다.
+- `create_clients(services)`는 서비스명에서 클라이언트/빌더로의 매핑을 한 번에 반환한다.
+- `close_all()`은 지금까지 생성한 모든 클라이언트의 종료 훅을 호출한다.
+- `ServiceClientWrapper.close()`는 `close_fn`이 있으면 이를 우선 호출한다.
+- FastAPI 예시에서는 registry를 startup 시 1회 생성해 `app.state.registry`에 보관하고 shutdown 시 `close_all()`로 정리한다.
+
 ## Error surface
 
 주요 예외는 `UnsupportedServiceError`, `ServiceClientWrapperError`, `ServiceClientError`다. 따라서 fastapi-core는 서비스명 검증 실패, 래핑 실패, 실제 클라이언트 오류를 분리해서 처리할 수 있다.
+
+## Wrapper and NATS specifics
+
+- `ServiceClientWrapper`는 공통 `ping()` / `check()` / `close()` 인터페이스를 제공한다.
+- SQLAlchemy 기반 `postgres`/`sqlite`는 wrapper를 통해 엔진 기반 연결을 래핑한다.
+- NATS builder는 장기 연결을 보관하는 풀 객체가 아니라 연결 시도용 비동기 builder이며, `await connect()/ping()/check()`에서 실제 연결이 일어난다.
+- `langfuse`는 비활성화 시 `None`이 될 수 있으므로 소비 코드에서 분기 처리가 필요하다.
+- 선택 로딩 예시에서는 `services={"sqlite", "langfuse"}`처럼 필요한 서비스만 설정에 올리고, 선택되지 않은 서비스는 `Settings`에서 `None`으로 남긴다.
 
 ## Related behavior
 

@@ -1,9 +1,8 @@
 ---
 source_url: https://github.com/kyundae-kim/docmesh-py-core/blob/main/docs/config.md
-ingested: 2026-06-25
-sha256: 5b3ca94814594e21f613a6fd58836ea45e99ae7876308980a05393fe00cc3365
+ingested: 2026-06-29
+sha256: eb95603b98796a5f3f08f45ee1adabc85e3d4a38a6223455a00ed53797371952
 ---
-
 # docmesh-py-core Configuration Guide
 
 이 문서는 `docmesh-py-core`의 공개 환경변수 계약을 설명합니다.
@@ -23,6 +22,7 @@ sha256: 5b3ca94814594e21f613a6fd58836ea45e99ae7876308980a05393fe00cc3365
 - 민감정보는 Secret Manager 또는 배포 플랫폼의 secret 기능으로 주입하세요.
 - 운영 환경에서는 TLS 검증을 기본 활성화하세요.
 - 서비스별 timeout/retry는 공통 전역값이 아니라 각 서비스 환경변수로 관리합니다.
+- `load_settings(env, services={...})`를 사용하면 필요한 서비스만 선택적으로 검증/로딩할 수 있습니다.
 
 ## 2. 공통 환경변수
 
@@ -30,12 +30,20 @@ sha256: 5b3ca94814594e21f613a6fd58836ea45e99ae7876308980a05393fe00cc3365
 | --- | --- | --- | --- |
 | `DOCMESH_ENV` | 아니요 | `development` | 실행 환경 식별자 |
 | `DOCMESH_HEALTHCHECK_ENABLED` | 아니요 | `true` | 헬스체크 활성화 여부 |
+| `DOCMESH_LOG_LEVEL` | 아니요 | `INFO` | 공용 `configure_logging()` 기본 로그 레벨 |
 
 권장값 예시:
 
 - 로컬 개발: `DOCMESH_ENV=development`
 - 통합 테스트: `DOCMESH_ENV=integration`
 - 운영: `DOCMESH_ENV=production`
+
+로깅 규칙:
+
+- `configure_logging(level=...)`를 명시하지 않으면 `DOCMESH_LOG_LEVEL`을 읽습니다.
+- `DOCMESH_LOG_LEVEL`이 없으면 기본값은 `INFO`입니다.
+- 예: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
+- 잘못된 값이면 `ValueError`가 발생합니다.
 
 ## 3. 서비스별 설정
 
@@ -61,13 +69,14 @@ sha256: 5b3ca94814594e21f613a6fd58836ea45e99ae7876308980a05393fe00cc3365
 | --- | --- | --- | --- |
 | `KEYCLOAK_TOKEN_GRANT_TYPE` | 아니요 | `client_credentials` | 토큰 grant type |
 | `KEYCLOAK_TOKEN_SCOPE` | 아니요 | 없음 | 요청 scope |
-| `KEYCLOAK_TOKEN_USERNAME` | 조건부 | 없음 | password grant 사용자명 |
-| `KEYCLOAK_TOKEN_PASSWORD` | 조건부 | 없음 | password grant 비밀번호 |
+| `KEYCLOAK_TOKEN_USERNAME` | 테스트용 선택값 | 없음 | 테스트 코드에서 password grant 호출 시 넘길 사용자명 |
+| `KEYCLOAK_TOKEN_PASSWORD` | 테스트용 선택값 | 없음 | 테스트 코드에서 password grant 호출 시 넘길 비밀번호 |
 
 규칙:
 
 - 기본 grant는 `client_credentials`입니다.
-- `password` grant를 쓰면 사용자명/비밀번호가 필요합니다.
+- `password` grant를 쓰면 실제 `fetch_access_token(username=..., password=...)` 호출 시 사용자명/비밀번호가 필요합니다.
+- 운영 애플리케이션은 username/password를 설정 객체에 고정하지 말고 호출 시점 인자로 전달하는 것을 권장합니다.
 - 운영 환경 기본값으로 `password` grant를 두지 않는 것을 권장합니다.
 
 #### 프로비저닝
@@ -181,10 +190,10 @@ SQLite는 로컬 개발, 단위 테스트, 경량 통합 테스트에 적합합�
 
 | 환경변수 | 필수 | 기본값 | 설명 |
 | --- | --- | --- | --- |
-| `LANGFUSE_HOST` | 예 | 없음 | Langfuse API 기본 URL |
-| `LANGFUSE_PUBLIC_KEY` | 예 | 없음 | public key |
-| `LANGFUSE_SECRET_KEY` | 예 | 없음 | secret key |
 | `LANGFUSE_ENABLED` | 아니요 | `true` | 활성화 여부 |
+| `LANGFUSE_HOST` | 조건부 | 없음 | Langfuse API 기본 URL |
+| `LANGFUSE_PUBLIC_KEY` | 조건부 | 없음 | public key |
+| `LANGFUSE_SECRET_KEY` | 조건부 | 없음 | secret key |
 | `LANGFUSE_RELEASE` | 아니요 | 없음 | 릴리스 식별자 |
 | `LANGFUSE_ENVIRONMENT` | 아니요 | `DOCMESH_ENV` 값 | 환경 식별자 |
 | `LANGFUSE_REQUEST_TIMEOUT_SECONDS` | 아니요 | `10` | 요청 제한 시간 |
@@ -193,6 +202,7 @@ SQLite는 로컬 개발, 단위 테스트, 경량 통합 테스트에 적합합�
 규칙:
 
 - `LANGFUSE_ENABLED=false`이면 Langfuse를 선택 기능으로 비활성화할 수 있습니다.
+- `LANGFUSE_ENABLED=true`일 때만 `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`가 필수입니다.
 - 기본 헬스체크는 `auth_check()`입니다.
 
 ### 3.8 NATS
@@ -214,9 +224,98 @@ SQLite는 로컬 개발, 단위 테스트, 경량 통합 테스트에 적합합�
 - `NATS_SERVERS`는 쉼표 구분 목록입니다.
 - 헬스체크는 connect 후 `flush()` 확인입니다.
 
-## 4. 최소 설정 예시
+## 4. 최소 구성 가이드
 
-### PostgreSQL 기반 예시
+이 절의 목적은 "각 서비스를 어떤 env 묶음으로 활성화하는가"를 빠르게 보여주는 것입니다.
+
+### 4.1 서비스별 최소 활성화 세트
+
+#### Keycloak 기본 인증 / 토큰 획득
+
+필수:
+
+- `KEYCLOAK_URL`
+- `KEYCLOAK_REALM`
+- `KEYCLOAK_CLIENT_ID`
+- `KEYCLOAK_CLIENT_SECRET` (`KEYCLOAK_CLIENT_PUBLIC=false`인 기본값 기준)
+
+추가 조건:
+
+- `KEYCLOAK_CLIENT_PUBLIC=true`면 `KEYCLOAK_CLIENT_SECRET` 없이도 설정 로딩 가능
+- `KEYCLOAK_TOKEN_GRANT_TYPE=password`면 실제 token fetch 호출에서 `username`, `password` 함수 인자가 필요
+
+#### PostgreSQL 저장소
+
+둘 중 하나를 선택합니다.
+
+1. DSN 방식
+   - `POSTGRES_DSN`
+2. 개별 필드 방식
+   - `POSTGRES_HOST`
+   - `POSTGRES_DB`
+   - `POSTGRES_USER`
+   - `POSTGRES_PASSWORD`
+
+선택 항목:
+
+- `POSTGRES_PORT`
+- `POSTGRES_SSLMODE`
+- `POSTGRES_CONNECT_TIMEOUT_SECONDS`
+- `POSTGRES_POOL_SIZE`
+- `POSTGRES_MAX_OVERFLOW`
+
+#### SQLite 저장소
+
+필수:
+
+- `SQLITE_PATH`
+
+선택 항목:
+
+- `SQLITE_READONLY`
+- `SQLITE_ENABLE_WAL`
+- `SQLITE_BUSY_TIMEOUT_MS`
+
+#### Langfuse 비활성화
+
+최소:
+
+- `LANGFUSE_ENABLED=false`
+
+이 경우 아래 값들은 생략 가능합니다.
+
+- `LANGFUSE_HOST`
+- `LANGFUSE_PUBLIC_KEY`
+- `LANGFUSE_SECRET_KEY`
+
+#### Langfuse 활성화
+
+필수:
+
+- `LANGFUSE_ENABLED=true` (기본값)
+- `LANGFUSE_HOST`
+- `LANGFUSE_PUBLIC_KEY`
+- `LANGFUSE_SECRET_KEY`
+
+#### NATS 인증 모드
+
+필수:
+
+- `NATS_SERVERS`
+
+아래 세 모드 중 **하나만** 선택합니다.
+
+1. user/password
+   - `NATS_USER`
+   - `NATS_PASSWORD`
+2. token
+   - `NATS_TOKEN`
+3. creds file
+   - `NATS_CREDS_FILE`
+
+### 4.2 최소 설정 예시
+
+#### PostgreSQL 기반 예시
 
 ```env
 DOCMESH_ENV=development
@@ -225,27 +324,27 @@ DOCMESH_HEALTHCHECK_ENABLED=true
 KEYCLOAK_URL=https://keycloak.example.com
 KEYCLOAK_REALM=docmesh
 KEYCLOAK_CLIENT_ID=docmesh-backend
-KEYCLOAK_CLIENT_SECRET=***
+KEYCLOAK_CLIENT_SECRET=replace-me
 
 POSTGRES_HOST=postgres.example.com
 POSTGRES_PORT=5432
 POSTGRES_DB=docmesh
 POSTGRES_USER=docmesh
-POSTGRES_PASSWORD=***
+POSTGRES_PASSWORD=replace-me
 
 MINIO_ENDPOINT=minio.example.com:9000
 MINIO_ACCESS_KEY=replace-me
-MINIO_SECRET_KEY=***
+MINIO_SECRET_KEY=replace-me
 
 MILVUS_URI=http://milvus.example.com:19530
 OLLAMA_HOST=http://ollama.example.com:11434
 LANGFUSE_HOST=https://langfuse.example.com
 LANGFUSE_PUBLIC_KEY=replace-me
-LANGFUSE_SECRET_KEY=***
+LANGFUSE_SECRET_KEY=replace-me
 NATS_SERVERS=nats://n1.example.com:4222
 ```
 
-### SQLite 기반 예시
+#### SQLite 기반 예시
 
 ```env
 DOCMESH_ENV=development
@@ -254,7 +353,7 @@ DOCMESH_HEALTHCHECK_ENABLED=true
 KEYCLOAK_URL=https://keycloak.example.com
 KEYCLOAK_REALM=docmesh
 KEYCLOAK_CLIENT_ID=docmesh-backend
-KEYCLOAK_CLIENT_SECRET=***
+KEYCLOAK_CLIENT_SECRET=replace-me
 
 SQLITE_PATH=./data/docmesh.sqlite3
 SQLITE_READONLY=false
@@ -263,13 +362,13 @@ SQLITE_BUSY_TIMEOUT_MS=5000
 
 MINIO_ENDPOINT=minio.example.com:9000
 MINIO_ACCESS_KEY=replace-me
-MINIO_SECRET_KEY=***
+MINIO_SECRET_KEY=replace-me
 
 MILVUS_URI=http://milvus.example.com:19530
 OLLAMA_HOST=http://ollama.example.com:11434
 LANGFUSE_HOST=https://langfuse.example.com
 LANGFUSE_PUBLIC_KEY=replace-me
-LANGFUSE_SECRET_KEY=***
+LANGFUSE_SECRET_KEY=replace-me
 NATS_SERVERS=nats://n1.example.com:4222
 ```
 
@@ -281,9 +380,94 @@ NATS_SERVERS=nats://n1.example.com:4222
 - Keycloak 프로비저닝은 가능하면 최소 권한 Service Account로 수행하세요.
 - Access Token, Refresh Token 원문은 애플리케이션 로그나 트레이싱 이벤트에 기록하지 마세요.
 
-## 6. 문서 연계
+## 6. 자주 실패하는 설정 패턴 / 트러블슈팅
+
+### `ConfigError: Missing required environment variable ...`
+
+의미:
+
+- 필수 env가 비어 있거나 누락되었습니다.
+- 이 라이브러리는 공백 문자열도 미설정으로 취급합니다.
+
+확인할 것:
+
+- 값이 정말 export 되었는지
+- 빈 문자열(`""`, 공백만 있는 값)로 주입된 것은 아닌지
+- conditional 필수 규칙을 놓친 것은 아닌지
+
+### `KEYCLOAK_CLIENT_SECRET` 누락 오류
+
+원인:
+
+- 기본값은 confidential client 전제이므로 `KEYCLOAK_CLIENT_SECRET`가 필요합니다.
+
+해결:
+
+- confidential client면 secret 제공
+- public client면 `KEYCLOAK_CLIENT_PUBLIC=true` 명시
+
+### `KEYCLOAK provisioning requires a single admin auth mode`
+
+원인:
+
+- service account 방식과 username/password 방식을 동시에 주었거나, 둘 다 주지 않았습니다.
+
+해결:
+
+- 아래 둘 중 하나만 선택
+  - `KEYCLOAK_ADMIN_CLIENT_SECRET`
+  - `KEYCLOAK_ADMIN_USERNAME` + `KEYCLOAK_ADMIN_PASSWORD`
+
+### `NATS requires a single authentication mode`
+
+원인:
+
+- `NATS_USER/NATS_PASSWORD`, `NATS_TOKEN`, `NATS_CREDS_FILE`를 중복 지정했습니다.
+
+해결:
+
+- 인증 모드를 하나만 남기세요.
+
+### `NATS_USER and NATS_PASSWORD must be provided together`
+
+원인:
+
+- user/password 모드에서 둘 중 하나만 설정했습니다.
+
+해결:
+
+- 둘 다 제공하거나, 다른 인증 모드로 전환하세요.
+
+### production 환경 SSL 제약
+
+의미:
+
+- `DOCMESH_ENV`가 `production` 또는 `prod`면 보안 검증이 추가됩니다.
+
+제약:
+
+- `KEYCLOAK_VERIFY_SSL=false` 불가
+- `MINIO_SECURE=false` 불가
+- `MILVUS_SECURE=false` 불가
+
+문제 발생 시:
+
+- 운영 환경 식별자가 맞는지 확인
+- TLS 사용/인증서 검증 설정을 다시 확인
+
+## 7. 개발자용 빠른 점검 체크리스트
+
+- Keycloak: URL / realm / client_id / secret(or public client) 준비됐는가?
+- Postgres: DSN 또는 host/db/user/password 조합이 완성됐는가?
+- SQLite: `SQLITE_PATH`가 실제 앱 작업 디렉터리 기준으로 유효한가?
+- Langfuse: disabled인지, enabled면 3개 key가 모두 있는가?
+- NATS: 인증 모드를 하나만 선택했는가?
+- production이면 TLS 검증 비활성화 값이 숨어 있지 않은가?
+
+## 8. 문서 연계
 
 - 사용 흐름: [README](../README.md)
 - 공개 API: [api.md](./api.md)
-- 통합 예제: [sdk.md](./sdk.md)
+- 실제 통합 예시: [examples.md](./examples.md)
+- 요구사항 기준: [srs.md](./srs.md)
 - 테스트 전략: [test.md](./test.md)

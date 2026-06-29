@@ -49,6 +49,7 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
+    restart: unless-stopped
 
   milvus-minio:
     image: minio/minio:RELEASE.2023-03-20T20-16-18Z
@@ -66,3 +67,4 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
+    restart: unless-stopped
