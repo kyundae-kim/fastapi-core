@@ -13,6 +13,7 @@ def _parse_csv_env(raw: str) -> list[str]:
 
 class AppConfig(BaseModel):
     root_path: str = ""
+    token_url: str = "/token"
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
     cors_credentials: bool = False
     readiness_parallel: bool = False
@@ -32,6 +33,7 @@ def load_app_config() -> AppConfig:
     required_services = _parse_csv_env(os.getenv("READINESS_REQUIRED_SERVICES", "keycloak"))
     return AppConfig(
         root_path=os.getenv("ROOT_PATH", ""),
+        token_url=os.getenv("TOKEN_URL", "/token"),
         cors_origins=origins or ["*"],
         cors_credentials=os.getenv("CORS_CREDENTIALS", "false").lower() == "true",
         readiness_parallel=os.getenv("READINESS_PARALLEL", "false").lower() == "true",

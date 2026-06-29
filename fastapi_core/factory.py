@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from docmesh_py_core import ServiceFactoryRegistry, Settings, configure_logging
 
 from fastapi_core.config import AppConfig, load_app_config, load_default_settings
+from fastapi_core.dependencies.auth import set_oauth2_token_url
 from fastapi_core.routers.auth import router as auth_router
 from fastapi_core.routers.health import router as health_router
 
@@ -115,6 +116,7 @@ def create_app(
         app_config.required_services,
     )
     app.state.required_services = set(app_config.required_services)
+    set_oauth2_token_url(app_config.token_url)
 
     app.add_middleware(
         CORSMiddleware,

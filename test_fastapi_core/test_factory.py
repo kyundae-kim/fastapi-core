@@ -21,6 +21,7 @@ def test_create_app_includes_default_routes(settings):
     assert any(route.path == "/token" for route in app.router.routes)
     assert any(route.path == "/user" for route in app.router.routes)
     assert app.state.settings is settings
+    assert app.state.config.token_url.endswith("token")
     assert app.state.registry is not None
     assert app.state.root_logger is not None
     assert sorted(app.state.readiness_checks) == ["keycloak"]
@@ -28,6 +29,15 @@ def test_create_app_includes_default_routes(settings):
         "keycloak": {"enabled": True, "required": True},
     }
     assert app.state.required_services == {"keycloak"}
+
+
+def test_create_app_applies_configured_token_url_to_openapi(settings):
+    config = AppConfig(token_url="/api/v1/auth/token")
+
+    app = create_app(config=config, settings=settings)
+
+    security_scheme = app.openapi()["components"]["securitySchemes"]["OAuth2PasswordBearer"]
+    assert security_scheme["flows"]["password"]["tokenUrl"] == "/api/v1/auth/token"
 
 
 

@@ -13,6 +13,10 @@ from fastapi_core.schemas.user import UserInfo
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token", auto_error=False)
 
 
+def set_oauth2_token_url(token_url: str) -> None:
+    oauth2_scheme.model.flows.password.tokenUrl = token_url
+
+
 def _to_user_info(user: AuthenticatedUser) -> UserInfo:
     roles: list[str] = []
     for role in user.realm_roles:
