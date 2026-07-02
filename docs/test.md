@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`의 **현재 구현된 FastAPI 앱 계층**을 어떤 수준으로 검증하는지 정리한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`, `docs/config.md`
-> 문서 상태: 구현 반영본(v0.4)
+> 문서 상태: 구현 반영본(v0.5)
 
 ---
 
@@ -22,7 +22,7 @@
 
 - 작성일: `2026-06-29`
 - 작성자: `Hermes Agent`
-- 버전: `v0.4`
+- 버전: `v0.5`
 - 상태: `implemented-surface`
 
 ---
@@ -34,6 +34,11 @@
 ```text
 test_fastapi_core/
   conftest.py
+  integration/
+    conftest.py
+    test_keycloak_auth_flow.py
+    test_readiness_with_live_services.py
+    test_nats_lifespan.py
   test_config.py
   test_factory.py
   test_auth_router.py
@@ -45,9 +50,9 @@ test_fastapi_core/
 현재는 다음 파일이 **없다**:
 - `test_lifespan.py`
 - `test_messaging_integration.py`
-- 실제 외부 서비스 통합 전용 테스트 파일
 
-즉, 문서는 없는 테스트를 이미 갖춘 것처럼 서술하면 안 된다.
+즉, 문서는 없는 테스트를 이미 갖춘 것처럼 서술하면 안 되지만,
+이제는 실제 외부 서비스 통합 전용 테스트 파일이 `test_fastapi_core/integration/` 아래에 존재한다.
 
 ---
 
@@ -57,17 +62,39 @@ test_fastapi_core/
 
 ```bash
 uv run pytest -q
+uv run pytest -q -m integration
 ```
 
 최근 실제 실행 결과:
-- `25 passed`
+- `uv run pytest -q` → `38 passed`
+- `uv run pytest -q -m integration` → `10 passed, 28 deselected`
 
 테스트 러너/환경 특성:
 - `pytest` 사용
+- 외부 서비스 통합 테스트는 `pytest.mark.integration`으로 분리
 - FastAPI endpoint 검증은 `fastapi.testclient.TestClient` 사용
 - 현재 테스트 파일들은 모두 동기 테스트 함수(`def`) 기반
 - 비동기 테스트는 아직 없음
 - import 안정화를 위해 `test_fastapi_core/conftest.py`에서 저장소 루트를 `sys.path`에 추가함
+
+### 3.1 통합 테스트 실행/skip 정책
+
+- 통합 테스트는 기본 회귀와 분리된 `test_fastapi_core/integration/`에 위치한다.
+- Keycloak/NATS live 테스트는 환경변수 및 reachability가 충족될 때만 실행된다.
+- 필수 환경변수 누락 또는 서비스 미도달이면 `skip`이 기본 정책이다.
+- 서비스는 살아 있지만 앱 계약이 틀린 경우에는 `fail`로 처리한다.
+
+Keycloak 통합 테스트 필수 env:
+- `KEYCLOAK_URL`
+- `KEYCLOAK_REALM`
+- `KEYCLOAK_CLIENT_ID`
+- `KEYCLOAK_CLIENT_SECRET`
+- `KEYCLOAK_TOKEN_USERNAME`
+- `KEYCLOAK_TOKEN_PASSWORD`
+
+NATS 관련 기본 env:
+- `NATS_SERVERS`
+- 선택: `NATS_TOKEN`, `NATS_USER`, `NATS_PASSWORD`
 
 ---
 
@@ -107,11 +134,14 @@ uv run pytest -q
 현재 검증하는 항목:
 - `create_app()`이 liveness route를 포함한다.
 - auth route(`/token`, `/user`)가 기본 포함된다.
+- Keycloak provider의 JWT 허용 알고리즘이 `RS256`으로 맞춰진다.
 - `app.state.settings`가 저장된다.
 - `app.state.config.token_url`이 기본값으로 반영된다.
 - `app.state.registry`가 생성된다.
 - `app.state.root_logger`가 생성된다.
 - 기본 readiness state가 `keycloak` 기준으로 구성된다.
+- async service check를 readiness 경로에서 동기 callable로 감싸 실행한다.
+- Keycloak readiness는 healthcheck에 테스트 자격증명 env를 전달한다.
 - custom `token_url`이 OpenAPI security scheme에 반영된다.
 - `include_auth_router=False`일 때 `/token`, `/user`가 404다.
 - custom lifespan startup/shutdown이 호출된다.
@@ -129,6 +159,7 @@ uv run pytest -q
 
 현재 검증하는 항목:
 - `/token`이 `TokenResponse` 구조를 반환한다.
+- `/token` 응답의 `token_type`이 소문자 `bearer`로 정규화된다.
 - `/token` 요청의 `scope`, `username`, `password`가 provider로 전달된다.
 - `/token`이 인증 실패를 `401 Authentication failed`로 매핑한다.
 - `/token`이 설정 오류를 `500 Authentication service misconfigured`로 매핑한다.
@@ -153,6 +184,8 @@ uv run pytest -q
 - 선택 서비스 실패 시 `200 + status="degraded"`
 - 필수 서비스 실패 시 `503 + status="error"`
 - 성공/실패 시 `details`에 서비스별 상태 구조가 들어간다.
+- Keycloak live readiness가 실제 healthcheck 경로를 통해 `200`을 반환한다.
+- NATS live readiness가 async check를 포함해 `ok/degraded/error` 계약을 지킨다.
 - readiness 실패 로그가 `readiness_check_failed` 구조화 이벤트로 남는다.
 - 오류 문자열에서 secret이 마스킹된다.
 
@@ -202,6 +235,29 @@ uv run pytest -q
 - `HealthResponse(status="ok")` 생성 가능
 - `HealthResponse.details is None`
 
+## 5.7 외부 연동 integration 테스트
+
+정의 위치:
+- `test_fastapi_core/integration/conftest.py`
+- `test_fastapi_core/integration/test_keycloak_auth_flow.py`
+- `test_fastapi_core/integration/test_readiness_with_live_services.py`
+- `test_fastapi_core/integration/test_nats_lifespan.py`
+
+현재 검증하는 항목:
+- 실제 Keycloak 설정이 있을 때 `POST /token`이 live access token을 발급한다.
+- 발급된 live bearer token으로 `GET /user`가 실제 사용자 정보를 반환한다.
+- invalid bearer token이 `401`로 매핑된다.
+- OpenAPI `tokenUrl`이 live auth 라우터 구성과 일치한다.
+- Keycloak required readiness가 실제 healthcheck 경로로 `200 + status="ok"`를 반환한다.
+- Keycloak + NATS 조합에서 readiness가 실제 service client check 결과를 반영한다.
+- optional NATS가 비정상일 때 readiness가 `200 + status="degraded"`를 반환한다.
+- NATS required 구성일 때 readiness가 `200/503` 계약을 지킨다.
+- custom lifespan이 살아 있는 동안 live NATS app이 readiness 요청을 처리한다.
+
+설계상 중요한 현재 동작:
+- Keycloak readiness는 `KEYCLOAK_TOKEN_USERNAME` / `KEYCLOAK_TOKEN_PASSWORD`를 사용한 healthcheck로 검증된다.
+- NATS async check는 readiness 경로에서 동기 wrapper로 실행된다.
+
 ---
 
 ## 6. 현재 테스트 설계 원칙
@@ -211,7 +267,7 @@ uv run pytest -q
 문서 계획이 아니라 현재 구현된 계약을 검증한다.
 예를 들어:
 - readiness는 `app.state.readiness_checks`와 `readiness_services` 조합을 기준으로 검증한다.
-- auth는 실제 Keycloak 서버 대신 fake provider 주입으로 계약을 고정한다.
+- auth는 빠른 회귀에서는 fake provider 주입으로 계약을 고정하고, live integration에서는 실제 Keycloak 서버 경로를 검증한다.
 - config는 실제 `AppConfig` 및 `docmesh_settings` 로더를 직접 통과시킨다.
 
 ### 6.2 좁고 빠른 회귀 우선
@@ -237,14 +293,12 @@ uv run pytest -q
 
 1. `get_config()` / `get_settings()` 직접 테스트
 2. `app.state.auth_provider` 선행 주입 재사용 경로의 직접 테스트
-3. invalid token → 401 매핑 테스트
-4. `/token`의 `502` 및 unexpected `500` 분기 테스트
-5. CORS middleware 응답 헤더 테스트
-6. `root_path` 반영 테스트
-7. 실제 외부 연동(Keycloak/NATS) integration test
-8. 비동기 테스트 함수 기반 검증
-9. 메시징 startup/shutdown 연동 테스트
-10. `READINESS_PARALLEL`의 실제 병렬성 효과 검증
+3. `/token`의 `502` 및 unexpected `500` 분기 테스트
+4. CORS middleware 응답 헤더 테스트
+5. `root_path` 반영 테스트
+6. 비동기 테스트 함수 기반 검증
+7. 메시징 startup/shutdown 연동 테스트
+8. `READINESS_PARALLEL`의 실제 병렬성 효과 검증
 
 이 항목들은 향후 추가 대상이지, 현재 완료된 테스트 범위는 아니다.
 
@@ -258,7 +312,6 @@ uv run pytest -q
 - dependency 직접 테스트 보강
   - `get_config()` / `get_settings()`
   - `app.state.auth_provider` 재사용 경로
-  - invalid token 예외 매핑
 
 ### 우선순위 2
 - router 실패 경로 보강
@@ -272,9 +325,9 @@ uv run pytest -q
   - `READINESS_PARALLEL` 전달 효과
 
 ### 우선순위 4
-- 통합/외부 연동 테스트 분리
-  - 실제 Keycloak 또는 준실제 stub
-  - NATS startup/lifespan 연동
+- 비동기/운영성 관점 보강
+  - `pytest-asyncio` 기반 async 테스트
+  - 실제 `READINESS_PARALLEL` 효과 검증
 
 ---
 
@@ -305,17 +358,17 @@ uv run pytest -q
 - [x] `/token` 실패 경로 일부가 검증되었다.
 - [x] `/user`가 `UserInfo` 구조를 반환한다.
 - [x] readiness `ok/degraded/error`가 검증되었다.
+- [x] 실제 Keycloak/NATS integration test가 분리되어 추가되었다.
+- [x] invalid token 401 테스트가 있다.
 - [x] `get_current_user()`의 401 경로가 검증되었다.
 - [x] `require_permissions(...)`의 403 경로가 검증되었다.
 - [x] config 로더 직접 테스트가 있다.
 - [x] schema 기본값이 검증되었다.
 
 미완료 체크:
-- [ ] invalid token 401 테스트
 - [ ] `/token`의 502/unexpected 500 테스트
 - [ ] CORS 응답 헤더 테스트
 - [ ] `root_path` 반영 테스트
-- [ ] 외부 연동 integration test
 - [ ] 비동기 테스트 함수 기반 coverage
 
 ---
@@ -336,10 +389,14 @@ uv run pytest -q
 - `test_fastapi_core/test_health_router.py`
 - `test_fastapi_core/test_dependencies.py`
 - `test_fastapi_core/test_schemas.py`
+- `test_fastapi_core/integration/conftest.py`
+- `test_fastapi_core/integration/test_keycloak_auth_flow.py`
+- `test_fastapi_core/integration/test_readiness_with_live_services.py`
+- `test_fastapi_core/integration/test_nats_lifespan.py`
 
 ---
 
 ## 12. 문서 상태 메모
 
 이 문서는 기존의 넓은 테스트 계획 초안을, **현재 저장소에 실제 존재하는 테스트와 이미 검증된 계약** 중심으로 재정렬한 것이다.
-특히 `test_config.py` 추가, readiness `degraded` 검증, auth 실패 매핑, registry-backed dependency 경로, JSON 로깅 검증을 반영해 최신 코드와 맞췄다.
+특히 Keycloak/NATS live integration 테스트 추가, Keycloak readiness credential 기반 검증, RS256 bearer token 검증, async NATS readiness wrapper, 전체 `38 passed` / integration `10 passed` 결과를 반영해 최신 코드와 맞췄다.
