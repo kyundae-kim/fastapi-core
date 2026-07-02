@@ -296,9 +296,47 @@ async def sqlite_health(sqlite_client=Depends(get_service_client("sqlite"))):
 ```
 
 #### 범위와 한계
-- 반환 타입은 서비스별로 다를 수 있으므로 현재 공개 계약은 공통 프로토콜보다 **초기화된 클라이언트 객체 재사용** 자체에 초점을 둔다.
+- 반환 타입은 서비스별로 다를 수 있으므로 이 함수는 **통합 관점의 공통 lookup**에 초점을 둔다.
+
+#### 전용 서비스 dependency
+
+반환 타입 구체화가 필요하면 아래 전용 dependency를 사용한다.
+
+- `get_keycloak_auth_service(request) -> KeycloakAuthService`
+- `get_postgres_engine(request) -> sqlalchemy.engine.Engine`
+- `get_sqlite_engine(request) -> sqlalchemy.engine.Engine`
+- `get_minio_client(request) -> minio.Minio`
+- `get_milvus_client(request) -> pymilvus.MilvusClient`
+- `get_ollama_client(request) -> ollama.Client`
+- `get_langfuse_client(request) -> langfuse.Langfuse`
+- `get_nats_connection_builder(request) -> docmesh_py_core.NatsConnectionBuilder`
+
+이 함수들은 모두 `app.state.service_clients`를 재사용하며, wrapper 기반 서비스는 내부 `.client`를 꺼내 concrete client를 반환한다. NATS만 예외적으로 wrapper가 아니라 builder 객체 자체를 반환한다.
+
+#### 전용 dependency 예시
+
+```python
+from fastapi import APIRouter, Depends
+from fastapi_core.dependencies import get_keycloak_auth_service, get_sqlite_engine
+from sqlalchemy.engine import Engine
+from docmesh_py_core import KeycloakAuthService
+
+router = APIRouter()
+
+@router.get("/diagnostics")
+async def diagnostics(
+    sqlite_engine: Engine = Depends(get_sqlite_engine),
+    keycloak_auth_service: KeycloakAuthService = Depends(get_keycloak_auth_service),
+):
+    return {
+        "sqlite_connect": hasattr(sqlite_engine, "connect"),
+        "keycloak_extract_user_info": hasattr(keycloak_auth_service, "extract_user_info"),
+    }
+```
+
+#### 범위와 한계
 - `get_auth_provider()`는 여전히 keycloak wrapper의 `.client`를 꺼내 auth provider를 구성하는 전용 경로를 유지한다.
-- `get_nats_connection` 같은 **서비스별 별칭 dependency**는 아직 기본 제공하지 않는다.
+- `get_nats_connection` 같은 **연결 상태/세션을 직접 보장하는 커스텀 dependency**는 아직 기본 제공하지 않는다.
 
 ### 5.5 `get_current_user(token=Depends(oauth2_scheme), provider=Depends(get_auth_provider), settings=Depends(get_settings)) -> UserInfo`
 
@@ -534,4 +572,4 @@ app = create_app(config=config)
 - `get_nats_connection` 같은 메시징 전용 FastAPI dependency
 - 실제 외부 서비스 통합을 포함한 기본 회귀 테스트
 
-따라서 실제 사용 계약은 이 문서를 우선 참고하되, 공통 서비스 접근은 `get_service_client(...)`를 우선 사용하고, 서비스별 세분화된 연결 주입은 여전히 custom lifespan과 `app.state` 확장으로 보완하는 것이 현재 코드 구조와 맞다.
+따라서 실제 사용 계약은 이 문서를 우선 참고하되, 공통 lookup은 `get_service_client(...)`, 타입이 중요한 사용처는 전용 `get_*_client()` dependency를 우선 사용하고, 연결 상태나 세션 수명주기까지 커스터마이즈해야 하는 경우에만 custom lifespan과 `app.state` 확장을 보완적으로 사용하는 것이 현재 코드 구조와 맞다.

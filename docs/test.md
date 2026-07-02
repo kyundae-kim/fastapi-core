@@ -14,7 +14,7 @@
 - `create_app(...)`
 - auth router (`/token`, `/user`)
 - health router (`/health/liveness`, `/health/readiness`)
-- dependency (`get_current_user`, `require_permissions`, service_clients 기반 `get_auth_provider` 경로)
+- dependency (`get_current_user`, `require_permissions`, service_clients 기반 `get_auth_provider` 경로, `get_service_client(service_name)`, 서비스별 전용 `get_*` dependency)
 - schema (`TokenResponse`, `UserInfo`, `HealthResponse`, `HealthServiceDetail`)
 - config / settings loader
 - custom lifespan 연계
@@ -66,8 +66,8 @@ uv run pytest -q -m integration
 ```
 
 최근 실제 실행 결과:
-- `uv run pytest -q` → `38 passed`
-- `uv run pytest -q -m integration` → `10 passed, 28 deselected`
+- `uv run pytest -q` → `43 passed, 2 warnings`
+- `uv run pytest -q -m integration` → `10 passed, 33 deselected, 2 warnings`
 
 테스트 러너/환경 특성:
 - `pytest` 사용
@@ -205,6 +205,14 @@ NATS 관련 기본 env:
 - `require_permissions("admin")`의 role 부족 경로 → 403
 - service_clients 기반 auth provider 경로에서 `keycloak` client가 요청된다.
 - service_clients에서 받은 provider가 token 해석에 사용된다.
+- `get_service_client("sqlite")`가 wrapper 기반 service client를 반환한다.
+- 전용 dependency 공개 심볼이 노출된다.
+- `get_keycloak_auth_service() -> KeycloakAuthService` 타입 힌트가 검증된다.
+- `get_sqlite_engine() -> sqlalchemy.engine.Engine` 타입 힌트가 검증된다.
+- `get_nats_connection_builder() -> docmesh_py_core.NatsConnectionBuilder` 타입 힌트가 검증된다.
+- `get_sqlite_engine`, `get_keycloak_auth_service`, `get_nats_connection_builder`가 concrete client/builder를 실제 FastAPI dependency로 주입한다.
+- 비활성 서비스일 때 `get_service_client("sqlite")`가 503을 반환한다.
+- 비활성 서비스일 때 `get_nats_connection_builder()`가 503을 반환한다.
 
 현재 검증하지 않는 항목:
 - `get_config()` 직접 테스트
@@ -399,4 +407,5 @@ NATS 관련 기본 env:
 ## 12. 문서 상태 메모
 
 이 문서는 기존의 넓은 테스트 계획 초안을, **현재 저장소에 실제 존재하는 테스트와 이미 검증된 계약** 중심으로 재정렬한 것이다.
-특히 Keycloak/NATS live integration 테스트 추가, Keycloak readiness credential 기반 검증, RS256 bearer token 검증, async NATS readiness wrapper, 전체 `38 passed` / integration `10 passed, 28 deselected` 결과를 반영해 최신 코드와 맞췄다.
+특히 Keycloak/NATS live integration 테스트 추가, Keycloak readiness credential 기반 검증, RS256 bearer token 검증, async NATS readiness wrapper, 전체 `43 passed, 2 warnings` / integration `10 passed, 33 deselected, 2 warnings` 결과를 반영해 최신 코드와 맞췄다.
+이제 dependency 테스트는 공통 lookup용 `get_service_client(service_name)`뿐 아니라 타입이 구체화된 전용 dependency(`get_keycloak_auth_service`, `get_postgres_engine`, `get_sqlite_engine`, `get_minio_client`, `get_milvus_client`, `get_ollama_client`, `get_langfuse_client`, `get_nats_connection_builder`) 공개 계약도 포함한다.

@@ -26,7 +26,7 @@
 1. `create_app(...)`가 `ServiceConfigs`와 `service_clients` 맵을 만든다.
 2. `AppConfig.enabled_services`에 포함된 서비스 목록을 기준으로 readiness check를 자동 구성한다.
 3. 종료 시 내부 lifespan wrapper가 `close_service_clients(service_clients.values())`를 호출한다.
-4. 공통 서비스 접근용 `get_service_client(service_name)` dependency는 제공하지만, 메시징 전용 request dependency나 route는 현재 패키지에서 직접 제공하지 않는다.
+4. 공통 서비스 접근용 `get_service_client(service_name)`와 NATS 전용 `get_nats_connection_builder()` dependency는 제공하지만, publisher/subscriber helper나 route는 현재 패키지에서 직접 제공하지 않는다.
 
 즉, 현재 `fastapi-core`에서 메시징은:
 - **1차 공개 FastAPI API**: 아님
@@ -42,7 +42,7 @@
 현재 문서 세트에서 1차 공개 표면으로 보는 항목:
 - `create_app(...)`
 - auth / health router
-- dependency (`get_config`, `get_settings`, `get_auth_provider`, `get_service_client`, `get_current_user`, `require_permissions`)
+- dependency (`get_config`, `get_settings`, `get_auth_provider`, `get_service_client`, `get_nats_connection_builder`, `get_current_user`, `require_permissions`)
 - schema (`TokenResponse`, `UserInfo`, `HealthResponse`, `HealthServiceDetail`)
 
 ### 3.2 메시징 관련 확장 지점
@@ -60,7 +60,7 @@
 ### 3.3 아직 직접 제공하지 않는 것
 
 현재 `fastapi-core`가 직접 제공하지 않는 메시징 API:
-- `get_nats_connection(request)` 같은 FastAPI dependency
+- `get_nats_connection(request)` 같은 연결 상태 전용 FastAPI dependency
 - NATS publisher/subscriber helper
 - startup에서 연결 객체를 `app.state.nats`로 저장하는 기본 동작
 - 실제 NATS 통합 테스트를 포함한 기본 회귀 세트
@@ -162,7 +162,7 @@ app = create_app(lifespan=lifespan)
 
 ### 방식 B. app.state 또는 custom dependency 확장
 - startup/custom lifespan에서 `app.state.nats` 같은 객체 저장
-- 필요 시 프로젝트별 `get_nats_connection(request)` dependency를 별도로 정의
+- 필요 시 `get_nats_connection_builder()` 위에 프로젝트별 `get_nats_connection(request)` dependency를 별도로 정의
 - endpoint/service layer가 이를 사용
 
 현재 `fastapi-core`는 A를 기본 제공하고, B는 서비스별 확장 지점으로 남겨둔다.
@@ -197,7 +197,7 @@ async def nats_status(conn=Depends(get_nats_connection)):
     return {"configured": conn is not None}
 ```
 
-이 예시는 현재 `fastapi-core`가 메시징 전용 dependency를 기본 제공하지 않는다는 점을 유지하면서,
+이 예시는 현재 `fastapi-core`가 NATS builder 접근용 `get_nats_connection_builder()`는 제공하지만, 연결 상태 객체를 `app.state.nats`로 저장/관리하는 dependency는 기본 제공하지 않는다는 점을 전제로,
 서비스 레이어에서 어떤 방식으로 `app.state` 확장을 붙여야 하는지 보여준다.
 
 ---

@@ -148,6 +148,37 @@ curl -X POST http://localhost:8000/token \
 
 ---
 
+## 6A. 서비스별 전용 client dependency 예시
+
+반환 타입을 명확히 쓰고 싶다면 공통 `get_service_client("...")` 대신 서비스별 전용 dependency를 사용할 수 있다.
+
+```python
+from fastapi import APIRouter, Depends
+from docmesh_py_core import KeycloakAuthService
+from sqlalchemy.engine import Engine
+
+from fastapi_core.dependencies import get_keycloak_auth_service, get_sqlite_engine
+
+router = APIRouter()
+
+@router.get("/diagnostics")
+async def diagnostics(
+    sqlite_engine: Engine = Depends(get_sqlite_engine),
+    keycloak_auth_service: KeycloakAuthService = Depends(get_keycloak_auth_service),
+) -> dict[str, bool]:
+    return {
+        "sqlite_connect": hasattr(sqlite_engine, "connect"),
+        "keycloak_extract_user_info": hasattr(keycloak_auth_service, "extract_user_info"),
+    }
+```
+
+현재 구현 기준 해석:
+- `get_sqlite_engine()`은 SQLAlchemy `Engine`을 반환한다.
+- `get_keycloak_auth_service()`는 `KeycloakAuthService`를 반환한다.
+- `get_nats_connection_builder()`는 `NatsConnectionBuilder`를 반환한다.
+
+---
+
 ## 7. AppConfig를 코드로 직접 주입
 
 앱 조립 방식과 readiness 기본 대상을 코드에서 명시하고 싶다면 `AppConfig`를 직접 전달할 수 있다.

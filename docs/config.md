@@ -320,7 +320,7 @@ app.state.required_services = {"keycloak"}
 | Langfuse | 간접 | settings/service_clients 기반 확장 지점 |
 | NATS | 간접 | settings/service_clients 기반 readiness 또는 custom lifespan 확장 지점 |
 
-즉, 현재 구현에서 이 값들은 각 서비스를 개별 이름의 전용 dependency로 모두 노출하는 API라기보다, `ServiceConfigs`와 `app.state.service_clients`를 통한 통합 기반이며 공통 접근용 `get_service_client(service_name)` dependency가 그 위에 얹힌 형태다.
+즉, 현재 구현에서 이 값들은 `ServiceConfigs`와 `app.state.service_clients`를 통한 통합 기반이며, 그 위에 공통 접근용 `get_service_client(service_name)`와 구체 타입 반환용 서비스별 `get_*_client()` dependency가 얹힌 형태다.
 
 ---
 

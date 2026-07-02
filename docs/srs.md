@@ -62,7 +62,7 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 ### 3.2 문서화 대상 공개 표면
 
 - app factory: `create_app(...)`
-- dependency: `get_config()`, `get_settings()`, `get_auth_provider()`, `get_service_client(service_name)`, `get_current_user()`, `require_permissions(...)`
+- dependency: `get_config()`, `get_settings()`, `get_auth_provider()`, `get_service_client(service_name)`, 서비스별 전용 `get_*_client()`, `get_current_user()`, `require_permissions(...)`
 - schema: `TokenResponse`, `UserInfo`, `HealthResponse`
 - endpoint: `/token`, `/user`, `/health/liveness`, `/health/readiness`
 
