@@ -2,7 +2,7 @@
 
 > Content catalog. Every wiki page listed under its type with a one-line summary.
 > Read this first to find relevant pages for any query.
-> Last updated: 2026-06-29 | Total pages: 8
+> Last updated: 2026-07-02 | Total pages: 8
 
 ## Entities
 <!-- Alphabetical within section -->
@@ -11,12 +11,12 @@
 
 ## Concepts
 
-- [[application-integration-patterns]] - FastAPI 수명주기, 선택 로딩, optional dependency, NATS async 연결을 묶는 실전 통합 패턴.
-- [[keycloak-authentication-api]] - Keycloak 토큰 발급, JWT 검증, 역할/사용자 추출 API의 동작과 오류 모델.
-- [[operational-logging-and-retry-utilities]] - 로깅 초기화, 민감정보 마스킹, 구조화 이벤트, 지수 백오프 재시도를 묶는 운영 유틸리티.
-- [[service-configuration-contracts]] - 환경변수 기반 설정 규칙, 서비스별 계약, 보안 운영 원칙.
-- [[service-factory-registry]] - 서비스별 클라이언트 생성과 수명주기 정리를 위한 중앙 registry 패턴.
-- [[service-health-check-aggregation]] - 다중 서비스 체크를 집계하고 필수 의존성 실패를 구분하는 헬스체크 API.
+- [[application-integration-patterns]] - registry 기반 수명주기 예시와 direct factory 중심 최신 공개 표면을 함께 읽는 통합 패턴 정리.
+- [[keycloak-authentication-api]] - Keycloak 토큰 발급, JWT 검증, 프로비저닝, 재시도/로깅 규칙을 포함한 인증 API 정리.
+- [[operational-logging-and-retry-utilities]] - 로깅 초기화, 민감정보 마스킹, 구조화 이벤트, 재시도, client close helper를 묶는 운영 유틸리티.
+- [[service-configuration-contracts]] - CommonConfig/ServiceConfigs, 선택 로딩, production 보안 제약을 포함한 환경설정 계약.
+- [[service-factory-registry]] - older examples의 registry 패턴과 최신 API 레퍼런스의 direct factory 표면 사이 차이를 정리한 페이지.
+- [[service-health-check-aggregation]] - 다중 서비스 체크를 집계하고 required service 실패를 표준 결과/예외로 구분하는 health API.
 
 ## Comparisons
 

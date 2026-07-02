@@ -54,7 +54,7 @@ def get_auth_provider(
         provider = client.client
         request.app.state.auth_provider = provider
         return provider
-    provider = KeycloakAuthService(settings)
+    provider = KeycloakAuthService(settings, allowed_algorithms=["RS256"])
     request.app.state.auth_provider = provider
     return provider
 

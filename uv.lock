@@ -364,8 +364,8 @@ wheels = [
 
 [[package]]
 name = "docmesh-py-core"
-version = "0.1.3"
-source = { git = "https://github.com/kyundae-kim/docmesh-py-core.git?rev=v0.1.3#ce2aed0a1a735c582731e97961a7ec6b2bc31dda" }
+version = "0.1.4"
+source = { git = "https://github.com/kyundae-kim/docmesh-py-core.git?rev=v0.1.4#ef021435be73a9065f9e4602d296e87af3bbeb01" }
 dependencies = [
     { name = "langfuse" },
     { name = "minio" },
@@ -483,7 +483,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "docmesh-py-core", git = "https://github.com/kyundae-kim/docmesh-py-core.git?rev=v0.1.3" },
+    { name = "docmesh-py-core", git = "https://github.com/kyundae-kim/docmesh-py-core.git?rev=v0.1.4" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.136.1" },
     { name = "langfuse", specifier = ">=4.7.1" },
     { name = "minio", specifier = ">=7.2.20" },

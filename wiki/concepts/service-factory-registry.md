@@ -1,51 +1,48 @@
 ---
 title: ServiceFactoryRegistry
 created: 2026-06-25
-updated: 2026-06-29
+updated: 2026-07-02
 type: concept
 tags: [service, module, integration, api, implementation]
 sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-examples-guide-2026.md]
-confidence: medium
+confidence: low
+contested: true
 ---
 
 # ServiceFactoryRegistry
 
-`ServiceFactoryRegistry(settings)`는 외부 서비스 클라이언트 생성을 위한 중앙 진입점이다. 문서상 `create_client(service_name)`, `create_clients(services)`, `close_all()`을 제공하며, 서비스별 초기화 방식을 호출부에서 직접 분기하지 않게 해준다.
+`ServiceFactoryRegistry(settings)`는 docmesh-py-core의 older examples 문서에서 외부 서비스 클라이언트 생성을 위한 중앙 진입점으로 제시됐던 패턴이다. 당시 examples는 `create_client(service_name)`, `close_all()`, 앱 수명주기 동안 registry 재사용을 전제로 설명했다.^[raw/articles/docmesh-py-core-examples-guide-2026.md]
 
-## Supported service names
+하지만 2026-07-02에 다시 ingest한 최신 API 레퍼런스의 루트 공개 import 목록에는 `ServiceFactoryRegistry`가 더 이상 나타나지 않고, 대신 `load_service_configs()`, 서비스별 config class, `create_*_client()`, `close_service_clients()` 중심 표면이 문서화된다. 최신 examples 역시 더 이상 registry 예시를 앞세우지 않고 direct factory 조립만 보여준다.^[raw/articles/docmesh-py-core-api-reference-2026.md]^[raw/articles/docmesh-py-core-examples-guide-2026.md]
 
-문서에 명시된 지원 대상은 `keycloak`, `postgres`, `sqlite`, `minio`, `milvus`, `ollama`, `langfuse`, `nats`다.
+## Historical role
 
-## Return model
+older examples 기준 registry 패턴의 장점은 다음과 같다.
 
-대부분의 서비스는 `ServiceClientWrapper`를 반환하고, `nats`는 비동기 `NatsConnectionBuilder`를 반환한다. `langfuse`는 `ServiceClientWrapper | None`일 수 있어 선택적 통합 지점을 암시한다.
+- 동일 서비스에 대해 이미 생성한 클라이언트를 재사용한다.
+- startup 시 1회 생성해 `app.state.registry`에 보관하고 shutdown 시 `close_all()`로 정리할 수 있다.
+- wrapper 기반 `check()` / `close()` 인터페이스를 서비스 이름 기반으로 묶어 호출부 분기를 줄인다.
 
-## Lifecycle details
+## Current status
 
-- `create_client()`는 동일 서비스에 대해 이미 생성한 클라이언트를 재사용한다.
-- `create_clients(services)`는 서비스명에서 클라이언트/빌더로의 매핑을 한 번에 반환한다.
-- `close_all()`은 지금까지 생성한 모든 클라이언트의 종료 훅을 호출한다.
-- `ServiceClientWrapper.close()`는 `close_fn`이 있으면 이를 우선 호출한다.
-- FastAPI 예시에서는 registry를 startup 시 1회 생성해 `app.state.registry`에 보관하고 shutdown 시 `close_all()`로 정리한다.
+최신 public 문서 기준 canonical path는 direct factory 조립이다.
 
-## Error surface
+- `CommonConfig()` 또는 `load_service_configs()`로 설정을 준비한다.
+- 필요한 서비스만 `create_*_client()`로 생성한다.
+- 종료 시 `close_service_clients()` 또는 개별 `close()`를 호출한다.
+- `nats`는 `NatsConnectionBuilder`를 통해 연결을 지연 생성한다.^[raw/articles/docmesh-py-core-api-reference-2026.md]^[raw/articles/docmesh-py-core-examples-guide-2026.md]
 
-주요 예외는 `UnsupportedServiceError`, `ServiceClientWrapperError`, `ServiceClientError`다. 따라서 fastapi-core는 서비스명 검증 실패, 래핑 실패, 실제 클라이언트 오류를 분리해서 처리할 수 있다.
+따라서 이 위키에서 `ServiceFactoryRegistry`는 "현재 canonical public API"라기보다, older docs와 일부 소비 코드에서 중요한 historical integration pattern으로 보는 편이 맞다.
 
-## Wrapper and NATS specifics
+## How to read this page
 
-- `ServiceClientWrapper`는 공통 `ping()` / `check()` / `close()` 인터페이스를 제공한다.
-- SQLAlchemy 기반 `postgres`/`sqlite`는 wrapper를 통해 엔진 기반 연결을 래핑한다.
-- NATS builder는 장기 연결을 보관하는 풀 객체가 아니라 연결 시도용 비동기 builder이며, `await connect()/ping()/check()`에서 실제 연결이 일어난다.
-- `langfuse`는 비활성화 시 `None`이 될 수 있으므로 소비 코드에서 분기 처리가 필요하다.
-- 선택 로딩 예시에서는 `services={"sqlite", "langfuse"}`처럼 필요한 서비스만 설정에 올리고, 선택되지 않은 서비스는 `Settings`에서 `None`으로 남긴다.
+- 최신 SDK 표면 자체를 이해하려면 [[service-configuration-contracts]]와 [[application-integration-patterns]]를 먼저 읽는다.
+- 기존 fastapi-core 같은 소비자가 registry 패턴을 어떻게 채택했는지 보려면 [[docmesh-py-core-vs-fastapi-core-usage-comparison]]을 함께 본다.
+- 헬스체크 집계 측면에서는 registry 유무와 관계없이 [[service-health-check-aggregation]]가 최종 check callable 계약을 설명한다.
 
-## Related behavior
+## Related pages
 
-- [[docmesh-py-core]]: 이 registry는 패키지 공개 API의 핵심 진입점 중 하나다.
-- [[service-health-check-aggregation]]: registry가 만든 wrapper/builder는 집계 헬스체크의 입력이 된다.
-- [[keycloak-authentication-api]]: `keycloak` 서비스 생성 경로는 Keycloak 고수준 인증 API와 맞물린다.
-
-## Design implication
-
-fastapi-core가 이 패턴을 채택하면 서비스별 연결 수명주기와 기본 `check()/close()` 인터페이스를 표준화할 수 있고, 서비스 추가 시 호출부 변경 범위를 줄일 수 있다.
+- [[docmesh-py-core]]: 패키지 전체 capability와 최신 공개 표면 변화의 상위 정리.
+- [[application-integration-patterns]]: current direct factory 수명주기와 older registry 패턴의 차이를 함께 정리한다.
+- [[service-configuration-contracts]]: direct config/API 조합이 현재 public entrypoint로 문서화된 배경.
+- [[service-health-check-aggregation]]: registry가 있든 없든 서비스 check 결과 집계는 같은 health API를 사용한다.
