@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from fastapi_core.config import AppConfig
 from fastapi_core.docmesh_settings import load_docmesh_settings
-from fastapi_core.factory import create_app
+from fastapi_core.factory import _build_readiness_checks, create_app
 
 
 def test_create_app_includes_default_routes(settings):
@@ -93,6 +93,46 @@ def test_create_app_uses_selected_services_for_readiness_and_settings():
         "sqlite": {"enabled": True, "required": True},
     }
     assert app.state.required_services == {"sqlite"}
+
+
+def test_build_readiness_checks_normalizes_async_checks_to_sync_callables():
+    events: list[str] = []
+
+    class AsyncClient:
+        async def check(self):
+            events.append("checked")
+
+    checks = _build_readiness_checks({"nats": AsyncClient()})
+
+    checks["nats"]()
+
+    assert events == ["checked"]
+
+
+def test_build_readiness_checks_passes_keycloak_healthcheck_credentials(monkeypatch):
+    calls: list[tuple[str | None, str | None, str | None]] = []
+
+    class KeycloakClient:
+        def check(self):
+            raise AssertionError("keycloak readiness should call healthcheck directly")
+
+        def healthcheck(self, *, username=None, password=None, scope=None):
+            calls.append((username, password, scope))
+
+    monkeypatch.setenv("KEYCLOAK_TOKEN_USERNAME", "tester")
+    monkeypatch.setenv("KEYCLOAK_TOKEN_PASSWORD", "secret")
+    monkeypatch.setenv("FASTAPI_CORE_TEST_SCOPE", "openid profile")
+
+    checks = _build_readiness_checks({"keycloak": KeycloakClient()})
+    checks["keycloak"]()
+
+    assert calls == [("tester", "secret", "openid profile")]
+
+
+def test_create_app_uses_rs256_for_keycloak_auth_provider(settings):
+    app = create_app(settings=settings, include_auth_router=False)
+
+    assert app.state.auth_provider.allowed_algorithms == ["RS256"]
 
 
 def test_create_app_configures_json_logging_to_file(tmp_path):

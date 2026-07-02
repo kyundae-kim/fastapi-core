@@ -1,23 +1,11 @@
 from __future__ import annotations
 
-import inspect
 from contextlib import asynccontextmanager
 
 import pytest
 from fastapi.testclient import TestClient
 
 pytestmark = pytest.mark.integration
-
-
-def _xfail_if_async_nats_readiness(app) -> None:
-    nats_client = app.state.service_clients.get("nats")
-    if nats_client is None:
-        return
-    if inspect.iscoroutinefunction(getattr(nats_client, "check", None)):
-        pytest.xfail(
-            "current readiness path calls async NATS check synchronously; "
-            "see RuntimeWarning from NatsConnectionBuilder.check"
-        )
 
 
 @pytest.fixture
@@ -65,7 +53,6 @@ def test_custom_lifespan_runs_with_live_nats_service_clients(nats_only_lifespan_
 
 def test_live_nats_app_can_serve_readiness_during_lifespan(nats_only_lifespan_app):
     app, events = nats_only_lifespan_app
-    _xfail_if_async_nats_readiness(app)
 
     with TestClient(app) as client:
         response = client.get("/health/readiness")

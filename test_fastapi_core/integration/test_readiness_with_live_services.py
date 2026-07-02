@@ -1,23 +1,11 @@
 from __future__ import annotations
 
-import inspect
 import os
 
 import pytest
 from fastapi.testclient import TestClient
 
 pytestmark = pytest.mark.integration
-
-
-def _xfail_if_async_nats_readiness(app) -> None:
-    nats_client = app.state.service_clients.get("nats")
-    if nats_client is None:
-        return
-    if inspect.iscoroutinefunction(getattr(nats_client, "check", None)):
-        pytest.xfail(
-            "current readiness path calls async NATS check synchronously; "
-            "see RuntimeWarning from NatsConnectionBuilder.check"
-        )
 
 
 @pytest.fixture
@@ -83,7 +71,6 @@ def test_readiness_reports_keycloak_as_required_live_service(
 def test_readiness_reports_optional_nats_service_when_enabled_live(
     keycloak_and_nats_readiness_app,
 ):
-    _xfail_if_async_nats_readiness(keycloak_and_nats_readiness_app)
     with TestClient(keycloak_and_nats_readiness_app) as client:
         response = client.get("/health/readiness")
 
@@ -98,7 +85,6 @@ def test_readiness_reports_optional_nats_service_when_enabled_live(
 
 
 def test_readiness_reports_nats_as_required_live_service(nats_required_readiness_app):
-    _xfail_if_async_nats_readiness(nats_required_readiness_app)
     with TestClient(nats_required_readiness_app) as client:
         response = client.get("/health/readiness")
 
@@ -128,7 +114,6 @@ def test_readiness_can_report_degraded_when_optional_nats_target_is_unreachable(
         required_services=["keycloak"],
     )
     app = integration_app_factory(config, include_auth_router=False)
-    _xfail_if_async_nats_readiness(app)
 
     with TestClient(app) as client:
         response = client.get("/health/readiness")

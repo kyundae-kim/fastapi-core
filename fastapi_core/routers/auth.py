@@ -97,7 +97,7 @@ async def issue_token(
     return TokenResponse(
         access_token=token.access_token,
         refresh_token=getattr(token, "refresh_token", None),
-        token_type=getattr(token, "token_type", "bearer"),
+        token_type=str(getattr(token, "token_type", "bearer")).lower(),
     )
 
 

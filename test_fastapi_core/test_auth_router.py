@@ -15,7 +15,7 @@ from fastapi_core.factory import create_app
 class FakeAccessTokenResult:
     access_token = "access-token"
     refresh_token = "refresh-token"
-    token_type = "bearer"
+    token_type = "Bearer"
 
 
 class FakeAuthenticatedUser:

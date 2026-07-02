@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import logging
+import os
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+from threading import Thread
 from typing import Any
 
 from fastapi import FastAPI
@@ -70,7 +74,9 @@ def _build_service_clients(
     clients: dict[str, ServiceClientWrapper | NatsConnectionBuilder] = {}
     for service_name in services:
         if service_name == "keycloak" and settings.keycloak is not None:
-            clients[service_name] = create_keycloak_client(settings.keycloak)
+            client = create_keycloak_client(settings.keycloak)
+            _configure_keycloak_provider(client)
+            clients[service_name] = client
         elif service_name == "postgres" and settings.postgres is not None:
             clients[service_name] = create_postgres_client(settings.postgres)
         elif service_name == "sqlite" and settings.sqlite is not None:
@@ -90,12 +96,75 @@ def _build_service_clients(
     return clients
 
 
+def _run_awaitable_synchronously(awaitable: Any) -> Any:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(awaitable)
+
+    result: dict[str, Any] = {}
+    error: dict[str, BaseException] = {}
+
+    def _runner() -> None:
+        try:
+            result["value"] = asyncio.run(awaitable)
+        except BaseException as exc:  # pragma: no cover
+            error["exception"] = exc
+
+    thread = Thread(target=_runner)
+    thread.start()
+    thread.join()
+    if error:
+        raise error["exception"]
+    return result.get("value")
+
+
+def _build_keycloak_check_kwargs() -> dict[str, str]:
+    kwargs: dict[str, str] = {}
+    username = os.getenv("KEYCLOAK_TOKEN_USERNAME")
+    password = os.getenv("KEYCLOAK_TOKEN_PASSWORD")
+    scope = os.getenv("FASTAPI_CORE_TEST_SCOPE", "").strip()
+    if username:
+        kwargs["username"] = username
+    if password:
+        kwargs["password"] = password
+    if scope:
+        kwargs["scope"] = scope
+    return kwargs
+
+
+def _configure_keycloak_provider(client: ServiceClientWrapper) -> None:
+    provider = getattr(client, "client", None)
+    if provider is None or not hasattr(provider, "allowed_algorithms"):
+        return
+    provider.allowed_algorithms = ["RS256"]
+
+
+def _wrap_readiness_check(
+    check: Callable[..., object],
+    *,
+    kwargs: dict[str, str] | None = None,
+) -> Callable[[], object]:
+    def run_check() -> object:
+        result = check(**(kwargs or {}))
+        if inspect.isawaitable(result):
+            return _run_awaitable_synchronously(result)
+        return result
+
+    return run_check
+
+
 def _build_readiness_checks(
     service_clients: dict[str, ServiceClientWrapper | NatsConnectionBuilder],
 ) -> dict[str, Callable[[], object]]:
     checks: dict[str, Callable[[], object]] = {}
     for service_name, client in service_clients.items():
-        checks[service_name] = client.check
+        check = client.check
+        kwargs = None
+        if service_name == "keycloak":
+            kwargs = _build_keycloak_check_kwargs()
+            check = getattr(client, "healthcheck", client.check)
+        checks[service_name] = _wrap_readiness_check(check, kwargs=kwargs)
     return checks
 
 
