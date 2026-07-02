@@ -33,15 +33,15 @@
    - FastAPI app 자체의 동작을 제어한다.
    - 예: `root_path`, `token_url`, CORS, readiness 병렬화, 로깅, 활성 서비스 집합
 
-2. **서비스/외부 의존성 설정 (`docmesh_py_core.Settings`)**
+2. **서비스/외부 의존성 설정 (`docmesh_py_core.ServiceConfigs`)**
    - 로더: `fastapi_core.docmesh_settings.load_docmesh_settings(...)`
-   - 실제 생성은 `docmesh_py_core.load_settings(...)`
+   - 실제 생성은 `docmesh_py_core.load_service_configs(...)`
    - Keycloak / SQLite / MinIO / Milvus / Ollama / Langfuse / NATS 등 외부 시스템 설정을 포함한다.
-   - 현재 `fastapi_core`는 이 객체를 registry 생성과 auth provider/서비스 체크 기반값으로 사용한다.
+   - 현재 `fastapi_core`는 이 객체를 service client 구성과 auth provider/서비스 체크 기반값으로 사용한다.
 
 즉, 현재 코드에서 FastAPI 앱은:
 - `AppConfig`로 앱 조립 방식과 공개 표면 동작을 결정하고
-- `Settings`로 외부 시스템 구성을 보관하고 registry에 전달한다.
+- `ServiceConfigs`로 외부 시스템 구성을 보관하고 service client 구성에 전달한다.
 
 ---
 
@@ -129,22 +129,23 @@ READINESS_REQUIRED_SERVICES=keycloak
 1. `config`가 없으면 `load_app_config()` 사용
 2. `settings`가 없으면 `load_docmesh_settings(tuple(config.enabled_services))` 사용
 3. `_configure_application_logging(config)`로 로깅 초기화
-4. `ServiceFactoryRegistry(settings)` 생성
+4. `_build_service_clients(settings, config.enabled_services)`로 서비스 클라이언트 맵 생성
 5. `FastAPI(root_path=config.root_path, lifespan=_build_lifespan(...))` 생성
 6. `app.state.config = config`
 7. `app.state.root_logger = root_logger`
 8. `app.state.settings = settings`
-9. `app.state.registry = registry`
-10. `app.state.readiness_parallel = config.readiness_parallel`
-11. `app.state.readiness_checks = _build_registry_readiness_checks(registry, config.enabled_services)`
-12. `app.state.readiness_services = _build_readiness_metadata(config.enabled_services, config.required_services)`
-13. `app.state.required_services = set(config.required_services)`
-14. `set_oauth2_token_url(config.token_url)` 적용
-15. CORS middleware 등록
-16. health router 포함
-17. 필요 시 auth router 포함
+9. `app.state.service_clients = service_clients`
+10. keycloak client가 있으면 `app.state.auth_provider = service_clients["keycloak"].client`
+11. `app.state.readiness_parallel = config.readiness_parallel`
+12. `app.state.readiness_checks = _build_readiness_checks(service_clients)`
+13. `app.state.readiness_services = _build_readiness_metadata(config.enabled_services, config.required_services)`
+14. `app.state.required_services = set(config.required_services)`
+15. `set_oauth2_token_url(config.token_url)` 적용
+16. CORS middleware 등록
+17. health router 포함
+18. 필요 시 auth router 포함
 
-즉, 설정은 현재 코드에서 **앱 조립**, **로깅 초기화**, **registry/readiness 기본 구성**, **auth 문서 표면(OpenAPI) 조정**에 직접 사용된다.
+즉, 설정은 현재 코드에서 **앱 조립**, **로깅 초기화**, **service_clients/readiness 기본 구성**, **auth 문서 표면(OpenAPI) 조정**에 직접 사용된다.
 
 ---
 
@@ -154,7 +155,7 @@ READINESS_REQUIRED_SERVICES=keycloak
 
 ### 5.1 `build_docmesh_env_overlay()`
 
-현재 환경변수를 복사한 뒤, `docmesh_py_core.load_settings(...)`가 실패하지 않도록 개발/테스트용 fallback 값을 채운다.
+현재 환경변수를 복사한 뒤, `docmesh_py_core.load_service_configs(...)`가 실패하지 않도록 개발/테스트용 fallback 값을 채운다.
 
 대표 기본값:
 - `KEYCLOAK_URL=http://keycloak.local`
@@ -176,8 +177,8 @@ READINESS_REQUIRED_SERVICES=keycloak
 ### 5.2 `load_docmesh_settings(enabled_services: tuple[str, ...] | None = None)`
 
 동작:
-- `build_docmesh_env_overlay()` 결과를 만든다.
-- `enabled_services`가 있으면 집합으로 변환해 `docmesh_py_core.load_settings(env, services=services)`에 전달한다.
+- `enabled_services`가 있으면 집합으로 변환한다.
+- 내부 기본값 보강 컨텍스트를 적용한 뒤 `docmesh_py_core.load_service_configs(services=services)`를 호출한다.
 - 서비스 선택이 없으면 전체 기본 서비스를 로딩한다.
 - `lru_cache(maxsize=1)`로 캐시된다.
 
@@ -190,7 +191,7 @@ READINESS_REQUIRED_SERVICES=keycloak
 
 ## 6. 인증 설정 (현재 구현 관점)
 
-현재 auth 경로에 직접 연결되는 설정은 `docmesh_py_core.Settings` 내부의 Keycloak 관련 값들이다.
+현재 auth 경로에 직접 연결되는 설정은 `docmesh_py_core.ServiceConfigs` 내부의 Keycloak 관련 값들이다.
 
 핵심 필수값:
 - `KEYCLOAK_URL`
@@ -199,8 +200,8 @@ READINESS_REQUIRED_SERVICES=keycloak
 - `KEYCLOAK_CLIENT_SECRET`
 
 현재 구현 기준 영향 범위:
-- `ServiceFactoryRegistry(settings)`를 통한 keycloak client/provider 생성
-- `get_auth_provider()`의 registry-backed provider 재사용
+- `create_app()`의 `service_clients` 구성 중 keycloak client/provider 준비
+- `get_auth_provider()`의 `app.state.service_clients` 기반 provider 재사용
 - `/token` endpoint의 provider 호출 기반값
 - `/user` / `get_current_user()`의 token 해석 기반값
 
@@ -242,7 +243,7 @@ READINESS_REQUIRED_SERVICES=keycloak
 - `DOCMESH_SERVICES`는 기본 readiness 대상 집합을 결정한다.
 - `READINESS_REQUIRED_SERVICES`는 필수 실패 기준을 결정한다.
 - health endpoint 자체가 `KEYCLOAK_URL`, `NATS_SERVERS`를 직접 읽는 것은 아니다.
-- 대신 create_app이 registry-backed check를 미리 구성해 둔다.
+- 대신 create_app이 service client 기반 check를 미리 구성해 둔다.
 
 기본 예시:
 
@@ -312,20 +313,20 @@ app.state.required_services = {"keycloak"}
 | 시스템 | 현재 fastapi_core 직접 사용 여부 | 비고 |
 | --- | --- | --- |
 | Keycloak | 직접/간접 | auth provider, 기본 readiness 대상 |
-| SQLite | 간접 | 선택 서비스 로딩 및 registry/readiness 대상 |
-| MinIO | 간접 | settings/regsitry 기반 확장 지점 |
-| Milvus | 간접 | settings/registry 기반 확장 지점 |
-| Ollama | 간접 | settings/registry 기반 확장 지점 |
-| Langfuse | 간접 | settings/registry 기반 확장 지점 |
-| NATS | 간접 | settings/registry 기반 readiness 또는 custom lifespan 확장 지점 |
+| SQLite | 간접 | 선택 서비스 로딩 및 service_clients/readiness 대상 |
+| MinIO | 간접 | settings/service_clients 기반 확장 지점 |
+| Milvus | 간접 | settings/service_clients 기반 확장 지점 |
+| Ollama | 간접 | settings/service_clients 기반 확장 지점 |
+| Langfuse | 간접 | settings/service_clients 기반 확장 지점 |
+| NATS | 간접 | settings/service_clients 기반 readiness 또는 custom lifespan 확장 지점 |
 
-즉, 현재 구현에서 이 값들은 **app factory가 즉시 모든 외부 클라이언트를 노출하는 API**라기보다, `Settings`와 registry를 통한 통합 기반이다.
+즉, 현재 구현에서 이 값들은 **app factory가 즉시 모든 외부 클라이언트를 전용 FastAPI dependency로 노출하는 API**라기보다, `ServiceConfigs`와 `app.state.service_clients`를 통한 통합 기반이다.
 
 ---
 
 ## 10. 테스트 환경에서 확인된 최소 설정
 
-`test_fastapi_core/conftest.py`의 `build_test_settings()` 기준, 테스트용 `Settings`를 만들기 위해 다음 값들이 제공된다.
+`test_fastapi_core/conftest.py`의 `build_test_settings()` 기준, 테스트용 `ServiceConfigs`를 만들기 위해 다음 값들이 제공된다.
 
 - `KEYCLOAK_URL`
 - `KEYCLOAK_REALM`
@@ -344,8 +345,8 @@ app.state.required_services = {"keycloak"}
 - `NATS_TOKEN`
 
 문서상 의미:
-- 현재 `docmesh_py_core.load_settings(...)`를 통과하려면 위 수준의 필수 세트가 필요했다.
-- 테스트는 단순 mock dict가 아니라 실제 `Settings` 생성 경로를 통과한다.
+- 현재 `docmesh_py_core.load_service_configs(...)`를 통과하려면 위 수준의 필수 세트가 필요했다.
+- 테스트는 단순 mock dict가 아니라 실제 `ServiceConfigs` 생성 경로를 통과한다.
 
 ---
 

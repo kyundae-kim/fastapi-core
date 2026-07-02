@@ -51,7 +51,7 @@ from fastapi_core import create_app
 
 #### 입력
 - `config: AppConfig | None`
-- `settings: docmesh_py_core.Settings | None`
+- `settings: docmesh_py_core.ServiceConfigs | None`
 - `lifespan: Callable | None`
 - `include_auth_router: bool = True`
 
@@ -59,13 +59,14 @@ from fastapi_core import create_app
 - `config is None`이면 `load_app_config()`를 사용한다.
 - `settings is None`이면 `load_docmesh_settings(tuple(config.enabled_services))`를 사용한다.
 - `_configure_application_logging(config)`로 앱 로깅을 초기화한다.
-- `ServiceFactoryRegistry(settings)`를 생성한다.
-- `FastAPI(root_path=config.root_path, lifespan=_build_lifespan(lifespan, registry))` 인스턴스를 생성한다.
+- `_build_service_clients(settings, config.enabled_services)`로 서비스 클라이언트 맵을 생성한다.
+- `FastAPI(root_path=config.root_path, lifespan=_build_lifespan(lifespan, service_clients))` 인스턴스를 생성한다.
 - `app.state`에 아래 값을 저장한다.
   - `config`
   - `root_logger`
   - `settings`
-  - `registry`
+  - `service_clients`
+  - `auth_provider` (keycloak client가 구성된 경우)
   - `readiness_parallel`
   - `readiness_checks`
   - `readiness_services`
@@ -76,16 +77,16 @@ from fastapi_core import create_app
 - `include_auth_router=True`일 때 auth router를 포함한다.
 
 #### readiness 기본 구성
-기본 `create_app()` 경로는 `config.enabled_services`를 기준으로 registry-backed readiness check를 자동 생성한다.
+기본 `create_app()` 경로는 `config.enabled_services`를 기준으로 `service_clients` 기반 readiness check를 자동 생성한다.
 
-- `app.state.readiness_checks[service_name] = lambda: registry.create_client(service_name).check()`
+- `app.state.readiness_checks[service_name] = service client wrapper의 check callable`
 - `app.state.readiness_services[service_name] = {"enabled": True, "required": ...}`
 - `app.state.required_services = set(config.required_services)`
 
 기본 `AppConfig`에서는 `enabled_services == ["keycloak"]`, `required_services == ["keycloak"]`다.
 
 #### lifespan 동작
-내부 lifespan wrapper는 사용자가 전달한 custom lifespan을 먼저 실행하고, 종료 시 항상 `registry.close_all()`을 호출한다.
+내부 lifespan wrapper는 사용자가 전달한 custom lifespan을 먼저 실행하고, 종료 시 항상 `close_service_clients(service_clients.values())`를 호출한다.
 
 #### 반환값
 - `FastAPI`
@@ -249,7 +250,7 @@ app = create_app(include_auth_router=False)
 - 요청 없는 독립 호출용 helper가 아니라 FastAPI dependency 형태를 기준으로 구현되어 있다.
 - 실제 캐시는 `load_app_config()`의 `lru_cache`에 있다.
 
-### 5.2 `get_settings(request: Request, config: AppConfig = Depends(get_config)) -> Settings`
+### 5.2 `get_settings(request: Request, config: AppConfig = Depends(get_config)) -> ServiceConfigs`
 
 정의 위치: `fastapi_core.dependencies.config`
 
@@ -258,17 +259,26 @@ app = create_app(include_auth_router=False)
 - 없으면 `load_docmesh_settings(tuple(config.enabled_services))`를 사용한다.
 - 현재 `config` 인자는 dependency wiring 목적이며 함수 본문에서는 `enabled_services` 계산 외 직접 사용하지 않는다.
 
-### 5.3 `get_auth_provider(request: Request, settings: Settings = Depends(get_settings)) -> KeycloakAuthService`
+### 5.3 `get_auth_provider(request: Request, settings: ServiceConfigs = Depends(get_settings)) -> KeycloakAuthService`
 
 정의 위치: `fastapi_core.dependencies.auth`
 
 #### 동작
 - `app.state.auth_provider`가 있으면 재사용한다.
-- 없으면 `app.state.registry`가 있는지 먼저 확인한다.
-- registry가 있으면 `registry.create_client("keycloak").client`를 provider로 사용하고 `app.state.auth_provider`에 저장한다.
-- registry가 없으면 `KeycloakAuthService(settings)`를 직접 생성하고 `app.state.auth_provider`에 저장한다.
+- 없으면 `app.state.service_clients`를 확인한다.
+- `service_clients["keycloak"]`가 있으면 해당 wrapper의 `.client`를 provider로 사용하고 `app.state.auth_provider`에 저장한다.
+- 없으면 `settings.keycloak`을 사용해 `KeycloakAuthService(settings.keycloak, allowed_algorithms=["RS256"])`를 직접 생성하고 `app.state.auth_provider`에 저장한다.
 
-### 5.4 `get_current_user(token=Depends(oauth2_scheme), provider=Depends(get_auth_provider), settings=Depends(get_settings)) -> UserInfo`
+### 5.4 서비스 클라이언트 접근 표면
+
+현재 구현에는 `get_service_client(...)` 같은 **전용 FastAPI dependency 공개 심볼은 없다.**
+
+대신 현재 코드 기준 표준 통합 지점은 다음과 같다.
+- `create_app(...)`가 `app.state.service_clients`에 서비스 클라이언트 맵을 저장한다.
+- auth provider처럼 이미 구현된 dependency는 이 `app.state.service_clients`를 재사용한다.
+- 서비스별 전용 dependency 심볼이 추가되기 전까지는 custom lifespan 또는 `app.state` 확장 지점을 통해 통합한다.
+
+### 5.5 `get_current_user(token=Depends(oauth2_scheme), provider=Depends(get_auth_provider), settings=Depends(get_settings)) -> UserInfo`
 
 정의 위치: `fastapi_core.dependencies.auth`
 
@@ -288,7 +298,7 @@ app = create_app(include_auth_router=False)
 - secure/insecure decode 분기 설정
 - introspection 모드 분기
 
-### 5.5 `require_permissions(*roles) -> dependency`
+### 5.6 `require_permissions(*roles) -> dependency`
 
 정의 위치: `fastapi_core.dependencies.auth`
 
@@ -422,7 +432,7 @@ class AppConfig(BaseSettings):
 
 정의 위치: `fastapi_core.docmesh_settings`
 
-현재 환경변수를 복사한 뒤, `docmesh_py_core.load_settings(...)`가 실패하지 않도록 개발/테스트용 fallback 값을 채운다.
+현재 환경변수를 복사한 뒤, `docmesh_py_core.load_service_configs(...)`가 실패하지 않도록 개발/테스트용 fallback 값을 채운다.
 
 대표 기본값 예:
 - `KEYCLOAK_URL=http://keycloak.local`
@@ -437,11 +447,11 @@ class AppConfig(BaseSettings):
 - `NATS_SERVERS=nats://nats.local:4222`
 - `NATS_TOKEN=dev-token`
 
-### 7.4 `load_docmesh_settings(enabled_services: tuple[str, ...] | None = None) -> Settings`
+### 7.4 `load_docmesh_settings(enabled_services: tuple[str, ...] | None = None) -> ServiceConfigs`
 
 정의 위치: `fastapi_core.docmesh_settings`
 
-`build_docmesh_env_overlay()` 결과를 바탕으로 `docmesh_py_core.load_settings(...)`를 호출한다.
+내부 기본값 보강 컨텍스트를 적용한 뒤 `docmesh_py_core.load_service_configs(...)`를 호출한다.
 
 #### 동작
 - `enabled_services`가 주어지면 해당 서비스 집합만 선택적으로 로딩한다.
@@ -455,9 +465,9 @@ class AppConfig(BaseSettings):
 `create_app(..., lifespan=...)`는 외부 의존성 초기화를 FastAPI 수명주기와 연결하는 핵심 진입점이다.
 
 현재 코드의 통합 포인트:
-- startup 이전에 registry / logging / readiness metadata가 app assembly 단계에서 준비된다.
+- startup 이전에 service_clients / logging / readiness metadata가 app assembly 단계에서 준비된다.
 - custom lifespan이 있으면 내부 wrapper가 이를 감싼다.
-- 종료 시 registry 자원 정리를 보장한다.
+- 종료 시 service client 자원 정리를 보장한다.
 
 권장 통합 지점:
 - startup에서 추가 연결 객체를 `app.state`에 저장
@@ -499,6 +509,7 @@ app = create_app(config=config)
 아직 `fastapi-core`가 직접 제공하지 않는 항목:
 - auth 전용 exception handler 등록 API
 - secure/insecure decode 분기나 introspection 모드 선택 API
+- 서비스 클라이언트 접근 전용 FastAPI dependency
 - `get_nats_connection` 같은 메시징 전용 FastAPI dependency
 - 실제 외부 서비스 통합을 포함한 기본 회귀 테스트
 
