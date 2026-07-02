@@ -91,3 +91,24 @@
   - `uv run pytest -q` → `25 passed, 1 warning in 0.37s`
 - Wiki file updated: queries/docmesh-py-core-vs-fastapi-core-usage-comparison.md
 - Notes: fastapi-core remains aligned with the installed pinned v0.1.3 package surface, while the latest upstream docs on main have moved ahead to direct config/direct factory patterns
+
+## [2026-07-02] query | docmesh-py-core vs fastapi-core usage comparison
+- Re-read comparison artifact: queries/docmesh-py-core-vs-fastapi-core-usage-comparison.md
+- Compared files: pyproject.toml, .venv/lib/python3.11/site-packages/docmesh_py_core/__init__.py, .venv/lib/python3.11/site-packages/docmesh_py_core/config.py, .venv/lib/python3.11/site-packages/docmesh_py_core/factories.py, .venv/lib/python3.11/site-packages/docmesh_py_core/keycloak.py, fastapi_core/docmesh_settings.py, fastapi_core/factory.py, fastapi_core/dependencies/config.py, fastapi_core/dependencies/auth.py, test_fastapi_core/conftest.py, test_fastapi_core/test_factory.py, test_fastapi_core/test_dependencies.py, test_fastapi_core/test_config.py, test_fastapi_core/test_auth_router.py, test_fastapi_core/test_health_router.py
+- Verification commands:
+  - `uv run python - <<'PY' ... importlib.metadata.version('docmesh-py-core') ... PY` → `0.1.4`
+  - `uv run python - <<'PY' ... __all__ membership check ... PY` → `Settings/load_settings/ServiceFactoryRegistry=False`, `load_service_configs/CommonConfig/ServiceConfigs/create_*_client/close_service_clients=True`
+  - `uv run python - <<'PY' ... inspect.signature(...) ... PY` → `load_service_configs(*, services: set[str] | None = None)`, `create_keycloak_client(config: KeycloakConfig)`, `close_service_clients(clients: Iterable[Any])`, `KeycloakAuthService(config: KeycloakConfig, ...)`
+  - `uv run pytest -q` → `ImportError while loading conftest ... cannot import name 'load_settings' from 'docmesh_py_core'`
+- Wiki file updated: queries/docmesh-py-core-vs-fastapi-core-usage-comparison.md
+- Notes: after the v0.1.4 bump, fastapi-core is no longer aligned with the installed runtime package; the app/test wiring must migrate from `Settings`/`load_settings`/`ServiceFactoryRegistry` to `ServiceConfigs`/`load_service_configs`/`create_*_client` + `close_service_clients`
+
+## [2026-07-02] query | docmesh-py-core vs fastapi-core usage comparison
+- Re-read comparison artifact: queries/docmesh-py-core-vs-fastapi-core-usage-comparison.md
+- Compared files: fastapi_core/docmesh_settings.py, fastapi_core/factory.py, fastapi_core/dependencies/config.py, fastapi_core/dependencies/auth.py, test_fastapi_core/conftest.py, test_fastapi_core/test_factory.py, test_fastapi_core/test_dependencies.py, test_fastapi_core/test_config.py
+- Verification commands:
+  - `uv run pytest -q test_fastapi_core/test_factory.py test_fastapi_core/test_dependencies.py test_fastapi_core/test_config.py` → `13 passed, 1 warning in 0.08s`
+  - `uv run pytest -q` → `25 passed, 1 warning in 0.14s`
+  - `search_files 'load_settings|ServiceFactoryRegistry|\bSettings\b|state\.registry' ...` → no remaining source references
+- Wiki file updated: queries/docmesh-py-core-vs-fastapi-core-usage-comparison.md
+- Notes: fastapi-core now matches the installed `docmesh-py-core v0.1.4` direct `ServiceConfigs` / `create_*_client` / `close_service_clients` integration model

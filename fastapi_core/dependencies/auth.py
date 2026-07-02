@@ -4,8 +4,7 @@ from collections.abc import Callable
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
-from docmesh_py_core import KeycloakAuthService, TokenValidationError
-from docmesh_py_core import AuthenticatedUser, Settings
+from docmesh_py_core import AuthenticatedUser, KeycloakAuthService, ServiceConfigs, TokenValidationError
 
 from fastapi_core.dependencies.config import get_settings
 from fastapi_core.schemas.user import UserInfo
@@ -44,17 +43,21 @@ def _to_user_info(user: AuthenticatedUser) -> UserInfo:
 
 def get_auth_provider(
     request: Request,
-    settings: Settings = Depends(get_settings),
+    settings: ServiceConfigs = Depends(get_settings),
 ) -> KeycloakAuthService:
-    if hasattr(request.app.state, "auth_provider"):
-        return request.app.state.auth_provider
-    registry = getattr(request.app.state, "registry", None)
-    if registry is not None:
-        client = registry.create_client("keycloak")
-        provider = client.client
-        request.app.state.auth_provider = provider
-        return provider
-    provider = KeycloakAuthService(settings, allowed_algorithms=["RS256"])
+    cached_provider = getattr(request.app.state, "auth_provider", None)
+    if cached_provider is not None:
+        return cached_provider
+    service_clients = getattr(request.app.state, "service_clients", None)
+    if service_clients is not None:
+        client = service_clients.get("keycloak")
+        if client is not None:
+            provider = client.client
+            request.app.state.auth_provider = provider
+            return provider
+    if settings.keycloak is None:
+        raise RuntimeError("Keycloak configuration is not enabled")
+    provider = KeycloakAuthService(settings.keycloak, allowed_algorithms=["RS256"])
     request.app.state.auth_provider = provider
     return provider
 
@@ -62,7 +65,7 @@ def get_auth_provider(
 async def get_current_user(
     token: str | None = Depends(oauth2_scheme),
     provider: KeycloakAuthService = Depends(get_auth_provider),
-    settings: Settings = Depends(get_settings),
+    settings: ServiceConfigs = Depends(get_settings),
 ) -> UserInfo:
     del settings
     if not token:

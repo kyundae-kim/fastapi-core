@@ -23,7 +23,8 @@ def test_create_app_includes_default_routes(settings):
     assert any(route.path == "/user" for route in app.router.routes)
     assert app.state.settings is settings
     assert app.state.config.token_url.endswith("token")
-    assert app.state.registry is not None
+    assert sorted(app.state.service_clients) == ["keycloak"]
+    assert app.state.auth_provider is app.state.service_clients["keycloak"].client
     assert app.state.root_logger is not None
     assert sorted(app.state.readiness_checks) == ["keycloak"]
     assert app.state.readiness_services == {
@@ -85,6 +86,7 @@ def test_create_app_uses_selected_services_for_readiness_and_settings():
     assert app.state.settings.sqlite is not None
     assert app.state.settings.keycloak is None
     assert sorted(app.state.readiness_checks) == ["sqlite"]
+    assert sorted(app.state.service_clients) == ["sqlite"]
     assert app.state.readiness_services == {
         "sqlite": {"enabled": True, "required": True},
     }

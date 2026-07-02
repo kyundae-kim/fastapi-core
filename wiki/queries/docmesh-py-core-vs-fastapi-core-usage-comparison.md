@@ -4,69 +4,56 @@ created: 2026-06-29
 updated: 2026-07-02
 type: query
 tags: [query, comparison, implementation, api]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-2026.md, pyproject.toml, .venv/lib/python3.11/site-packages/docmesh_py_core/__init__.py, fastapi_core/config.py, fastapi_core/docmesh_settings.py, fastapi_core/dependencies/auth.py, fastapi_core/routers/auth.py, fastapi_core/routers/health.py, fastapi_core/factory.py, test_fastapi_core/conftest.py, test_fastapi_core/test_factory.py, test_fastapi_core/test_health_router.py, test_fastapi_core/test_auth_router.py, test_fastapi_core/test_dependencies.py, test_fastapi_core/test_config.py]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-2026.md, pyproject.toml, .venv/lib/python3.11/site-packages/docmesh_py_core/__init__.py, .venv/lib/python3.11/site-packages/docmesh_py_core/config.py, .venv/lib/python3.11/site-packages/docmesh_py_core/factories.py, .venv/lib/python3.11/site-packages/docmesh_py_core/keycloak.py, fastapi_core/config.py, fastapi_core/docmesh_settings.py, fastapi_core/dependencies/auth.py, fastapi_core/routers/auth.py, fastapi_core/routers/health.py, fastapi_core/factory.py, test_fastapi_core/conftest.py, test_fastapi_core/test_factory.py, test_fastapi_core/test_health_router.py, test_fastapi_core/test_auth_router.py, test_fastapi_core/test_dependencies.py, test_fastapi_core/test_config.py]
 confidence: high
-contested: true
-contradictions: [docmesh-py-core]
 ---
 
 # docmesh-py-core vs fastapi-core usage comparison
 
 ## Question
 
-최신 `[[docmesh-py-core]]` 문서(api/config/examples) 기준으로, fastapi-core 코드베이스에 아직 옛 `load_settings` / `Settings` / `ServiceFactoryRegistry` 패턴이 얼마나 남아 있는지 점검한다.
+`docmesh-py-core`를 `v0.1.4`로 올린 뒤, fastapi-core 소스가 새 public API에 맞게 실제로 마이그레이션되었는지 점검한다.
 
 ## Verification baseline
 
-- Dependency pin: `pyproject.toml`의 `tool.uv.sources.docmesh-py-core.rev = "v0.1.3"`
-- Installed package version: `uv run python` + `importlib.metadata.version("docmesh-py-core")` → `0.1.3`
+- Dependency pin: `pyproject.toml`의 `tool.uv.sources.docmesh-py-core.rev = "v0.1.4"`
+- Installed package version: `uv run python` + `importlib.metadata.version("docmesh-py-core")` → `0.1.4`
 - Installed export inspection: `.venv/lib/python3.11/site-packages/docmesh_py_core/__init__.py`
-- Export presence check:
-  - present: `Settings`, `load_settings`, `ServiceFactoryRegistry`
-  - absent: `load_service_configs`, `create_postgres_client`, `close_service_clients`, `CommonConfig`, `KeycloakConfig`
-- Verification command: `uv run pytest -q` → `25 passed, 1 warning in 0.37s`
+- Root export presence check:
+  - absent: `Settings`, `load_settings`, `ServiceFactoryRegistry`
+  - present: `CommonConfig`, `ServiceConfigs`, `load_service_configs`, `create_keycloak_client`, `create_sqlite_client`, `create_postgres_client`, `create_minio_client`, `create_milvus_client`, `create_ollama_client`, `create_langfuse_client`, `create_nats_client`, `close_service_clients`, `check_all_services`, `configure_logging`
+- Key runtime signatures:
+  - `load_service_configs(*, services: set[str] | None = None) -> ServiceConfigs`
+  - `create_keycloak_client(config: KeycloakConfig) -> ServiceClientWrapper`
+  - `close_service_clients(clients: Iterable[Any]) -> None`
+  - `KeycloakAuthService(config: KeycloakConfig, ...)`
+- Verification commands:
+  - `uv run pytest -q test_fastapi_core/test_factory.py test_fastapi_core/test_dependencies.py test_fastapi_core/test_config.py` → `13 passed, 1 warning in 0.08s`
+  - `uv run pytest -q` → `25 passed, 1 warning in 0.14s`
 
 ## Implemented / aligned
 
-- fastapi-core는 **설치된 `docmesh-py-core` v0.1.3 패키지**와는 정합적이다. `fastapi_core/docmesh_settings.py`는 `Settings`, `load_settings`를 import해서 `load_docmesh_settings()`를 구성한다.
-- `fastapi_core/factory.py`는 `ServiceFactoryRegistry`, `Settings`, `configure_logging`를 import하고, 앱 생성 시 `registry = ServiceFactoryRegistry(app_settings)`를 만든 뒤 `app.state.registry`에 저장한다.
-- `fastapi_core/factory.py`의 readiness check 구성은 `registry.create_client(service_name).check()`를 지연 호출하는 람다로 만들어져 있어, registry 기반 health wiring과 일치한다.
-- lifespan 종료 구간에서 `registry.close_all()`을 호출하므로, old registry lifecycle도 실제로 코드에 남아 있다.
-- `test_fastapi_core/conftest.py` 역시 테스트 설정 fixture를 `load_settings({...})` 기반으로 만들고 있다.
-- 전체 테스트는 `uv run pytest -q` 기준 `25 passed, 1 warning in 0.37s`로 통과했다.
+- `fastapi_core/docmesh_settings.py`는 이제 `Settings` / `load_settings` 대신 `ServiceConfigs` / `load_service_configs()`를 사용한다.
+- 이 모듈은 기존 테스트/개발 편의를 유지하기 위해 누락된 환경변수 기본값만 임시로 주입한 뒤 `load_service_configs()`를 호출한다. 즉 old in-memory settings object 생성은 제거됐지만, 기존 overlay 기반 기본값 정책은 유지됐다.
+- `fastapi_core/factory.py`는 `ServiceFactoryRegistry`를 제거하고 enabled service별로 `create_*_client()`를 직접 호출해 `app.state.service_clients`를 구성한다.
+- readiness check wiring은 이제 `registry.create_client(service).check()`가 아니라 생성된 wrapper/builder의 `check` 메서드를 직접 사용한다.
+- lifespan 종료 시 `registry.close_all()` 대신 `close_service_clients(app.state.service_clients.values())`를 호출한다.
+- `fastapi_core/dependencies/config.py`와 `fastapi_core/dependencies/auth.py`는 `ServiceConfigs` 타입으로 전환됐다.
+- auth provider fallback은 이제 `KeycloakAuthService(settings.keycloak, allowed_algorithms=["RS256"])`를 사용하므로 `v0.1.4` 생성 시그니처와 맞는다.
+- 테스트 fixture도 `load_settings({...})`를 제거하고 `load_docmesh_settings(("keycloak", "sqlite"))` 기반으로 전환됐다.
 
-## Partially implemented
+## Resolved gaps from the initial v0.1.4 bump
 
-- 최신 위키가 정리한 upstream 문서 방향은 direct `load_service_configs()` + `create_*_client()` + `close_service_clients()` 조합이지만, fastapi-core는 아직 그 방향으로 마이그레이션되지 않았다.
-- readiness endpoint 자체는 `check_all_services()` 중심 표준 포맷을 사용하므로 health aggregation 계층은 최신 문서 방향과 개념적으로 가깝다. 다만 check callable을 준비하는 상위 계층은 여전히 registry 중심이다.
-- auth / health / logging 계층은 여전히 동작하고 테스트도 통과하지만, 이것은 "최신 main 문서와 정합"이라기보다 "핀된 v0.1.3 패키지와 정합"으로 읽는 편이 정확하다.
+- import 단계에서 깨지던 `load_settings` / `Settings` / `ServiceFactoryRegistry` 의존은 모두 제거됐다.
+- `app.state.registry` 기반 테스트/런타임 가정은 `app.state.service_clients` 기반으로 대체됐다.
+- auth dependency의 registry lookup 경로는 제거되고, cached provider 또는 `service_clients["keycloak"]`를 우선 사용하는 구조로 정리됐다.
+- 전체 테스트 스위트가 다시 GREEN 상태로 돌아왔다.
 
-## Missing from fastapi-core relative to latest docs
+## Remaining nuances
 
-- `load_service_configs()` 기반 설정 로딩 경로가 없다.
-- `CommonConfig`, `KeycloakConfig` 같은 direct config class 사용 경로가 없다.
-- `create_postgres_client`, `create_minio_client`, `create_langfuse_client`, `create_nats_client` 같은 direct factory 호출이 없다.
-- `close_service_clients()` 기반 종료 정리 경로가 없다.
-- 최신 examples가 보여주는 "개별 client를 `app.state`에 직접 저장하는 FastAPI 패턴"도 아직 채택되지 않았다.
-
-## Divergent / architecturally changed
-
-- 가장 중요한 차이는 **upstream 최신 문서와 installed package v0.1.3의 공개 표면이 서로 다르다**는 점이다. 최신 raw 문서들은 direct config/direct factory 표면을 canonical path로 설명하지만, 실제 fastapi-core가 설치해 사용하는 v0.1.3의 `__all__`은 여전히 `Settings`, `load_settings`, `ServiceFactoryRegistry`를 내보내고, 최신 direct APIs는 export하지 않는다.
-- 따라서 fastapi-core가 "최신 docs를 안 따라간다"고 단정하기보다, 현재는 **문서가 핀된 릴리스보다 앞서 있다**고 보는 것이 더 정확하다.
-- 다시 말해 현재 fastapi-core의 registry 사용은 단순한 기술부채만이 아니라, **실제 설치된 패키지 표면에 맞춘 합리적 선택**이기도 하다.
-
-## Changes applied to the interpretation
-
-- 이전 비교 메모에서 registry 채택은 "upstream capability의 일부 채택"처럼 읽혔지만, 현재는 설치된 v0.1.3 public API의 핵심 경로라는 점이 더 분명해졌다.
-- 최신 wiki entity/concept 페이지는 upstream main 문서 기준 direct factory 방향을 반영하되, 이 비교 페이지는 fastapi-core의 실제 의존 버전과 코드 현실을 분리해서 기록한다.
-- `[[service-factory-registry]]`는 now-canonical API 설명이 아니라 historical / pinned-version integration pattern으로 읽어야 한다.
-
-## Recommended next moves
-
-1. fastapi-core가 계속 `docmesh-py-core` `v0.1.3`에 머문다면, 현재 registry 기반 통합은 유지 가능하다.
-2. 최신 upstream 문서 방향으로 이동하려면 먼저 실제 배포 가능한 릴리스에 `load_service_configs()` / `create_*_client()` / `close_service_clients()`가 포함되는지 확인해야 한다.
-3. 그 릴리스가 준비되면 `fastapi_core/docmesh_settings.py`, `fastapi_core/factory.py`, `test_fastapi_core/conftest.py`를 우선 direct factory 패턴으로 재구성하는 것이 자연스러운 1차 마이그레이션 범위다.
+- readiness 계층은 여전히 `check_all_services()`의 동기 `CheckFn` 계약 위에 서 있다. 대부분의 현재 서비스 wrapper는 `.check()`를 동기 호출로 제공하지만, `NatsConnectionBuilder.check()`는 async 메서드라서 장차 실제 NATS readiness를 활성화할 때는 별도 어댑터가 필요할 수 있다.
+- 현재 변경은 `v0.1.4` public surface 적응을 목표로 한 것이므로, 이후 upstream에서 direct factory 표면이 더 바뀌면 `factory.py`의 서비스 매핑 테이블을 다시 점검해야 한다.
 
 ## Verdict
 
-현재 fastapi-core에는 옛 `load_settings` / `Settings` / `ServiceFactoryRegistry` 패턴이 **명확히 남아 있다**. 하지만 이것은 최신 upstream 문서에 비해 뒤처진 구현이라기보다, **설치되어 있는 `docmesh-py-core` v0.1.3 패키지와는 정확히 정합한 구현**이다. 따라서 오늘 기준 핵심 결론은 "fastapi-core가 old pattern에 묶여 있다"보다 "upstream main 문서와 pinned runtime package 사이에 표면 불일치가 있으며, fastapi-core는 현재 런타임 패키지 쪽에 맞춰져 있다"이다.
+이번 마이그레이션 이후 fastapi-core는 더 이상 제거된 `Settings` / `load_settings` / `ServiceFactoryRegistry` 표면에 기대지 않는다. 현재 코드는 설치된 `docmesh-py-core v0.1.4`의 direct `ServiceConfigs` + `create_*_client()` + `close_service_clients()` 방향과 정합적이며, 검증 기준으로 `uv run pytest -q` 전체 스위트 `25 passed`를 회복했다.

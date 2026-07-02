@@ -2,12 +2,27 @@ from __future__ import annotations
 
 import json
 import logging
-from contextlib import asynccontextmanager
 from collections.abc import Callable
+from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from docmesh_py_core import ServiceFactoryRegistry, Settings, configure_logging
+from docmesh_py_core import (
+    NatsConnectionBuilder,
+    ServiceClientWrapper,
+    ServiceConfigs,
+    close_service_clients,
+    configure_logging,
+    create_keycloak_client,
+    create_langfuse_client,
+    create_milvus_client,
+    create_minio_client,
+    create_nats_client,
+    create_ollama_client,
+    create_postgres_client,
+    create_sqlite_client,
+)
 
 from fastapi_core.config import AppConfig, load_app_config
 from fastapi_core.dependencies.auth import set_oauth2_token_url
@@ -48,13 +63,39 @@ def _configure_application_logging(config: AppConfig) -> logging.Logger:
     return root_logger
 
 
-def _build_registry_readiness_checks(
-    registry: ServiceFactoryRegistry,
+def _build_service_clients(
+    settings: ServiceConfigs,
     services: list[str],
+) -> dict[str, ServiceClientWrapper | NatsConnectionBuilder]:
+    clients: dict[str, ServiceClientWrapper | NatsConnectionBuilder] = {}
+    for service_name in services:
+        if service_name == "keycloak" and settings.keycloak is not None:
+            clients[service_name] = create_keycloak_client(settings.keycloak)
+        elif service_name == "postgres" and settings.postgres is not None:
+            clients[service_name] = create_postgres_client(settings.postgres)
+        elif service_name == "sqlite" and settings.sqlite is not None:
+            clients[service_name] = create_sqlite_client(settings.sqlite)
+        elif service_name == "minio" and settings.minio is not None:
+            clients[service_name] = create_minio_client(settings.minio)
+        elif service_name == "milvus" and settings.milvus is not None:
+            clients[service_name] = create_milvus_client(settings.milvus)
+        elif service_name == "ollama" and settings.ollama is not None:
+            clients[service_name] = create_ollama_client(settings.ollama)
+        elif service_name == "langfuse" and settings.langfuse is not None:
+            client = create_langfuse_client(settings.langfuse)
+            if client is not None:
+                clients[service_name] = client
+        elif service_name == "nats" and settings.nats is not None:
+            clients[service_name] = create_nats_client(settings.nats)
+    return clients
+
+
+def _build_readiness_checks(
+    service_clients: dict[str, ServiceClientWrapper | NatsConnectionBuilder],
 ) -> dict[str, Callable[[], object]]:
     checks: dict[str, Callable[[], object]] = {}
-    for service_name in services:
-        checks[service_name] = lambda service_name=service_name: registry.create_client(service_name).check()
+    for service_name, client in service_clients.items():
+        checks[service_name] = client.check
     return checks
 
 
@@ -74,7 +115,7 @@ def _build_readiness_metadata(
 
 def _build_lifespan(
     lifespan: Callable | None,
-    registry: ServiceFactoryRegistry,
+    service_clients: dict[str, ServiceClientWrapper | NatsConnectionBuilder],
 ) -> Callable:
     @asynccontextmanager
     async def managed_lifespan(app: FastAPI):
@@ -83,35 +124,35 @@ def _build_lifespan(
         else:
             async with lifespan(app):
                 yield
-        registry.close_all()
+        close_service_clients(service_clients.values())
 
     return managed_lifespan
 
 
 def create_app(
     config: AppConfig | None = None,
-    settings: Settings | None = None,
+    settings: ServiceConfigs | None = None,
     lifespan: Callable | None = None,
     include_auth_router: bool = True,
 ) -> FastAPI:
     app_config = config or load_app_config()
     root_logger = _configure_application_logging(app_config)
     app_settings = settings or load_docmesh_settings(tuple(app_config.enabled_services))
-    registry = ServiceFactoryRegistry(app_settings)
+    service_clients = _build_service_clients(app_settings, app_config.enabled_services)
 
     app = FastAPI(
         root_path=app_config.root_path,
-        lifespan=_build_lifespan(lifespan, registry),
+        lifespan=_build_lifespan(lifespan, service_clients),
     )
     app.state.config = app_config
     app.state.root_logger = root_logger
     app.state.settings = app_settings
-    app.state.registry = registry
+    app.state.service_clients = service_clients
+    keycloak_client = service_clients.get("keycloak")
+    if keycloak_client is not None and hasattr(keycloak_client, "client"):
+        app.state.auth_provider = keycloak_client.client
     app.state.readiness_parallel = app_config.readiness_parallel
-    app.state.readiness_checks = _build_registry_readiness_checks(
-        registry,
-        app_config.enabled_services,
-    )
+    app.state.readiness_checks = _build_readiness_checks(service_clients)
     app.state.readiness_services = _build_readiness_metadata(
         app_config.enabled_services,
         app_config.required_services,

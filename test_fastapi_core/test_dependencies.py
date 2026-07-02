@@ -24,19 +24,14 @@ class FakeAuthProvider:
         return FakeAuthenticatedUser()
 
 
-class FakeRegistryClient:
+class FakeServiceClient:
     def __init__(self, provider: FakeAuthProvider):
         self.client = provider
 
 
-class FakeRegistry:
+class FakeServiceClients(dict[str, FakeServiceClient]):
     def __init__(self, provider: FakeAuthProvider):
-        self.provider = provider
-        self.requested_services: list[str] = []
-
-    def create_client(self, service_name: str) -> FakeRegistryClient:
-        self.requested_services.append(service_name)
-        return FakeRegistryClient(self.provider)
+        super().__init__({"keycloak": FakeServiceClient(provider)})
 
 
 
@@ -72,11 +67,11 @@ def test_require_permissions_returns_403_when_role_missing(settings):
 
 
 
-def test_get_current_user_uses_registry_backed_auth_provider(settings):
+def test_get_current_user_uses_service_client_backed_auth_provider(settings):
     app = create_app(settings=settings, include_auth_router=False)
     provider = FakeAuthProvider()
-    registry = FakeRegistry(provider)
-    app.state.registry = registry
+    app.state.auth_provider = None
+    app.state.service_clients = FakeServiceClients(provider)
 
     @app.get("/me", response_model=UserInfo)
     async def me(user: UserInfo = Depends(get_current_user)):
@@ -87,5 +82,4 @@ def test_get_current_user_uses_registry_backed_auth_provider(settings):
 
     assert response.status_code == 200
     assert response.json()["username"] == "bob"
-    assert registry.requested_services == ["keycloak"]
     assert provider.token == "demo-token"

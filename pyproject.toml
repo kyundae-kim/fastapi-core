@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "docmesh-py-core",
-    "fastapi[standard]>=0.136.1",
+    "fastapi[standard]>=0.139.0",
     "langfuse>=4.7.1",
     "minio>=7.2.20",
     "nats-py>=2.14.0",
