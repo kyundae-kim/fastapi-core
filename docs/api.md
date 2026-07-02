@@ -271,12 +271,34 @@ app = create_app(include_auth_router=False)
 
 ### 5.4 서비스 클라이언트 접근 표면
 
-현재 구현에는 `get_service_client(...)` 같은 **전용 FastAPI dependency 공개 심볼은 없다.**
+#### `get_service_client(service_name: str) -> dependency`
 
-대신 현재 코드 기준 표준 통합 지점은 다음과 같다.
-- `create_app(...)`가 `app.state.service_clients`에 서비스 클라이언트 맵을 저장한다.
-- auth provider처럼 이미 구현된 dependency는 이 `app.state.service_clients`를 재사용한다.
-- 서비스별 전용 dependency 심볼이 추가되기 전까지는 custom lifespan 또는 `app.state` 확장 지점을 통해 통합한다.
+정의 위치: `fastapi_core.dependencies.services`
+
+서비스 이름을 받아 `app.state.service_clients`에서 해당 클라이언트를 꺼내 주는 dependency factory다.
+
+#### 동작
+- `create_app(...)`가 저장한 `app.state.service_clients`를 조회한다.
+- 요청한 `service_name`이 존재하면 같은 앱 인스턴스에서 초기화된 클라이언트 객체를 그대로 반환한다.
+- `service_clients`가 없거나 해당 서비스가 활성화되지 않았으면 `503 Service Unavailable`과 `Service client '<name>' is not enabled`를 반환한다.
+
+#### 예시
+
+```python
+from fastapi import APIRouter, Depends
+from fastapi_core.dependencies import get_service_client
+
+router = APIRouter()
+
+@router.get("/sqlite-health")
+async def sqlite_health(sqlite_client=Depends(get_service_client("sqlite"))):
+    return {"has_check": hasattr(sqlite_client, "check")}
+```
+
+#### 범위와 한계
+- 반환 타입은 서비스별로 다를 수 있으므로 현재 공개 계약은 공통 프로토콜보다 **초기화된 클라이언트 객체 재사용** 자체에 초점을 둔다.
+- `get_auth_provider()`는 여전히 keycloak wrapper의 `.client`를 꺼내 auth provider를 구성하는 전용 경로를 유지한다.
+- `get_nats_connection` 같은 **서비스별 별칭 dependency**는 아직 기본 제공하지 않는다.
 
 ### 5.5 `get_current_user(token=Depends(oauth2_scheme), provider=Depends(get_auth_provider), settings=Depends(get_settings)) -> UserInfo`
 
@@ -509,8 +531,7 @@ app = create_app(config=config)
 아직 `fastapi-core`가 직접 제공하지 않는 항목:
 - auth 전용 exception handler 등록 API
 - secure/insecure decode 분기나 introspection 모드 선택 API
-- 서비스 클라이언트 접근 전용 FastAPI dependency
 - `get_nats_connection` 같은 메시징 전용 FastAPI dependency
 - 실제 외부 서비스 통합을 포함한 기본 회귀 테스트
 
-따라서 실제 사용 계약은 이 문서를 우선 참고하되, 통합 확장은 custom lifespan과 `app.state` 지점을 통해 수행하는 것이 현재 코드 구조와 맞다.
+따라서 실제 사용 계약은 이 문서를 우선 참고하되, 공통 서비스 접근은 `get_service_client(...)`를 우선 사용하고, 서비스별 세분화된 연결 주입은 여전히 custom lifespan과 `app.state` 확장으로 보완하는 것이 현재 코드 구조와 맞다.

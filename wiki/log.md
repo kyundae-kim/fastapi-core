@@ -112,3 +112,10 @@
   - `search_files 'load_settings|ServiceFactoryRegistry|\bSettings\b|state\.registry' ...` → no remaining source references
 - Wiki file updated: queries/docmesh-py-core-vs-fastapi-core-usage-comparison.md
 - Notes: fastapi-core now matches the installed `docmesh-py-core v0.1.4` direct `ServiceConfigs` / `create_*_client` / `close_service_clients` integration model
+
+## [2026-07-02] query | docs/api.md current-implementation caveats
+- Re-read orientation files earlier in session: SCHEMA.md, index.md, log.md
+- Reviewed source document: docs/api.md
+- Reviewed implementation files: fastapi_core/factory.py, fastapi_core/routers/auth.py, fastapi_core/routers/health.py, fastapi_core/dependencies/auth.py, fastapi_core/dependencies/config.py, fastapi_core/config.py, fastapi_core/docmesh_settings.py
+- Verification command: `uv run pytest -q` → `38 passed, 2 warnings in 20.47s`
+- No new wiki page filed: answered from the source document plus direct code re-check

@@ -26,7 +26,7 @@
 1. `create_app(...)`가 `ServiceConfigs`와 `service_clients` 맵을 만든다.
 2. `AppConfig.enabled_services`에 포함된 서비스 목록을 기준으로 readiness check를 자동 구성한다.
 3. 종료 시 내부 lifespan wrapper가 `close_service_clients(service_clients.values())`를 호출한다.
-4. 메시징 전용 request dependency나 route는 현재 패키지에서 직접 제공하지 않는다.
+4. 공통 서비스 접근용 `get_service_client(service_name)` dependency는 제공하지만, 메시징 전용 request dependency나 route는 현재 패키지에서 직접 제공하지 않는다.
 
 즉, 현재 `fastapi-core`에서 메시징은:
 - **1차 공개 FastAPI API**: 아님
@@ -42,7 +42,7 @@
 현재 문서 세트에서 1차 공개 표면으로 보는 항목:
 - `create_app(...)`
 - auth / health router
-- dependency (`get_config`, `get_settings`, `get_auth_provider`, `get_current_user`, `require_permissions`)
+- dependency (`get_config`, `get_settings`, `get_auth_provider`, `get_service_client`, `get_current_user`, `require_permissions`)
 - schema (`TokenResponse`, `UserInfo`, `HealthResponse`, `HealthServiceDetail`)
 
 ### 3.2 메시징 관련 확장 지점

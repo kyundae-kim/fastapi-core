@@ -3,6 +3,8 @@ from __future__ import annotations
 from fastapi import Depends
 from fastapi.testclient import TestClient
 
+from fastapi_core.config import AppConfig
+from fastapi_core.dependencies import get_service_client
 from fastapi_core.dependencies.auth import get_current_user, require_permissions
 from fastapi_core.factory import create_app
 from fastapi_core.schemas.user import UserInfo
@@ -34,7 +36,6 @@ class FakeServiceClients(dict[str, FakeServiceClient]):
         super().__init__({"keycloak": FakeServiceClient(provider)})
 
 
-
 def test_get_current_user_returns_401_when_token_missing(settings):
     app = create_app(settings=settings, include_auth_router=False)
     app.state.auth_provider = FakeAuthProvider()
@@ -50,7 +51,6 @@ def test_get_current_user_returns_401_when_token_missing(settings):
     assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
-
 def test_require_permissions_returns_403_when_role_missing(settings):
     app = create_app(settings=settings, include_auth_router=False)
     app.state.auth_provider = FakeAuthProvider()
@@ -64,7 +64,6 @@ def test_require_permissions_returns_403_when_role_missing(settings):
 
     assert response.status_code == 403
     assert response.json()["detail"] == "Forbidden"
-
 
 
 def test_get_current_user_uses_service_client_backed_auth_provider(settings):
@@ -83,3 +82,38 @@ def test_get_current_user_uses_service_client_backed_auth_provider(settings):
     assert response.status_code == 200
     assert response.json()["username"] == "bob"
     assert provider.token == "demo-token"
+
+
+def test_get_service_client_returns_initialized_service_client(settings):
+    config = AppConfig(
+        enabled_services=["sqlite"],
+        required_services=["sqlite"],
+    )
+    app = create_app(config=config, settings=settings, include_auth_router=False)
+
+    @app.get("/sqlite")
+    async def sqlite_client(client=Depends(get_service_client("sqlite"))):
+        return {
+            "service_type": type(client).__name__,
+            "has_check": hasattr(client, "check"),
+        }
+
+    with TestClient(app) as client:
+        response = client.get("/sqlite")
+
+    assert response.status_code == 200
+    assert response.json()["has_check"] is True
+
+
+def test_get_service_client_returns_503_when_service_is_not_enabled(settings):
+    app = create_app(settings=settings, include_auth_router=False)
+
+    @app.get("/sqlite")
+    async def sqlite_client(client=Depends(get_service_client("sqlite"))):
+        return {"service_type": type(client).__name__}
+
+    with TestClient(app) as client:
+        response = client.get("/sqlite")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Service client 'sqlite' is not enabled"

@@ -62,7 +62,7 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 ### 3.2 문서화 대상 공개 표면
 
 - app factory: `create_app(...)`
-- dependency: `get_config()`, `get_settings()`, `get_auth_provider()`, 서비스 클라이언트 접근 dependency(구현 심볼은 API 문서 기준), `get_current_user()`, `require_permissions(...)`
+- dependency: `get_config()`, `get_settings()`, `get_auth_provider()`, `get_service_client(service_name)`, `get_current_user()`, `require_permissions(...)`
 - schema: `TokenResponse`, `UserInfo`, `HealthResponse`
 - endpoint: `/token`, `/user`, `/health/liveness`, `/health/readiness`
 
@@ -241,7 +241,6 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 
 - auth 전용 exception handler 등록 방식
 - secure/insecure decode / introspection 세부 분기
-- 서비스 클라이언트 접근 전용 FastAPI dependency 표면
 - 메시징 전용 FastAPI dependency (`get_nats_connection` 등)
 
 ---
