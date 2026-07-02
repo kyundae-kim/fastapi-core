@@ -120,7 +120,7 @@
 - 선택 의존성 실패와 필수 의존성 실패를 운영 관점에서 구분 가능해야 한다.
 
 ### 5.4 startup 연계 메시징/외부 연결
-1. 서비스는 startup 단계에서 외부 의존성을 준비하거나 공통 registry/lifecycle 흐름에 연결한다.
+1. 서비스는 startup 단계에서 외부 의존성을 준비하거나 공통 service_clients/lifecycle 흐름에 연결한다.
 2. FastAPI lifespan과 연결되어 정상 종료 시 자원을 정리한다.
 
 ---

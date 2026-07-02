@@ -41,7 +41,7 @@ app = create_app()
 - `/health/liveness` 포함
 - `/health/readiness` 포함
 - `/token`, `/user` 포함
-- `app.state.config`, `app.state.settings`, `app.state.registry` 저장
+- `app.state.config`, `app.state.settings`, `app.state.service_clients` 저장
 - `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services` 초기화
 - CORS middleware 등록
 
@@ -308,7 +308,7 @@ app = create_app(lifespan=lifespan)
 
 현재 구현 기준 보장되는 점:
 - custom lifespan startup/shutdown이 호출된다.
-- 내부 registry는 lifespan 종료 뒤 `close_all()`로 정리된다.
+- 내부 `service_clients`는 lifespan 종료 뒤 `close_service_clients(service_clients.values())`로 정리된다.
 
 메시징/NATS 같은 외부 자원은 이 지점에서 초기화/정리하는 패턴이 권장된다.
 
@@ -316,7 +316,7 @@ app = create_app(lifespan=lifespan)
 
 ## 12. 선택 서비스만 로딩하는 예시
 
-`docmesh_py_core.Settings`도 서비스 선택에 맞춰 줄여서 로딩할 수 있다.
+`docmesh_py_core.ServiceConfigs`도 서비스 선택에 맞춰 줄여서 로딩할 수 있다.
 
 ```python
 from fastapi_core.config import AppConfig

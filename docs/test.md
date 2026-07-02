@@ -14,7 +14,7 @@
 - `create_app(...)`
 - auth router (`/token`, `/user`)
 - health router (`/health/liveness`, `/health/readiness`)
-- dependency (`get_current_user`, `require_permissions`, registry-backed `get_auth_provider` 경로)
+- dependency (`get_current_user`, `require_permissions`, service_clients 기반 `get_auth_provider` 경로)
 - schema (`TokenResponse`, `UserInfo`, `HealthResponse`, `HealthServiceDetail`)
 - config / settings loader
 - custom lifespan 연계
@@ -104,7 +104,7 @@ NATS 관련 기본 env:
 
 ### 4.1 `build_test_settings()`
 
-`docmesh_py_core.load_settings(...)`를 직접 호출해 테스트용 `Settings`를 구성한다.
+`load_docmesh_settings(...)`를 통해 테스트용 `ServiceConfigs`를 구성한다.
 
 포함되는 최소 설정 범위:
 - Keycloak
@@ -116,7 +116,7 @@ NATS 관련 기본 env:
 - NATS
 
 의미:
-- 현재 구현에서 `Settings` 생성이 성립하도록 필수 환경값 세트를 코드로 고정한 것
+- 현재 구현에서 `ServiceConfigs` 생성이 성립하도록 필수 환경값 세트를 코드로 고정한 것
 - 테스트는 mock이 아니라 **실제 설정 모델 생성 경로**를 통과한다.
 
 ### 4.2 `settings` fixture
@@ -137,7 +137,7 @@ NATS 관련 기본 env:
 - Keycloak provider의 JWT 허용 알고리즘이 `RS256`으로 맞춰진다.
 - `app.state.settings`가 저장된다.
 - `app.state.config.token_url`이 기본값으로 반영된다.
-- `app.state.registry`가 생성된다.
+- `app.state.service_clients`가 생성된다.
 - `app.state.root_logger`가 생성된다.
 - 기본 readiness state가 `keycloak` 기준으로 구성된다.
 - async service check를 readiness 경로에서 동기 callable로 감싸 실행한다.
@@ -151,7 +151,7 @@ NATS 관련 기본 env:
 현재 검증하지 않는 항목:
 - CORS middleware 세부 응답 헤더 동작
 - `root_path` 기반 reverse proxy 실제 동작
-- 여러 서비스 조합에서의 광범위한 registry matrix
+- 여러 서비스 조합에서의 광범위한 service_clients matrix
 
 ## 5.2 auth router 테스트
 
@@ -203,8 +203,8 @@ NATS 관련 기본 env:
 - `get_current_user()`의 token 없음 경로 → 401
 - `WWW-Authenticate: Bearer` 헤더 검증
 - `require_permissions("admin")`의 role 부족 경로 → 403
-- registry-backed auth provider 경로에서 `keycloak` client가 요청된다.
-- registry에서 받은 provider가 token 해석에 사용된다.
+- service_clients 기반 auth provider 경로에서 `keycloak` client가 요청된다.
+- service_clients에서 받은 provider가 token 해석에 사용된다.
 
 현재 검증하지 않는 항목:
 - `get_config()` 직접 테스트
@@ -282,7 +282,7 @@ NATS 관련 기본 env:
 
 ### 6.3 실제 설정 모델 경로 사용
 
-테스트는 단순 dict mock 대신 `load_settings(...)` 또는 실제 로더를 통해 `Settings`를 만든다.
+테스트는 단순 dict mock 대신 `load_docmesh_settings(...)` 또는 실제 로더를 통해 `ServiceConfigs`를 만든다.
 따라서 설정 유효성 제약이 테스트에도 반영된다.
 
 ---
@@ -297,7 +297,7 @@ NATS 관련 기본 env:
 4. CORS middleware 응답 헤더 테스트
 5. `root_path` 반영 테스트
 6. 비동기 테스트 함수 기반 검증
-7. 메시징 startup/shutdown 연동 테스트
+7. custom `app.state.nats` dependency 패턴 테스트
 8. `READINESS_PARALLEL`의 실제 병렬성 효과 검증
 
 이 항목들은 향후 추가 대상이지, 현재 완료된 테스트 범위는 아니다.
@@ -399,4 +399,4 @@ NATS 관련 기본 env:
 ## 12. 문서 상태 메모
 
 이 문서는 기존의 넓은 테스트 계획 초안을, **현재 저장소에 실제 존재하는 테스트와 이미 검증된 계약** 중심으로 재정렬한 것이다.
-특히 Keycloak/NATS live integration 테스트 추가, Keycloak readiness credential 기반 검증, RS256 bearer token 검증, async NATS readiness wrapper, 전체 `38 passed` / integration `10 passed` 결과를 반영해 최신 코드와 맞췄다.
+특히 Keycloak/NATS live integration 테스트 추가, Keycloak readiness credential 기반 검증, RS256 bearer token 검증, async NATS readiness wrapper, 전체 `38 passed` / integration `10 passed, 28 deselected` 결과를 반영해 최신 코드와 맞췄다.

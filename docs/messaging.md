@@ -1,6 +1,6 @@
 # fastapi-core 메시징 정의서
 
-> 문서 목적: `fastapi-core`에서 메시징을 **현재 구현된 FastAPI lifecycle / registry / readiness 구조에 맞춰** 설명한다.
+> 문서 목적: `fastapi-core`에서 메시징을 **현재 구현된 FastAPI lifecycle / service_clients / readiness 구조에 맞춰** 설명한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`, `docs/config.md`
 > 문서 상태: 구현 반영본(v0.3)
 
@@ -20,12 +20,12 @@
 
 ## 2. 현재 구현에서 메시징의 위치
 
-`fastapi-core`에서 메시징은 독립 FastAPI 공개 API라기보다 **service registry와 readiness 체계에 연결되는 외부 서비스 범주**다.
+`fastapi-core`에서 메시징은 독립 FastAPI 공개 API라기보다 **service_clients와 readiness 체계에 연결되는 외부 서비스 범주**다.
 
 현재 코드 흐름:
-1. `create_app(...)`가 `Settings`와 `ServiceFactoryRegistry(settings)`를 만든다.
+1. `create_app(...)`가 `ServiceConfigs`와 `service_clients` 맵을 만든다.
 2. `AppConfig.enabled_services`에 포함된 서비스 목록을 기준으로 readiness check를 자동 구성한다.
-3. 종료 시 내부 lifespan wrapper가 `registry.close_all()`을 호출한다.
+3. 종료 시 내부 lifespan wrapper가 `close_service_clients(service_clients.values())`를 호출한다.
 4. 메시징 전용 request dependency나 route는 현재 패키지에서 직접 제공하지 않는다.
 
 즉, 현재 `fastapi-core`에서 메시징은:
@@ -51,8 +51,7 @@
 - `AppConfig.enabled_services`
 - `AppConfig.required_services`
 - `load_docmesh_settings(...)`
-- `ServiceFactoryRegistry(settings)`
-- `app.state.registry`
+- `app.state.service_clients`
 - `app.state.readiness_checks`
 - `app.state.readiness_services`
 - `app.state.required_services`
@@ -104,7 +103,7 @@ app = create_app(config=config)
 - `app.state.readiness_parallel`
 
 기본 `create_app()` 경로에서는:
-- `enabled_services`를 기준으로 registry-backed check를 자동 생성한다.
+- `enabled_services`를 기준으로 service client 기반 check를 자동 생성한다.
 - 따라서 NATS를 `enabled_services`에 포함하면 readiness 대상에 들어갈 수 있다.
 
 상태 판정 규칙:
@@ -120,11 +119,11 @@ app = create_app(config=config)
 
 ### 6.1 현재 코드가 직접 보장하는 것
 
-- `create_app()`는 내부적으로 registry를 생성한다.
+- `create_app()`는 내부적으로 `service_clients`를 구성한다.
 - 내부 lifespan wrapper는 사용자가 준 custom lifespan을 감싼다.
-- 종료 시 항상 `registry.close_all()`을 호출한다.
+- 종료 시 항상 `close_service_clients(service_clients.values())`를 호출한다.
 
-즉, registry가 관리하는 서비스 자원 정리는 shutdown 경로에 연결돼 있다.
+즉, `service_clients`가 관리하는 서비스 자원 정리는 shutdown 경로에 연결돼 있다.
 
 ### 6.2 사용자가 확장해야 하는 것
 
@@ -156,9 +155,9 @@ app = create_app(lifespan=lifespan)
 
 메시징 사용 방식은 현재 코드 기준으로 두 층으로 생각하면 된다.
 
-### 방식 A. registry/readiness 중심
-- `create_app()`가 만든 `app.state.registry`를 기반으로 서비스 client 생성
-- readiness는 registry-backed check를 사용
+### 방식 A. service_clients/readiness 중심
+- `create_app()`가 만든 `app.state.service_clients`를 기반으로 서비스 client를 재사용
+- readiness는 service client 기반 check를 사용
 - 현재 기본 구현이 이 방식에 가깝다
 
 ### 방식 B. app.state 또는 custom dependency 확장
@@ -205,7 +204,7 @@ async def nats_status(conn=Depends(get_nats_connection)):
 
 ## 8. 설정 계약 요약
 
-메시징 관련 대표 환경변수는 `docmesh_py_core.Settings` 측에서 해석된다.
+메시징 관련 대표 환경변수는 `docmesh_py_core.ServiceConfigs` 측에서 해석된다.
 예:
 - `NATS_SERVERS`
 - `NATS_NAME`
@@ -254,10 +253,10 @@ custom lifespan이나 route/service layer에서 별도 메시징 호출을 추�
 - 선택/필수 서비스 readiness 상태 분기 (`ok/degraded/error`)
 - 선택 서비스만 로딩하는 `load_docmesh_settings(("sqlite",))` 패턴
 - shutdown 시 내부 lifecycle 경로 존재
+- custom lifespan과 live NATS service client 공존
+- `enabled_services=["nats"]`, `required_services=["nats"]` 구성에서 readiness `ok` 경로
 
 아직 없는 테스트:
-- 실제 NATS startup/shutdown 연동 테스트
-- `enabled_services=["nats"]` 또는 `required_services=["nats"]` 시나리오의 직접 회귀
 - custom `app.state.nats` dependency 패턴 테스트
 
 ---
@@ -268,7 +267,7 @@ custom lifespan이나 route/service layer에서 별도 메시징 호출을 추�
 
 1. `AppConfig.enabled_services`에 필요한 서비스를 선언한다.
 2. readiness 필수 여부를 `required_services`로 결정한다.
-3. 기본 registry/readiness 구성을 우선 활용한다.
+3. 기본 service_clients/readiness 구성을 우선 활용한다.
 4. 실제 연결 객체 주입이 필요하면 custom lifespan에서 `app.state`를 확장한다.
 5. 메시징 전용 dependency/helper는 서비스 레이어에서 추가한다.
 
@@ -293,5 +292,5 @@ custom lifespan이나 route/service layer에서 별도 메시징 호출을 추�
 
 ## 부록 A. 문서 상태 메모
 
-이 문서는 기존의 NATS 일반론 중심 초안을, **현재 저장소 코드가 실제로 제공하는 registry/readiness/lifecycle 구조** 중심으로 다시 정렬한 것이다.
+이 문서는 기존의 NATS 일반론 중심 초안을, **현재 저장소 코드가 실제로 제공하는 service_clients/readiness/lifecycle 구조** 중심으로 다시 정렬한 것이다.
 특히 메시징을 1차 공개 FastAPI API로 과장하지 않고, `enabled_services`, `required_services`, `app.state`, custom lifespan을 통한 확장 지점으로 명확히 구분했다.
