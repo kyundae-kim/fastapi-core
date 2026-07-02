@@ -21,7 +21,7 @@ KEYCLOAK_REQUIRED_ENV = (
     "KEYCLOAK_CLIENT_ID",
     "KEYCLOAK_CLIENT_SECRET",
     "KEYCLOAK_TOKEN_USERNAME",
-    "FASTAPI_CORE_TEST_PASSWORD",
+    "KEYCLOAK_TOKEN_PASSWORD",
 )
 
 NATS_REQUIRED_ENV = ("NATS_SERVERS",)
@@ -142,7 +142,7 @@ def integration_credentials() -> dict[str, str]:
     require_keycloak_integration()
     return {
         "username": os.environ["KEYCLOAK_TOKEN_USERNAME"],
-        "password": os.environ["FASTAPI_CORE_TEST_PASSWORD"],
+        "password": os.environ["KEYCLOAK_TOKEN_PASSWORD"],
         "scope": os.getenv("FASTAPI_CORE_TEST_SCOPE", "").strip(),
     }
 
