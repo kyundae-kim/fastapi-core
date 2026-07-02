@@ -16,11 +16,13 @@ def test_create_app_includes_default_routes(settings):
 
     with TestClient(app) as client:
         response = client.get("/health/liveness")
+        user_response = client.get("/user")
+        token_response = client.post("/token")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "details": None}
-    assert any(route.path == "/token" for route in app.router.routes)
-    assert any(route.path == "/user" for route in app.router.routes)
+    assert user_response.status_code != 404
+    assert token_response.status_code != 404
     assert app.state.settings is settings
     assert app.state.config.token_url.endswith("token")
     assert sorted(app.state.service_clients) == ["keycloak"]
