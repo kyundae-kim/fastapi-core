@@ -1,6 +1,6 @@
 # fastapi-core 소프트웨어 요구사항 정의서 (SRS)
 
-> 문서 목적: `fastapi-core`의 FastAPI 계층을 **구현 가능한 요구사항과 공개 인터페이스 계약**으로 구체화한다.
+> 문서 목적: `fastapi-core`를 **DocMesh Py Core 기반 서비스를 FastAPI 환경에서 동작시키기 위한 기능을 제공하는 FastAPI 컴포넌트**로 구현하기 위한 요구사항과 공개 인터페이스 계약으로 구체화한다.
 > 기준 문서: `docs/prd.md`
 > 문서 상태: 정렬본(v0.3)
 
@@ -16,8 +16,8 @@
 
 ### 1.1 목적
 
-본 문서는 `fastapi-core`를 **FastAPI 애플리케이션 조립 라이브러리**로 구현하기 위한 요구사항을 정의한다.
-PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 구현 가능한 함수, endpoint, dependency, schema, lifecycle 요구로 내려 적는 역할을 가진다.
+본 문서는 `fastapi-core`를 **DocMesh Py Core 기반 서비스를 FastAPI 환경에서 구동시키기 위한 공통 FastAPI 컴포넌트**로 구현하기 위한 요구사항을 정의한다.
+PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 구현 가능한 함수, endpoint, dependency, schema, lifecycle 요구로 내려 적어 DocMesh Py Core 기반 기능이 FastAPI 서비스 표면으로 안정적으로 노출되도록 하는 역할을 가진다.
 
 ### 1.2 문서 역할 원칙
 
@@ -28,10 +28,11 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 
 ### 1.3 범위
 
-- `create_app(...)`
+- DocMesh Py Core 기반 서비스용 `create_app(...)`
 - auth / health router
-- dependency 계층
-- response schema
+- DocMesh 기능을 FastAPI request 처리에 연결하는 dependency 계층
+- 서비스가 초기화한 외부 서비스 클라이언트 접근 경로
+- FastAPI 응답 계약을 정의하는 response schema
 - 설정 연동
 - 외부 의존성과 FastAPI lifecycle 결합
 
@@ -39,14 +40,14 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 
 ## 2. 시스템 개요
 
-`fastapi-core`는 두 층으로 이해한다.
+`fastapi-core`는 DocMesh Py Core 기반 서비스를 FastAPI 애플리케이션으로 구동하기 위한 두 층의 조합으로 이해한다.
 
-1. **인프라 재사용층**
-   - 설정, 인증 provider, 외부 서비스 연결
+1. **DocMesh Py Core 및 서비스 기능층**
+   - 설정, 인증 provider, 외부 서비스 연결, DocMesh 기반 기능 구성
 2. **FastAPI 통합층**
    - app factory, router, dependency, schema, lifecycle, 오류 처리
 
-이 문서는 두 번째 층을 중심으로 정의한다.
+이 문서는 두 번째 층을 중심으로 정의하되, 첫 번째 층의 기능이 FastAPI 표면에 어떻게 연결되어야 하는지도 함께 규정한다.
 
 ---
 
@@ -61,7 +62,7 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 ### 3.2 문서화 대상 공개 표면
 
 - app factory: `create_app(...)`
-- dependency: `get_config()`, `get_settings()`, `get_auth_provider()`, `get_current_user()`, `require_permissions(...)`
+- dependency: `get_config()`, `get_settings()`, `get_auth_provider()`, 서비스 클라이언트 접근 dependency(구현 심볼은 API 문서 기준), `get_current_user()`, `require_permissions(...)`
 - schema: `TokenResponse`, `UserInfo`, `HealthResponse`
 - endpoint: `/token`, `/user`, `/health/liveness`, `/health/readiness`
 
@@ -80,9 +81,9 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 - SR-003. `settings is None`이면 환경기반 서비스 설정을 로딩해야 한다.
 - SR-004. 생성된 앱은 `root_path`를 설정할 수 있어야 한다.
 - SR-005. 커스텀 lifespan을 주입할 수 있어야 한다.
-- SR-006. 생성된 앱은 `app.state.config`, `app.state.settings`, `app.state.registry`, `app.state.root_logger`를 저장할 수 있어야 한다.
+- SR-006. 생성된 앱은 `app.state.config`, `app.state.settings`, `app.state.service_clients`, `app.state.root_logger`를 저장할 수 있어야 한다.
 - SR-007. readiness 제어용 상태(`app.state.readiness_parallel`, `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services`)를 저장할 수 있어야 한다.
-- SR-008. 시스템은 서비스 registry 기반 lifecycle 경로를 통해 외부 의존성 정리와 readiness 구성을 연결할 수 있어야 한다.
+- SR-008. 시스템은 `app.state.service_clients`와 lifespan 경로를 통해 외부 의존성 정리와 readiness 구성을 연결할 수 있어야 한다.
 
 ### 4.2 Middleware / exception handling
 
@@ -132,12 +133,19 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 
 ### 6.2 Auth dependency
 
-- SR-060. `get_auth_provider()`는 앱 상태, registry, 또는 설정 기반으로 auth provider를 획득해야 한다.
+- SR-060. `get_auth_provider()`는 앱 상태, `service_clients`, 또는 설정 기반으로 auth provider를 획득해야 한다.
 - SR-061. 앱 상태에 provider가 있으면 재사용해야 한다.
-- SR-062. 앱 상태에 provider가 없고 registry가 있으면 registry를 통해 기본 auth provider를 획득할 수 있어야 한다.
-- SR-063. 앱 상태와 registry가 모두 없으면 설정 기반 기본 provider를 생성할 수 있어야 한다.
+- SR-062. 앱 상태에 provider가 없고 `service_clients`에 Keycloak client가 있으면 이를 통해 기본 auth provider를 획득할 수 있어야 한다.
+- SR-063. 앱 상태와 `service_clients`에 provider가 모두 없으면 설정 기반 기본 provider를 생성할 수 있어야 한다.
 
-### 6.3 Current user dependency
+### 6.3 Service client access dependency
+
+- SR-065. 시스템은 서비스가 초기화한 외부 서비스 클라이언트에 접근하기 위한 공통 dependency 또는 표준 접근 경로를 제공해야 한다.
+- SR-066. 서비스 클라이언트 접근 경로는 `app.state.service_clients`에 저장된 클라이언트를 우선 재사용해야 한다.
+- SR-067. 서비스 클라이언트 접근 경로는 request 처리 중 동일 앱 인스턴스에서 초기화된 클라이언트와 일관된 참조를 제공해야 한다.
+- SR-068. 특정 서비스 클라이언트가 활성화되지 않았거나 구성되지 않은 경우, 구현은 명시적 오류 또는 문서화된 비활성 동작으로 처리해야 한다.
+
+### 6.4 Current user dependency
 
 - SR-070. `get_current_user()`는 bearer token을 읽어야 한다.
 - SR-071. token이 없으면 401을 반환해야 한다.
@@ -145,7 +153,7 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 - SR-073. validation 결과를 `UserInfo`로 변환해야 한다.
 - SR-074. secure decode / insecure decode / introspection 분기 지원 여부는 구현 단계에서 선택될 수 있으나, 외부 계약은 401/성공 변환 동작을 유지해야 한다.
 
-### 6.4 Permission dependency
+### 6.5 Permission dependency
 
 - SR-080. `require_permissions(*roles)`는 dependency factory여야 한다.
 - SR-081. 필요한 role이 없으면 403을 반환해야 한다.
@@ -198,7 +206,7 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 ## 10. Lifespan / startup 요구사항
 
 - SR-140. app factory는 lifespan 주입을 허용해야 한다.
-- SR-141. 메시징/NATS 같은 비동기 연결은 startup 단계에서 초기화되거나 공통 registry/lifecycle 흐름에 연결될 수 있어야 한다.
+- SR-141. 메시징/NATS 같은 비동기 연결은 startup 단계에서 초기화되거나 공통 `service_clients`/lifespan 흐름에 연결될 수 있어야 한다.
 - SR-142. 연결 자원은 shutdown 단계에서 정리할 수 있어야 한다.
 - SR-143. FastAPI lifecycle과 외부 의존성 lifecycle이 문서상 명확히 연결되어야 한다.
 - SR-144. 전용 메시징 FastAPI dependency가 없더라도 custom lifespan과 `app.state` 확장 지점을 통해 통합 가능해야 한다.
@@ -233,6 +241,7 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 
 - auth 전용 exception handler 등록 방식
 - secure/insecure decode / introspection 세부 분기
+- 서비스 클라이언트 접근 전용 FastAPI dependency 표면
 - 메시징 전용 FastAPI dependency (`get_nats_connection` 등)
 
 ---

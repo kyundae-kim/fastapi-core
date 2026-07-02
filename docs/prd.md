@@ -1,6 +1,6 @@
 # fastapi-core 제품 요구사항 정의서 (PRD)
 
-> 문서 목적: `fastapi-core`를 **FastAPI 애플리케이션 조립용 공통 코어**로 정의한다.
+> 문서 목적: `fastapi-core`를 **DocMesh Py Core 기반 서비스를 FastAPI 환경에서 동작시키기 위한 기능을 제공하는 FastAPI 컴포넌트**로 정의한다.
 > 문서 상태: 정렬본(v0.4)
 > 문서 원칙: 이 문서는 capability 중심 PRD이며, 구체 함수명·endpoint 경로·schema 클래스명·호출 시그니처는 `docs/srs.md`와 `docs/api.md`에서 관리한다.
 
@@ -16,9 +16,9 @@
 
 ### 1.1 배경
 
-`fastapi-core`는 단순한 인프라 SDK 문서 묶음이 아니라, **DocMesh 계열 FastAPI 서비스가 공통으로 사용하는 애플리케이션 코어**여야 한다.
+`fastapi-core`는 단순한 인프라 SDK 문서 묶음이 아니라, **DocMesh Py Core 기반 서비스를 FastAPI 환경에서 구동하기 위해 필요한 기능을 제공하는 공통 FastAPI 컴포넌트**여야 한다.
 
-이 프로젝트의 핵심 가치는 외부 의존성에 연결하는 것 자체보다, FastAPI 서비스에서 반복적으로 구현되는 공통 웹 애플리케이션 조립 문제를 줄이는 데 있다. 예를 들면 다음과 같다.
+이 프로젝트의 핵심 가치는 외부 의존성에 연결하는 것 자체보다, DocMesh Py Core 기반 서비스를 FastAPI 애플리케이션으로 구성할 때 반복적으로 필요한 웹 계층 기능과 조립 부담을 줄이는 데 있다. 예를 들면 다음과 같다.
 
 - FastAPI 앱 초기화
 - 공통 CORS / 오류 처리 정책 적용
@@ -30,10 +30,10 @@
 
 ### 1.2 문제 정의
 
-- 서비스마다 FastAPI 앱 초기화와 middleware / router 조립이 중복될 수 있다.
-- 공통 인증 및 헬스체크 엔드포인트의 동작이 서비스별로 달라질 수 있다.
+- DocMesh Py Core 기반 서비스를 FastAPI 애플리케이션으로 노출할 때 앱 초기화와 middleware / router 조립이 서비스마다 중복될 수 있다.
+- 공통 인증 및 헬스체크 엔드포인트의 동작이 서비스별로 달라지면 DocMesh 기반 서비스의 운영 일관성이 낮아질 수 있다.
 - `Depends(...)` 기반 인증/설정 dependency가 서비스마다 달라지면 보안과 유지보수 품질이 흔들린다.
-- 외부 인프라 연결 규칙은 공유하더라도, FastAPI 계층이 표준화되지 않으면 실제 서비스 개발 생산성은 충분히 올라가지 않는다.
+- DocMesh Py Core 기능은 공유하더라도, 이를 감싸는 FastAPI 계층이 표준화되지 않으면 실제 서비스 개발 생산성과 운영 일관성은 충분히 올라가지 않는다.
 
 ---
 
@@ -41,12 +41,14 @@
 
 ### 2.1 목표
 
+- DocMesh Py Core 기반 서비스가 FastAPI 환경에서 일관된 방식으로 구동될 수 있어야 한다.
 - FastAPI 서비스가 공통 앱 팩토리 중심의 조립 경로를 사용할 수 있어야 한다.
 - 공통 인증 및 헬스체크 라우팅 표면을 재사용 가능해야 한다.
 - 설정 접근, 인증 provider 접근, 현재 사용자 해석, 권한 검사를 위한 공통 dependency를 제공해야 한다.
+- 서비스가 초기화한 외부 서비스 클라이언트에 FastAPI 의존성 방식으로 접근할 수 있어야 한다.
 - 인증 응답, 사용자 정보, 헬스 상태에 대한 표준 응답 모델을 제공해야 한다.
 - 설정/인증/메시징/스토리지 같은 인프라 기능이 FastAPI startup/shutdown 및 request lifecycle과 자연스럽게 통합되어야 한다.
-- FastAPI 서비스 작성자가 바로 사용할 수 있는 **웹 애플리케이션 표면**을 제공해야 한다.
+- FastAPI 서비스 작성자가 DocMesh Py Core 기반 기능을 웹 서비스로 노출할 때 바로 사용할 수 있는 **웹 애플리케이션 표면**을 제공해야 한다.
 
 ### 2.2 비목표
 
@@ -78,15 +80,16 @@
 
 ### 4.1 포함 범위
 
-- 공통 FastAPI 앱 팩토리 제공
+- DocMesh Py Core 기반 서비스용 공통 FastAPI 앱 팩토리 제공
 - CORS middleware 설정
 - 공통 인증 라우팅 표면 제공
 - 공통 헬스체크 라우팅 표면 제공
 - 공통 dependency 제공
+- 공통 서비스 클라이언트 접근 경로 제공
 - 공통 Pydantic 응답 모델 제공
 - Keycloak 기반 인증 연동
 - 설정 로딩 및 검증
-- 서비스별 인프라 연결 보조
+- DocMesh Py Core 기반 기능을 FastAPI request lifecycle에 연결하기 위한 서비스별 인프라 연계 보조
 - NATS 등 비동기 통합의 startup/lifespan 연계 기반 제공
 
 ### 4.2 제외 범위
@@ -147,6 +150,7 @@
 - FR-022. 시스템은 인증 provider 접근 dependency를 제공해야 한다.
 - FR-023. 시스템은 현재 사용자 해석 dependency를 제공해야 한다.
 - FR-024. 시스템은 권한 검사 dependency factory를 제공해야 한다.
+- FR-025. 시스템은 서비스가 초기화한 외부 서비스 클라이언트에 접근하기 위한 공통 dependency 또는 표준 접근 경로를 제공해야 한다.
 
 ### 6.4 Auth / Security
 
@@ -190,20 +194,6 @@
 
 ---
 
-## 9. 참고 문서
-
-- `README.md`
-- `pyproject.toml`
-- `docs/srs.md`
-- `docs/api.md`
-- `docs/config.md`
-- `docs/messaging.md`
-- `docs/test.md`
-- `docs/examples.md`
-- `docs/consistency-checklist.md`
-
----
-
 ## 부록 A. 문서 상태 메모
 
-이 문서는 `fastapi-core`를 FastAPI 중심 공통 코어 제품으로 정의하기 위한 PRD이며, 구체 함수명, endpoint 경로, schema 클래스명, 호출 시그니처 같은 공개 인터페이스 세부 계약은 SRS와 API 문서에서 관리하는 것을 원칙으로 한다.
+이 문서는 `fastapi-core`를 DocMesh Py Core 기반 서비스를 FastAPI 환경에서 구동시키기 위한 공통 FastAPI 컴포넌트 제품으로 정의하기 위한 PRD이며, 구체 함수명, endpoint 경로, schema 클래스명, 호출 시그니처 같은 공개 인터페이스 세부 계약은 SRS와 API 문서에서 관리하는 것을 원칙으로 한다.
