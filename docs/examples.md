@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`의 **현재 구현된 공개 표면을 바로 사용할 수 있는 예제**로 정리한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`, `docs/config.md`, `docs/messaging.md`, `docs/test.md`
-> 문서 상태: 구현 반영본(v0.1)
+> 문서 상태: 구현 반영본(v0.2)
 
 ---
 
@@ -11,9 +11,9 @@
 이 문서는 개념 설명보다 **실제로 붙여 넣어 시작할 수 있는 사용 예제**를 제공한다.
 예제는 현재 저장소의 구현과 테스트에서 확인된 패턴만 다룬다.
 
-- 작성일: `2026-06-29`
+- 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 버전: `v0.1`
+- 버전: `v0.2`
 - 상태: `implemented-surface`
 
 다루는 범위:
@@ -42,6 +42,7 @@ app = create_app()
 - `/health/readiness` 포함
 - `/token`, `/user` 포함
 - `app.state.config`, `app.state.settings`, `app.state.service_clients` 저장
+- keycloak이 활성화되면 `app.state.auth_provider` 저장
 - `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services` 초기화
 - CORS middleware 등록
 
@@ -81,7 +82,7 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 ```
 
 현재 구현 기준 동작:
-- `Authorization: Bearer <token>` 헤더가 없으면 `401`
+- `Authorization` 헤더에 bearer token이 없으면 `401`
 - 응답 헤더에 `WWW-Authenticate: Bearer` 포함
 - provider의 `extract_user_info(token)` 결과를 `UserInfo`로 변환
 - `username = preferred_username or sub`

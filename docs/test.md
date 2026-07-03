@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`의 **현재 구현된 FastAPI 앱 계층**을 어떤 수준으로 검증하는지 정리한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`, `docs/config.md`
-> 문서 상태: 구현 반영본(v0.5)
+> 문서 상태: 구현 반영본(v0.6)
 
 ---
 
@@ -20,9 +20,9 @@
 - custom lifespan 연계
 - 구조화 로깅
 
-- 작성일: `2026-06-29`
+- 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 버전: `v0.5`
+- 버전: `v0.6`
 - 상태: `implemented-surface`
 
 ---
@@ -61,13 +61,16 @@ test_fastapi_core/
 현재 저장소 검증 명령:
 
 ```bash
+uv run pytest -q -m 'not integration'
 uv run pytest -q
 uv run pytest -q -m integration
 ```
 
 최근 실제 실행 결과:
-- `uv run pytest -q` → `43 passed, 2 warnings`
+- `uv run pytest -q -m 'not integration'` → `33 passed, 10 deselected, 2 warnings`
+- `uv run pytest -q` → `1 failed, 42 passed, 2 warnings`
 - `uv run pytest -q -m integration` → `10 passed, 33 deselected, 2 warnings`
+- 현재 전체 suite의 단일 실패는 `test_user_endpoint_returns_live_user_info`이며, 이 세션에서는 live Keycloak token 검증 중 `JWT issued-at claim is invalid`로 `/user`가 `401 Invalid token`을 반환했다.
 
 테스트 러너/환경 특성:
 - `pytest` 사용
@@ -79,7 +82,8 @@ uv run pytest -q -m integration
 
 ### 3.1 통합 테스트 실행/skip 정책
 
-- 통합 테스트는 기본 회귀와 분리된 `test_fastapi_core/integration/`에 위치한다.
+- 통합 테스트는 구조상 `test_fastapi_core/integration/`에 분리돼 있다.
+- 하지만 기본 `uv run pytest -q`는 이 마커를 자동 제외하지 않으므로, 환경이 준비되면 integration 테스트도 함께 실행된다.
 - Keycloak/NATS live 테스트는 환경변수 및 reachability가 충족될 때만 실행된다.
 - 필수 환경변수 누락 또는 서비스 미도달이면 `skip`이 기본 정책이다.
 - 서비스는 살아 있지만 앱 계약이 틀린 경우에는 `fail`로 처리한다.
@@ -407,5 +411,5 @@ NATS 관련 기본 env:
 ## 12. 문서 상태 메모
 
 이 문서는 기존의 넓은 테스트 계획 초안을, **현재 저장소에 실제 존재하는 테스트와 이미 검증된 계약** 중심으로 재정렬한 것이다.
-특히 Keycloak/NATS live integration 테스트 추가, Keycloak readiness credential 기반 검증, RS256 bearer token 검증, async NATS readiness wrapper, 전체 `43 passed, 2 warnings` / integration `10 passed, 33 deselected, 2 warnings` 결과를 반영해 최신 코드와 맞췄다.
+특히 Keycloak/NATS live integration 테스트 추가, Keycloak readiness credential 기반 검증, RS256 bearer token 검증, async NATS readiness wrapper, 그리고 본 세션에서 재검증한 pytest 결과를 반영해 최신 코드와 맞췄다.
 이제 dependency 테스트는 공통 lookup용 `get_service_client(service_name)`뿐 아니라 타입이 구체화된 전용 dependency(`get_keycloak_auth_service`, `get_postgres_engine`, `get_sqlite_engine`, `get_minio_client`, `get_milvus_client`, `get_ollama_client`, `get_langfuse_client`, `get_nats_connection_builder`) 공개 계약도 포함한다.

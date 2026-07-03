@@ -2,17 +2,17 @@
 
 > 문서 목적: `fastapi-core`를 **DocMesh Py Core 기반 서비스를 FastAPI 환경에서 동작시키기 위한 기능을 제공하는 FastAPI 컴포넌트**로 구현하기 위한 요구사항과 공개 인터페이스 계약으로 구체화한다.
 > 기준 문서: `docs/prd.md`
-> 문서 상태: 정렬본(v0.3)
+> 문서 상태: 소스코드 정렬본(v0.4)
 
 ---
 
 ## 1. 문서 개요
 
 - 문서명: `fastapi-core 소프트웨어 요구사항 정의서`
-- 작성일: `2026-06-25`
+- 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 버전: `v0.3`
-- 상태: `aligned-to-prd`
+- 버전: `v0.4`
+- 상태: `aligned-to-source`
 
 ### 1.1 목적
 
@@ -62,7 +62,7 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 ### 3.2 문서화 대상 공개 표면
 
 - app factory: `create_app(...)`
-- dependency: `get_config()`, `get_settings()`, `get_auth_provider()`, `get_service_client(service_name)`, 서비스별 전용 `get_*_client()`, `get_current_user()`, `require_permissions(...)`
+- dependency: `get_config()`, `get_settings()`, `get_auth_provider()`, `get_service_client(service_name)`, `get_keycloak_auth_service()`, `get_postgres_engine()`, `get_sqlite_engine()`, `get_minio_client()`, `get_milvus_client()`, `get_ollama_client()`, `get_langfuse_client()`, `get_nats_connection_builder()`, `get_current_user()`, `require_permissions(...)`
 - schema: `TokenResponse`, `UserInfo`, `HealthResponse`
 - endpoint: `/token`, `/user`, `/health/liveness`, `/health/readiness`
 
@@ -81,7 +81,8 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 - SR-003. `settings is None`이면 환경기반 서비스 설정을 로딩해야 한다.
 - SR-004. 생성된 앱은 `root_path`를 설정할 수 있어야 한다.
 - SR-005. 커스텀 lifespan을 주입할 수 있어야 한다.
-- SR-006. 생성된 앱은 `app.state.config`, `app.state.settings`, `app.state.service_clients`, `app.state.root_logger`를 저장할 수 있어야 한다.
+- SR-006. 생성된 앱은 `app.state.config`, `app.state.settings`, `app.state.service_clients`, `app.state.root_logger`를 저장해야 한다.
+- SR-006A. Keycloak 서비스가 활성화된 경우 생성된 앱은 `app.state.auth_provider`에 현재 auth provider를 저장하거나 재사용할 수 있어야 한다.
 - SR-007. readiness 제어용 상태(`app.state.readiness_parallel`, `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services`)를 저장할 수 있어야 한다.
 - SR-008. 시스템은 `app.state.service_clients`와 lifespan 경로를 통해 외부 의존성 정리와 readiness 구성을 연결할 수 있어야 한다.
 

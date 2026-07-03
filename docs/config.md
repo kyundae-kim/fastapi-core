@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`의 설정을 **현재 구현된 FastAPI 앱 조립 / dependency / readiness 관점**에서 설명한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`
-> 문서 상태: 구현 반영본(v0.4)
+> 문서 상태: 구현 반영본(v0.5)
 
 ---
 
@@ -11,9 +11,9 @@
 이 문서는 계획 단계의 전체 플랫폼 설정 카탈로그가 아니라, **현재 저장소 구현이 실제로 읽고 사용하는 설정**을 우선 정리한다.
 특히 `create_app(...)`, `AppConfig`, `load_docmesh_settings()`, `app.state` 연계 지점을 중심으로 본다.
 
-- 작성일: `2026-06-29`
+- 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 버전: `v0.4`
+- 버전: `v0.5`
 - 상태: `implemented-surface`
 
 핵심 관점:
@@ -320,7 +320,7 @@ app.state.required_services = {"keycloak"}
 | Langfuse | 간접 | settings/service_clients 기반 확장 지점 |
 | NATS | 간접 | settings/service_clients 기반 readiness 또는 custom lifespan 확장 지점 |
 
-즉, 현재 구현에서 이 값들은 `ServiceConfigs`와 `app.state.service_clients`를 통한 통합 기반이며, 그 위에 공통 접근용 `get_service_client(service_name)`와 구체 타입 반환용 서비스별 `get_*_client()` dependency가 얹힌 형태다.
+즉, 현재 구현에서 이 값들은 `ServiceConfigs`와 `app.state.service_clients`를 통한 통합 기반이며, 그 위에 공통 접근용 `get_service_client(service_name)`와 구체 타입 반환용 전용 dependency(`get_keycloak_auth_service`, `get_postgres_engine`, `get_sqlite_engine`, `get_minio_client`, `get_milvus_client`, `get_ollama_client`, `get_langfuse_client`, `get_nats_connection_builder`)가 얹힌 형태다.
 
 ---
 
@@ -366,7 +366,9 @@ app.state.required_services = {"keycloak"}
 - secure/insecure JWT decode 분기 설정 API
 - introspection 모드 선택 API
 - 메시징 전용 FastAPI dependency (`get_nats_connection` 등)
-- 실제 외부 연동을 포함한 기본 회귀 테스트
+- NATS 연결 상태 객체를 기본 `app.state` 키로 노출하는 표준 API
+
+참고로 실제 외부 연동은 `test_fastapi_core/integration/`의 live integration 테스트에서 별도로 검증된다.
 
 ---
 

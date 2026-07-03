@@ -2,13 +2,18 @@
 
 > 문서 목적: `fastapi-core`에서 메시징을 **현재 구현된 FastAPI lifecycle / service_clients / readiness 구조에 맞춰** 설명한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`, `docs/config.md`
-> 문서 상태: 구현 반영본(v0.3)
+> 문서 상태: 구현 반영본(v0.4)
 
 ---
 
 ## 1. 문서 개요
 
 이 문서는 NATS 자체의 일반론보다, `fastapi-core`가 **현재 코드에서 메시징 같은 외부 서비스를 어떤 위치에 두는지**에 초점을 둔다.
+
+- 작성일: `2026-07-03`
+- 작성자: `Hermes Agent`
+- 버전: `v0.4`
+- 상태: `implemented-surface`
 
 핵심 질문은 다음과 같다.
 - NATS 같은 서비스는 앱 조립 시 어디에서 선택되는가?
@@ -63,7 +68,9 @@
 - `get_nats_connection(request)` 같은 연결 상태 전용 FastAPI dependency
 - NATS publisher/subscriber helper
 - startup에서 연결 객체를 `app.state.nats`로 저장하는 기본 동작
-- 실제 NATS 통합 테스트를 포함한 기본 회귀 세트
+- 연결 상태 객체를 노출하는 메시징 전용 기본 route/helper 세트
+
+참고로 실제 NATS 연동은 `test_fastapi_core/integration/test_readiness_with_live_services.py`, `test_fastapi_core/integration/test_nats_lifespan.py`에서 별도로 검증된다.
 
 ---
 
@@ -247,7 +254,7 @@ custom lifespan이나 route/service layer에서 별도 메시징 호출을 추�
 
 ## 10. 테스트 포인트
 
-현재 기본 회귀에서 메시징 자체가 직접 통합 검증되지는 않는다.
+기본 회귀(unit-like 테스트)에서는 메시징 자체가 직접 live 통합 검증되지는 않는다.
 그러나 아래 관련 계약은 검증된다.
 
 - 선택/필수 서비스 readiness 상태 분기 (`ok/degraded/error`)

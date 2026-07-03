@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`의 **현재 구현된 FastAPI 공개 표면**을 문서화한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`
-> 문서 상태: 구현 반영본(v0.4)
+> 문서 상태: 구현 반영본(v0.5)
 
 ---
 
@@ -11,9 +11,9 @@
 이 문서는 계획 문서가 아니라 현재 저장소 코드와 테스트를 기준으로 정리한 **실구현 API 문서**다.
 외부 서비스 SDK 래퍼보다, FastAPI 서비스 작성자가 직접 사용하는 공개 표면을 우선 설명한다.
 
-- 작성일: `2026-06-29`
+- 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 버전: `v0.4`
+- 버전: `v0.5`
 - 상태: `implemented-surface`
 
 핵심 범주:
@@ -570,6 +570,8 @@ app = create_app(config=config)
 - auth 전용 exception handler 등록 API
 - secure/insecure decode 분기나 introspection 모드 선택 API
 - `get_nats_connection` 같은 메시징 전용 FastAPI dependency
-- 실제 외부 서비스 통합을 포함한 기본 회귀 테스트
+- NATS 연결 상태 객체를 바로 주입하는 기본 dependency/route 세트
 
-따라서 실제 사용 계약은 이 문서를 우선 참고하되, 공통 lookup은 `get_service_client(...)`, 타입이 중요한 사용처는 전용 `get_*_client()` dependency를 우선 사용하고, 연결 상태나 세션 수명주기까지 커스터마이즈해야 하는 경우에만 custom lifespan과 `app.state` 확장을 보완적으로 사용하는 것이 현재 코드 구조와 맞다.
+참고로 실제 외부 서비스 연동은 `test_fastapi_core/integration/`의 live integration 테스트에서 별도로 검증된다.
+
+따라서 실제 사용 계약은 이 문서를 우선 참고하되, 공통 lookup은 `get_service_client(...)`, 타입이 중요한 사용처는 전용 dependency(`get_keycloak_auth_service`, `get_postgres_engine`, `get_sqlite_engine`, `get_minio_client`, `get_milvus_client`, `get_ollama_client`, `get_langfuse_client`, `get_nats_connection_builder`)를 우선 사용하고, 연결 상태나 세션 수명주기까지 커스터마이즈해야 하는 경우에만 custom lifespan과 `app.state` 확장을 보완적으로 사용하는 것이 현재 코드 구조와 맞다.
