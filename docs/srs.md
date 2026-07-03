@@ -248,10 +248,6 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 ## 14. 참고 문서
 
 - `docs/prd.md`
-- `docs/api.md`
-- `docs/config.md`
-- `docs/messaging.md`
-- `pyproject.toml`
 
 ---
 
