@@ -1,286 +1,199 @@
-# 제품 요구사항 정의서 (PRD)
+# fastapi-core 제품 요구사항 정의서 (PRD)
 
-## 개요
-
-`fastapi-core`는 DocMesh 계열 FastAPI 서비스에서 공통으로 사용하는 Python SDK 패키지입니다.
-현재 코드베이스는 다음 영역을 제공합니다.
-
-- Keycloak 인증/인가
-- PostgreSQL 엔진 및 세션
-- MinIO 스토리지
-- Milvus / Async Milvus
-- Ollama
-- Langfuse
-- NATS 메시징
-- FastAPI 앱 팩토리, lifecycle, 내장 health/auth 라우터
+> 문서 목적: `fastapi-core`를 **DocMesh Py Core 기반 서비스를 FastAPI 환경에서 동작시키기 위한 기능을 제공하는 FastAPI 컴포넌트**로 정의한다.
+> 문서 상태: 정렬본(v0.4)
+> 문서 원칙: 이 문서는 capability 중심 PRD이며, 구체 함수명·endpoint 경로·schema 클래스명·호출 시그니처는 `docs/srs.md`와 `docs/api.md`에서 관리한다.
 
 ---
 
-## 배경 및 목적
+## 1. 문서 개요
 
-여러 서비스가 인증, 설정, readiness, 외부 서비스 클라이언트 초기화 로직을 반복 구현하지 않도록 공통 SDK로 분리합니다.
+- 문서명: `fastapi-core 제품 요구사항 정의서`
+- 작성일: `2026-06-25`
+- 작성자: `Hermes Agent`
+- 버전: `v0.4`
+- 상태: `aligned-to-source`
 
-목표:
+### 1.1 배경
 
-- **중복 제거**: 인증/스토리지/DB/메시징 초기화 코드 공통화
-- **일관성 보장**: 설정 모델, readiness 정책, dependency 패턴 통일
-- **빠른 서비스 개발**: 서비스는 비즈니스 로직에 집중하고 공통 인프라는 SDK 재사용
-- **운영 단순화**: `create_app()` + managed lifespan 조합으로 기본 앱 조립 표준화
+`fastapi-core`는 단순한 인프라 SDK 문서 묶음이 아니라, **DocMesh Py Core 기반 서비스를 FastAPI 환경에서 구동하기 위해 필요한 기능을 제공하는 공통 FastAPI 컴포넌트**여야 한다.
 
----
+이 프로젝트의 핵심 가치는 외부 의존성에 연결하는 것 자체보다, DocMesh Py Core 기반 서비스를 FastAPI 애플리케이션으로 구성할 때 반복적으로 필요한 웹 계층 기능과 조립 부담을 줄이는 데 있다. 예를 들면 다음과 같다.
 
-## 대상 사용자
+- FastAPI 앱 초기화
+- 공통 CORS / 오류 처리 정책 적용
+- 공통 인증 및 헬스체크 기능 연결
+- 현재 사용자 해석 및 권한 검사 흐름 표준화
+- 표준 응답 모델 제공
+- startup / shutdown 수명주기와 외부 의존성 연결의 결합
+- 운영 readiness 상태를 일관된 방식으로 노출
 
-| 사용자 | 설명 |
-| --- | --- |
-| 백엔드 개발자 | `fastapi-core`를 의존성으로 사용하는 FastAPI 서비스 개발자 |
-| 플랫폼/인프라 엔지니어 | Keycloak, Postgres, MinIO, Milvus, Ollama, Langfuse, NATS 연결 정보 운영 담당 |
+### 1.2 문제 정의
 
----
-
-## 주요 기능 요구사항
-
-### 1. 인증 / 인가
-
-- `KeycloakAuthProvider` 제공
-- Password grant 토큰 발급(`authenticate`)
-- Refresh token 갱신(`refresh_access_token`)
-- JWT RS256 검증(`decode_token`)
-- 개발용 비검증 decode(`decode_token_insecure`)
-- Introspection 지원(`introspect_token`)
-- JWT payload → `UserInfo` 변환(`to_user`)
-- FastAPI dependency:
-  - `get_auth_provider`
-  - `get_current_user`
-  - `require_permissions(*roles)`
-
-### 2. 설정 관리
-
-- 환경 변수 레이어: `EnvConfig`
-- YAML 레이어: `ServiceSettings`
-- 중첩 환경 변수 지원 (`__` delimiter)
-- 설정 파일 미존재 시 기본값 fallback
-- lifecycle / health 정책을 설정으로 제어
-
-### 3. 데이터베이스
-
-- `DatabaseConfig` 기반 SQLAlchemy `Engine` 생성
-- 연결 확인(`check_database_connection`)
-- DB 버전 조회(`get_database_version`)
-- 트랜잭션 컨텍스트(`run_in_transaction`)
-- FastAPI dependency:
-  - `set_db_engine`
-  - `get_db_engine`
-  - `get_db_session`
-
-### 4. MinIO
-
-- `create_minio_client`
-- 연결 확인(`check_minio_connection`)
-- 버킷 존재 보장(`ensure_bucket_exists`)
-- 버킷 이름 조회(`list_bucket_names`)
-- presigned GET/PUT URL 생성
-- FastAPI dependency:
-  - `set_minio_client`
-  - `get_minio_client`
-
-### 5. Milvus
-
-- `create_milvus_client`
-- `create_async_milvus_client`
-- 연결 확인(sync/async)
-- 컬렉션 목록 조회(sync/async)
-- 컬렉션 존재 보장(sync/async)
-- FastAPI dependency:
-  - `set_milvus_client`
-  - `get_milvus_client`
-  - `set_async_milvus_client`
-  - `get_async_milvus_client`
-
-### 6. Ollama
-
-- `create_ollama_client`
-- 연결 확인(`check_ollama_connection`)
-- 모델 목록 조회(`list_model_names`)
-- 텍스트 생성(`generate_text`)
-- FastAPI dependency:
-  - `set_ollama_client`
-  - `get_ollama_client`
-
-### 7. Langfuse
-
-- core helper: `get_langfuse_client(config | None)`
-- public health endpoint readiness 확인(`check_langfuse_connection`)
-- FastAPI dependency:
-  - `set_langfuse_client`
-  - `get_langfuse_client`
-- shutdown 시 `flush()` 지원
-
-### 8. NATS 메시징
-
-- `create_nats_client`
-- subject 검증/조합 (`validate_event_subject`, `build_event_subject`)
-- JSON publish / subscribe helper
-- queue group subscribe helper
-- FastAPI dependency:
-  - `set_nats_client`
-  - `get_nats_client`
-
-### 9. FastAPI 앱 조립
-
-- `create_app()` 제공
-- `CORSMiddleware` 자동 등록
-- `AuthError` 핸들러 등록
-- `/health/liveness`, `/health/readiness` 내장
-- 선택적으로 `/token`, `/user` 라우터 포함
-- 기본 lifespan은 `create_managed_lifespan(config, settings)` 사용
-
-### 10. lifecycle / registry / state 관리
-
-- 외부 서비스 객체는 `app.state`에 캐시
-- auth/db/minio/milvus/ollama/langfuse/nats는 registry-backed helper 경로를 사용
-- async milvus는 직접 생성 경로 유지
-- startup에서 lifecycle 정책에 따라 eager-init
-- shutdown에서 `close` / `dispose` / `drain` / `flush` 정리 수행
+- DocMesh Py Core 기반 서비스를 FastAPI 애플리케이션으로 노출할 때 앱 초기화와 middleware / router 조립이 서비스마다 중복될 수 있다.
+- 공통 인증 및 헬스체크 엔드포인트의 동작이 서비스별로 달라지면 DocMesh 기반 서비스의 운영 일관성이 낮아질 수 있다.
+- `Depends(...)` 기반 인증/설정 dependency가 서비스마다 달라지면 보안과 유지보수 품질이 흔들린다.
+- DocMesh Py Core 기능은 공유하더라도, 이를 감싸는 FastAPI 계층이 표준화되지 않으면 실제 서비스 개발 생산성과 운영 일관성은 충분히 올라가지 않는다.
 
 ---
 
-## 현재 구현상의 아키텍처 제약
+## 2. 목표 / 비목표
 
-### 1. 공개 루트 API는 curated subset만 export
+### 2.1 목표
 
-패키지 루트 `fastapi_core`의 `__all__`은 다음 심볼만 재수출합니다.
+- DocMesh Py Core 기반 서비스가 FastAPI 환경에서 일관된 방식으로 구동될 수 있어야 한다.
+- FastAPI 서비스가 공통 앱 팩토리 중심의 조립 경로를 사용할 수 있어야 한다.
+- 공통 인증 및 헬스체크 라우팅 표면을 재사용 가능해야 한다.
+- 설정 접근, 인증 provider 접근, 현재 사용자 해석, 권한 검사를 위한 공통 dependency를 제공해야 한다.
+- 서비스가 초기화한 외부 서비스 클라이언트에 FastAPI 의존성 방식으로 접근할 수 있어야 한다.
+- 인증 응답, 사용자 정보, 헬스 상태에 대한 표준 응답 모델을 제공해야 한다.
+- 설정/인증/메시징/스토리지 같은 인프라 기능이 FastAPI startup/shutdown 및 request lifecycle과 자연스럽게 통합되어야 한다.
+- FastAPI 서비스 작성자가 DocMesh Py Core 기반 기능을 웹 서비스로 노출할 때 바로 사용할 수 있는 **웹 애플리케이션 표면**을 제공해야 한다.
 
-- `AuthError`
-- `DatabaseConfig`
-- `EnvConfig`
-- `HealthResponse`
-- `KeycloakAuthProvider`
-- `KeycloakConfig`
-- `LangfuseConfig`
-- `LifecycleSettings`
-- `MilvusConfig`
-- `MinIOConfig`
-- `OllamaConfig`
-- `ServiceSettings`
-- `TokenResponse`
-- `UserInfo`
-- `check_langfuse_connection`
-- `create_async_milvus_client`
-- `create_milvus_client`
-- `create_app`
-- `get_langfuse_client`
+### 2.2 비목표
 
-즉, `run_in_transaction`, `check_milvus_connection`, `generate_text` 같은 helper는 **모듈 경로로는 사용 가능하지만 패키지 루트에서는 재수출되지 않습니다.**
-
-### 2. 함수형 dependency 정책
-
-FastAPI dependency는 모두 함수형으로 유지합니다.
-
-- `get_config`, `get_settings`
-- `get_auth_provider`, `get_current_user`
-- `get_db_engine`, `get_db_session`
-- `get_minio_client`
-- `get_milvus_client`, `get_async_milvus_client`
-- `get_ollama_client`
-- `get_langfuse_client`
-- `get_nats_client`
-
-`Get*Dependency` callable class나 `get_* = Get*Dependency()` alias는 공개 API가 아닙니다.
-
-### 3. registry-backed dependency 경로
-
-현재 FastAPI dependency 계층에서 다음 서비스는 `docmesh_bridge`를 통해 registry에서 해석됩니다.
-
-- `auth_provider`
-- `db_engine`
-- `minio_client`
-- `milvus_client`
-- `ollama_client`
-- `langfuse_client`
-- `nats_client`
-
-따라서 core 레이어의 `create_db_engine`, `create_minio_client`, `create_milvus_client`, `create_ollama_client`, `create_nats_client`는 **standalone helper**로는 유효하지만, 기본 FastAPI dependency 구현이 직접 호출하는 경로와는 다를 수 있습니다.
+- 개별 도메인 서비스의 비즈니스 endpoint 제공
+- 서비스별 domain schema 전체 통합
+- UI / 프론트엔드 제공
+- 각 외부 시스템의 전체 관리자 기능 제공
+- 모든 조직의 API 정책을 한 번에 일반화하는 것
 
 ---
 
-## 패키지 구조
+## 3. 대상 사용자 및 이해관계자
 
-```text
-fastapi_core/
-├── __init__.py
-├── bootstrap.py
-├── docmesh_bridge.py
-├── lifecycle.py
-├── factory.py
-├── core/
-│   ├── auth.py
-│   ├── config.py
-│   ├── database.py
-│   ├── exceptions.py
-│   ├── langfuse.py
-│   ├── logging.py
-│   ├── messaging.py
-│   ├── milvus.py
-│   ├── ollama.py
-│   └── storage.py
-├── dependencies/
-│   ├── async_milvus.py
-│   ├── auth.py
-│   ├── config.py
-│   ├── database.py
-│   ├── langfuse.py
-│   ├── messaging.py
-│   ├── milvus.py
-│   ├── ollama.py
-│   └── storage.py
-├── routers/
-│   ├── auth.py
-│   └── health.py
-└── schemas/
-    ├── health.py
-    ├── token.py
-    └── user.py
-```
+### 3.1 대상 사용자
+
+- 1차 사용자: FastAPI 마이크로서비스 개발자
+- 2차 사용자: 플랫폼/백엔드 공통 모듈 유지보수자
+- 3차 사용자: 운영/QA 담당자
+
+### 3.2 이해관계자
+
+- 백엔드 플랫폼 담당자
+- 개별 FastAPI 서비스 개발팀
+- 운영/보안 담당자
 
 ---
 
-## 품질 및 테스트 요구사항
+## 4. 제품 범위
 
-- 테스트 러너: `pytest`
-- 비동기 테스트: `pytest-asyncio` / anyio 사용
-- 단위 테스트와 통합 테스트를 marker로 분리
-- public API export 집합에 대한 회귀 테스트 유지
-- lifecycle / docmesh bridge / factory 동작에 대한 회귀 테스트 유지
+### 4.1 포함 범위
 
-실행 예:
+- DocMesh Py Core 기반 서비스용 공통 FastAPI 앱 팩토리 제공
+- CORS middleware 설정
+- 공통 인증 라우팅 표면 제공
+- 공통 헬스체크 라우팅 표면 제공
+- 공통 dependency 제공
+- 공통 서비스 클라이언트 접근 경로 제공
+- 공통 Pydantic 응답 모델 제공
+- Keycloak 기반 인증 연동
+- 설정 로딩 및 검증
+- DocMesh Py Core 기반 기능을 FastAPI request lifecycle에 연결하기 위한 서비스별 인프라 연계 보조
+- NATS 등 비동기 통합의 startup/lifespan 연계 기반 제공
 
-```bash
-# 단위 테스트만
-uv run pytest -q -m "not integration"
+### 4.2 제외 범위
 
-# 통합 테스트만
-uv run pytest -q -m integration
-
-# 전체
-uv run pytest -q
-```
+- 서비스별 비즈니스 라우터 구현
+- 서비스별 도메인 모델 정의
+- 조직별 API 게이트웨이 정책 구현
+- OpenAPI 문서 커스터마이징 전부 자동화
 
 ---
 
-## 기술 스택
+## 5. 대표 사용자 시나리오
 
-| 항목 | 내용 |
-| --- | --- |
-| 런타임 | Python >= 3.11 |
-| 웹 프레임워크 | FastAPI |
-| 설정 | pydantic, pydantic-settings, YAML |
-| 인증 | Keycloak, PyJWT |
-| DB | SQLAlchemy, psycopg |
-| 스토리지 | MinIO |
-| 벡터 DB | Milvus / AsyncMilvusClient |
-| 로컬 LLM | Ollama |
-| 관측 | Langfuse |
-| 메시징 | NATS |
-| 테스트 | pytest, pytest-asyncio, anyio |
-| 린터 | Ruff |
+### 5.1 공통 앱 조립
+1. 개발자는 공통 앱 팩토리를 호출한다.
+2. `fastapi-core`는 설정을 읽고 공통 middleware, 오류 처리, 헬스체크 기능을 포함한 기본 애플리케이션을 생성한다.
+3. 공통 인증 기능은 옵션에 따라 포함된다.
+4. 개발자는 여기에 자신의 domain router만 추가한다.
+
+### 5.2 인증 보호 endpoint 작성
+1. 개발자는 공통 인증 dependency를 사용해 현재 사용자 또는 권한 검사를 적용한다.
+2. `fastapi-core`는 bearer token을 읽고 검증한다.
+3. endpoint는 표준 사용자 정보 구조를 사용한다.
+
+### 5.3 운영 readiness 확인
+1. 운영자는 표준 liveness/readiness 엔드포인트를 호출한다.
+- 서비스는 기본 프로세스 상태와 외부 의존성 준비 여부를 표준 응답으로 제공한다.
+- 선택 의존성 실패와 필수 의존성 실패를 운영 관점에서 구분 가능해야 한다.
+
+### 5.4 startup 연계 메시징/외부 연결
+1. 서비스는 startup 단계에서 외부 의존성을 준비하거나 공통 service_clients/lifecycle 흐름에 연결한다.
+2. FastAPI lifespan과 연결되어 정상 종료 시 자원을 정리한다.
+
+---
+
+## 6. 기능 요구사항
+
+### 6.1 FastAPI 앱 팩토리
+
+- FR-001. 시스템은 공통 앱 팩토리 진입점을 제공해야 한다.
+- FR-002. 시스템은 설정, 사용자 정의 lifecycle, 공통 라우트 활성화 옵션을 입력으로 받을 수 있어야 한다.
+- FR-003. 시스템은 CORS middleware를 공통 설정으로 등록해야 한다.
+- FR-004. 시스템은 공통 인증 관련 오류 처리 정책을 적용할 수 있어야 한다.
+- FR-005. 시스템은 공통 헬스체크 라우팅 표면을 기본 포함해야 한다.
+- FR-006. 시스템은 옵션에 따라 공통 인증 라우팅 표면을 포함/제외할 수 있어야 한다.
+
+### 6.2 Router
+
+- FR-010. 시스템은 토큰 발급 엔드포인트를 제공해야 한다.
+- FR-011. 시스템은 현재 사용자 조회 엔드포인트를 제공해야 한다.
+- FR-012. 시스템은 liveness 엔드포인트를 제공해야 한다.
+- FR-013. 시스템은 readiness 엔드포인트를 제공해야 한다.
+
+### 6.3 Dependency
+
+- FR-020. 시스템은 설정 객체 접근 dependency를 제공해야 한다.
+- FR-021. 시스템은 서비스 설정 접근 dependency를 제공해야 한다.
+- FR-022. 시스템은 인증 provider 접근 dependency를 제공해야 한다.
+- FR-023. 시스템은 현재 사용자 해석 dependency를 제공해야 한다.
+- FR-024. 시스템은 권한 검사 dependency factory를 제공해야 한다.
+- FR-025. 시스템은 서비스가 초기화한 외부 서비스 클라이언트에 접근하기 위한 공통 dependency 또는 표준 접근 경로를 제공해야 한다.
+
+### 6.4 Auth / Security
+
+- FR-030. 시스템은 OAuth2 bearer token 기반 인증 흐름을 제공해야 한다.
+- FR-031. 시스템은 token 미제공 시 401을 반환해야 한다.
+- FR-032. 시스템은 권한 부족 시 403을 반환해야 한다.
+- FR-033. 시스템은 인증 결과를 표준 사용자 구조로 변환해야 한다.
+
+### 6.5 Schema
+
+- FR-040. 시스템은 토큰 응답 모델을 제공해야 한다.
+- FR-041. 시스템은 사용자 정보 응답 모델을 제공해야 한다.
+- FR-042. 시스템은 헬스 응답 모델을 제공해야 한다.
+
+### 6.6 인프라 연계
+
+- FR-050. 시스템은 외부 의존성 설정 계약을 제공해야 한다.
+- FR-051. 시스템은 메시징/NATS 같은 비동기 연결을 FastAPI startup/shutdown 흐름과 연계할 수 있어야 한다.
+- FR-052. 시스템은 readiness 판단에 필요한 외부 의존성 점검을 수행할 수 있어야 한다.
+- FR-053. 시스템은 선택 의존성과 필수 의존성을 구분해 운영 상태를 표현할 수 있어야 한다.
+
+---
+
+## 7. 수용 기준
+
+- AC-001. 개발자는 공통 앱 팩토리만으로 기본 FastAPI 앱을 만들 수 있어야 한다.
+- AC-002. 개발자는 별도 구현 없이 기본 헬스체크 엔드포인트를 사용할 수 있어야 한다.
+- AC-003. 개발자는 공통 인증 dependency로 인증된 사용자 정보를 받을 수 있어야 한다.
+- AC-004. 개발자는 공통 권한 검사 dependency를 재사용할 수 있어야 한다.
+- AC-005. 인증 라우팅 표면 사용 시 토큰 발급과 사용자 조회 엔드포인트가 제공되어야 한다.
+- AC-006. 공통 응답 모델이 FastAPI `response_model`로 바로 사용 가능해야 한다.
+- AC-007. 운영자는 readiness 결과에서 정상/부분저하/실패를 구분해 해석할 수 있어야 한다.
+
+---
+
+## 8. 제약사항 / 리스크
+
+- 현재 FastAPI 계층은 Keycloak 중심 auth 및 health 흐름에 초점이 맞춰져 있으며, 일반화 수준은 아직 제한적일 수 있다.
+- 메시징/외부 서비스 통합은 readiness 및 lifecycle 경계까지는 공통화돼 있으나, 서비스별 고수준 helper/API는 여전히 확장 지점으로 남을 수 있다.
+- readiness 대상 서비스가 늘어날수록 필수/선택 서비스 정책 운영이 중요해진다.
+
+---
+
+## 부록 A. 문서 상태 메모
+
+이 문서는 `fastapi-core`를 DocMesh Py Core 기반 서비스를 FastAPI 환경에서 구동시키기 위한 공통 FastAPI 컴포넌트 제품으로 정의하기 위한 PRD이며, 구체 함수명, endpoint 경로, schema 클래스명, 호출 시그니처 같은 공개 인터페이스 세부 계약은 SRS와 API 문서에서 관리하는 것을 원칙으로 한다.

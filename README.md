@@ -1,63 +1,37 @@
 # fastapi-core
 
 DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사용하는 Python SDK입니다.
-인증/인가(Keycloak), 데이터베이스(PostgreSQL), 오브젝트 스토리지(MinIO), 벡터 데이터베이스(Milvus), 로컬 LLM(Ollama), 관측/트레이싱(Langfuse), 설정/의존성/앱 조립을 표준화해 서비스 개발 시 중복 구현을 줄이는 것이 목적입니다.
+`fastapi-core`는 단순 인프라 클라이언트 모음이 아니라, **공통 FastAPI 앱 표면**을 제공하는 데 초점을 둡니다.
 
-## 무엇을 제공하나요?
+현재 구현된 핵심 범위:
+- package root export: `fastapi_core.create_app`
+- auth router: `POST /token`, `GET /user`
+- health router: `GET /health/liveness`, `GET /health/readiness`
+- dependency: `get_config`, `get_settings`, `get_auth_provider`, `get_current_user`, `require_permissions`
+- schema: `TokenResponse`, `UserInfo`, `HealthResponse`, `HealthServiceDetail`
+- app state integration: `config`, `root_logger`, `settings`, `registry`, `readiness_parallel`, `readiness_checks`, `readiness_services`, `required_services`
 
-- Keycloak 인증/인가
-  - OAuth2 Password Grant 토큰 발급
-  - JWT(RS256) 검증 및 사용자 정보 변환
-  - 역할(role)/스코프(scope) 추출
-- PostgreSQL 연동
-  - SQLAlchemy + psycopg 기반 엔진 생성
-  - 연결 확인 유틸리티
-  - DB 세션 의존성
-  - 커넥션 풀 파라미터 설정
-- MinIO 연동
-  - 클라이언트 생성
-  - 연결 확인 유틸리티
-- Milvus 연동
-  - Milvus 클라이언트 생성
-  - 비동기 AsyncMilvusClient 생성
-- Ollama 연동
-  - Ollama 클라이언트 생성
-- Langfuse 연동
-  - Langfuse SDK 싱글톤 조회 헬퍼
-  - public health endpoint 기반 연결 확인 유틸리티
-  - FastAPI dependency 없이 직접 호출하는 패턴 제공
-- NATS 메시징
-  - `nats-py` 기반 비동기 클라이언트 연결/종료
-  - compact JSON publish helper (`publish_event`)
-  - JSON decode subscribe helper (`subscribe_event`)
-  - Queue Group 기반 다중 소비자 스케일아웃 (`subscribe_queue_event`)
-  - `<domain>.<entity>.<action>` subject builder/validator
-- 설정 관리
-  - `EnvConfig`(환경 변수/.env)
-  - `ServiceSettings`(YAML)
-- FastAPI 조립
-  - `create_app()` 팩토리
-  - 로깅/CORS/예외 핸들러/헬스체크 라우터 기본 구성
-  - readiness에 Keycloak·PostgreSQL·MinIO·Langfuse 종합 점검(옵션)
-- FastAPI state 기반 싱글톤 패턴
-  - `app.state.auth_provider`, `app.state.db_engine`, `app.state.minio_client`, `app.state.milvus_client`, `app.state.ollama_client`, `app.state.nats_client` 사용
-  - `set_*`/함수형 `get_*` dependency 제공
-  - `Get*Dependency` class와 `get_* = Get*Dependency()` 전역 인스턴스는 사용하지 않음
-  - Langfuse는 SDK 자체 싱글톤(`get_langfuse_client`)을 사용하므로 FastAPI dependency를 만들지 않음
+외부 연동은 `docmesh_py_core`를 통해 이어집니다.
+- 인증/인가: Keycloak
+- 데이터 저장소: PostgreSQL / SQLite
+- 오브젝트 스토리지: MinIO
+- 벡터 DB: Milvus
+- 로컬 LLM: Ollama
+- 관측/트레이싱: Langfuse
+- 메시징: NATS
 
-## 설치
+## Entry point
 
-```bash
-# uv
-uv add git+https://github.com/your-org/fastapi-core.git
-
-# pip
-pip install git+https://github.com/your-org/fastapi-core.git
+```toml
+[tool.fastapi]
+entrypoint = "fastapi_core.factory:create_app"
 ```
 
-## 빠른 시작
+패키지 루트 공개 re-export는 현재 `create_app`만 보장합니다.
 
-가장 단순한 사용:
+## Quick start
+
+### 기본 앱 생성
 
 ```python
 from fastapi_core import create_app
@@ -65,132 +39,112 @@ from fastapi_core import create_app
 app = create_app()
 ```
 
-권장 패턴(기본 managed lifespan 사용):
+### auth router 제외
 
 ```python
 from fastapi_core import create_app
-from fastapi_core.core.config import EnvConfig, HealthSettings, LifecycleSettings, ServiceSettings
 
-config = EnvConfig()
-settings = ServiceSettings(
-    health=HealthSettings(
-        check_keycloak=True,
-        check_database=True,
-        check_minio=True,
-        check_langfuse=False,
-    ),
-    lifecycle=LifecycleSettings(
-        eager_nats=False,
-        use_docmesh_registry=False,
-        use_docmesh_healthchecks=False,
-    ),
-)
-
-app = create_app(config=config, settings=settings)
+app = create_app(include_auth_router=False)
 ```
 
-`create_app()` 는 custom lifespan 이 주어지지 않으면 내부의 managed lifespan 을 사용합니다. 이 기본 lifecycle 은 `settings.health` 를 eager-init 기본값으로 삼아 Keycloak/DB/MinIO/Langfuse startup 정책을 정렬하고, shutdown 시 등록된 리소스를 정리합니다.
-
-고급 사용자 정의가 필요하면 여전히 custom lifespan 을 직접 넘길 수 있습니다.
-
-```python
-from contextlib import asynccontextmanager
-from fastapi import FastAPI
-
-from fastapi_core.factory import create_app
-from fastapi_core.core.config import EnvConfig
-from fastapi_core.core.langfuse import get_langfuse_client
-from fastapi_core.dependencies.auth import set_auth_provider
-from fastapi_core.dependencies.database import set_db_engine
-from fastapi_core.dependencies.storage import set_minio_client
-from fastapi_core.dependencies.milvus import set_milvus_client
-from fastapi_core.dependencies.ollama import set_ollama_client
-from fastapi_core.dependencies.messaging import set_nats_client
-
-config = EnvConfig()
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    set_auth_provider(app, config=config)
-    set_db_engine(app, config=config)
-    set_minio_client(app, config=config)
-    set_milvus_client(app, config=config)
-    set_ollama_client(app, config=config)
-    get_langfuse_client(config.langfuse)  # SDK singleton 초기화 (dependency 없음)
-    await set_nats_client(app, config=config)
-    yield
-    app.state.db_engine.dispose()
-    app.state.milvus_client.close()
-    await app.state.nats_client.drain()
-
-app = create_app(config=config, lifespan=lifespan)
-```
-
-인증 의존성 사용 예:
+### 현재 사용자 주입
 
 ```python
 from fastapi import APIRouter, Depends
+from fastapi_core.dependencies.auth import get_current_user
 from fastapi_core.schemas.user import UserInfo
-from fastapi_core.dependencies.auth import get_current_user, require_permissions
 
 router = APIRouter()
 
-@router.get("/me")
-def me(user: UserInfo = Depends(get_current_user)):
-    return user
-
-@router.get("/admin")
-def admin_only(user: UserInfo = Depends(require_permissions("admin"))):
+@router.get("/me", response_model=UserInfo)
+async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
     return user
 ```
 
-## 내장 엔드포인트
+더 많은 예제는 `docs/examples.md`를 참고하세요.
 
-- `GET /health/liveness`
-- `GET /health/readiness`
-- `POST /token` (옵션: `create_app(..., include_auth_router=True)`일 때)
-- `GET /user` (옵션: `create_app(..., include_auth_router=True)`일 때)
+## 현재 구현 동작
 
-## 설정 요약
+### `create_app(...)`
+- `config is None`이면 `load_app_config()`를 사용합니다.
+- `settings is None`이면 `load_docmesh_settings(tuple(config.enabled_services))`를 사용합니다.
+- 앱 로깅을 먼저 초기화합니다.
+- `ServiceFactoryRegistry(settings)`를 생성합니다.
+- `FastAPI(root_path=..., lifespan=...)`를 생성하고 내부 lifespan wrapper를 통해 종료 시 `registry.close_all()`을 수행합니다.
+- `app.state.config`, `app.state.root_logger`, `app.state.settings`, `app.state.registry`를 저장합니다.
+- `app.state.readiness_parallel`, `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services`를 초기화합니다.
+- `set_oauth2_token_url(config.token_url)`로 OpenAPI password flow token URL을 반영합니다.
+- CORS middleware를 등록합니다.
+- health router를 기본 포함하고, `include_auth_router=True`일 때 auth router를 포함합니다.
 
-설정은 2개 레이어로 분리됩니다.
+### 인증
+- `/token`은 `OAuth2PasswordRequestForm`을 받습니다.
+- 현재 구현은 `scope`, `username`, `password`를 provider의 `fetch_access_token(...)`에 직접 전달합니다.
+- provider 예외는 유형에 따라 `401`, `500`, `503`, `502/500`으로 매핑되며, 실패 응답에는 `WWW-Authenticate: Bearer` 헤더가 포함됩니다.
+- `/user`와 `get_current_user()`는 bearer token을 읽고 provider의 `extract_user_info(...)` 결과를 `UserInfo`로 변환합니다.
+- 권한 검사는 `require_permissions(*roles)`로 수행합니다.
 
-1) 환경 변수 (`EnvConfig`)
-- 외부 서비스 접속 정보, 실행 환경, 로깅 레벨
-- 예: `ENV`, `CONFIG_PATH`, `LOGGING__LEVEL`, `KEYCLOAK__*`, `DB__*`, `MINIO__*`, `MILVUS__*`, `OLLAMA__*`, `LANGFUSE__*`, `NATS__*`
+### 헬스체크
+- `/health/liveness`는 `{"status": "ok", "details": null}`를 반환합니다.
+- `/health/readiness`는 `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services`, `app.state.readiness_parallel`을 사용합니다.
+- 기본 `create_app()` 경로에서는 `enabled_services`를 기준으로 registry-backed readiness check를 자동 구성합니다.
+- 필수 서비스 실패 시 `503`, 선택 서비스만 실패 시 `200 + degraded`, 모두 성공 시 `200 + ok`를 반환합니다.
+- readiness 로그는 구조화된 이벤트로 남기며, 오류 문자열은 상위 `docmesh_py_core` 마스킹 정책 영향을 받습니다.
 
-2) 서비스 설정 YAML (`ServiceSettings`)
-- 앱 동작 정책
-- 예: `cors.origins`, `cors.credentials`, `auth.verify_jwt`, `auth.allow_insecure_jwt_decode`, `auth.use_introspection`, `health.check_*`, `lifecycle.eager_*`, `lifecycle.use_docmesh_*`
+## App config
 
-`lifecycle` 섹션은 startup eager-init 정책과 optional docmesh bridge 사용 여부를 제어합니다. `health.check_keycloak`, `health.check_database`, `health.check_minio`, `health.check_langfuse` 값은 기본 eager-init 정책의 fallback 으로도 사용됩니다.
+`fastapi_core.config.AppConfig` 주요 필드:
+- `root_path: str = ""`
+- `token_url: str = "/token"`
+- `cors_origins: list[str] = ["*"]`
+- `cors_credentials: bool = False`
+- `readiness_parallel: bool = False`
+- `log_level: str | None = "WARNING"`
+- `log_path: str | None = None`
+- `log_json: bool = True`
+- `log_force: bool = False`
+- `enabled_services: list[str] = ["keycloak"]`
+- `required_services: list[str] = ["keycloak"]`
 
-자세한 키/기본값/예시는 `docs/config.md`를 참고하세요.
-빠르게 시작하려면 루트의 `.env.example`을 `.env`로 복사해 사용하세요.
+주요 환경변수:
+- `ROOT_PATH`
+- `TOKEN_URL`
+- `CORS_ORIGINS`
+- `CORS_CREDENTIALS`
+- `READINESS_PARALLEL`
+- `DOCMESH_LOG_LEVEL`
+- `APP_LOG_PATH`
+- `APP_LOG_JSON`
+- `APP_LOG_FORCE`
+- `DOCMESH_SERVICES`
+- `READINESS_REQUIRED_SERVICES`
 
-## 테스트
+## 현재 제한 사항
 
-```bash
-# 단위 테스트
-uv run pytest -q
-
-# 통합 테스트
-uv run pytest -q -m integration
-```
-
-통합 테스트는 devcontainer 기반 실서비스(Keycloak/PostgreSQL/MinIO/Milvus/Ollama/Langfuse) 연결을 전제로 합니다.
-NATS 적용 시 테스트 NATS 서버(로컬 또는 devcontainer) 연결을 추가로 구성하세요.
-
-## 개발 정보
-
-- Python: `>=3.11` (프로젝트 설정 기준)
-- 테스트 루트: `test_fastapi_core/`
-- 린트: Ruff (line-length 88)
+현재 구현 기준으로 아직 문서상 주의가 필요한 항목:
+- auth 전용 exception handler를 별도 등록하는 구조는 없습니다. 대신 route/dependency에서 HTTP 예외 정책을 직접 적용합니다.
+- `get_current_user()`의 secure/insecure decode 분기나 introspection 모드는 `fastapi-core`가 직접 노출하지 않습니다.
+- `get_nats_connection` 같은 메시징 전용 FastAPI dependency는 아직 없습니다.
+- 실제 Keycloak/NATS 서버와의 통합 테스트는 저장소 기본 회귀에 포함되어 있지 않습니다.
 
 ## 문서
 
-- `docs/prd.md` : 제품 요구사항(PRD)
-- `docs/api.md` : 공개 API 시그니처/동작/에러 처리
-- `docs/config.md` : 설정 가이드(환경 변수/YAML)
-- `docs/test.md` : 테스트 가이드(단위/통합)
-- `docs/messaging.md` : NATS 메시징 적용 가이드(설정, pub/sub, 도메인 적용, 테스트)
+- 제품 요구사항: `docs/prd.md`
+- 소프트웨어 요구사항: `docs/srs.md`
+- API Reference: `docs/api.md`
+- 설정 정의: `docs/config.md`
+- 메시징 정의: `docs/messaging.md`
+- 테스트 정의: `docs/test.md`
+- 예제: `docs/examples.md`
+- 교차 정합성 체크리스트: `docs/consistency-checklist.md`
+
+## Verification
+
+현재 저장소 기준 검증 명령:
+
+```bash
+uv run pytest -q
+```
+
+최근 실행 결과:
+- `25 passed`

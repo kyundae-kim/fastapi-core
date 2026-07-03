@@ -1,295 +1,421 @@
-# 설정 가이드
+# fastapi-core 설정 정의서
 
-## 설정 체계
-
-`fastapi-core`의 설정은 두 레이어로 나뉩니다.
-
-| 레이어 | 클래스 | 소스 | 역할 |
-| --- | --- | --- | --- |
-| 환경 변수 | `EnvConfig` | OS 환경 변수 + `.env` | 외부 서비스 접속 정보, 실행 환경, 로깅, root path |
-| 서비스 설정 | `ServiceSettings` | YAML 파일 (`config_path`) | CORS, 인증 정책, readiness/lifecycle 정책 |
-
-핵심 동작:
-
-- `EnvConfig`는 `pydantic-settings` 기반이며 `env_nested_delimiter="__"`를 사용합니다.
-- 기본 `.env` 파일은 루트의 `.env`입니다.
-- 알 수 없는 환경 변수는 `extra="ignore"`로 무시합니다.
-- `ServiceSettings.from_yaml(path)`는 파일이 없으면 예외 없이 기본값을 사용합니다.
-- 기본 YAML 경로는 `CONFIG_PATH=.devcontainer/config.yaml` 입니다.
+> 문서 목적: `fastapi-core`의 설정을 **현재 구현된 FastAPI 앱 조립 / dependency / readiness 관점**에서 설명한다.
+> 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`
+> 문서 상태: 구현 반영본(v0.5)
 
 ---
 
-## 환경 변수 (`EnvConfig`)
+## 1. 문서 개요
 
-소스: `fastapi_core/core/config.py`
+이 문서는 계획 단계의 전체 플랫폼 설정 카탈로그가 아니라, **현재 저장소 구현이 실제로 읽고 사용하는 설정**을 우선 정리한다.
+특히 `create_app(...)`, `AppConfig`, `load_docmesh_settings()`, `app.state` 연계 지점을 중심으로 본다.
 
-### 공통
+- 작성일: `2026-07-03`
+- 작성자: `Hermes Agent`
+- 버전: `v0.5`
+- 상태: `implemented-surface`
 
-| 변수명 | 타입 | 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `ENV` | `dev \| stage \| prod` | `dev` | 실행 환경 |
-| `CONFIG_PATH` | `str` | `.devcontainer/config.yaml` | `ServiceSettings` YAML 경로 |
-| `ROOT_PATH` | `str` | `/` | FastAPI `root_path` |
-| `TOKEN_URL` | `str` | `/token` | `OAuth2PasswordBearer`가 사용하는 토큰 URL |
-
-### 로깅
-
-| 변수명 | 타입 | 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `LOGGING__LEVEL` | `WARNING \| INFO \| DEBUG` | `DEBUG` | `setup_logging()`에 전달되는 로그 레벨 |
-
-### Keycloak
-
-| 변수명 | 타입 | 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `KEYCLOAK__HTTP_URL` | `HttpUrl` | `http://keycloak:8080/` | Keycloak base URL |
-| `KEYCLOAK__MANAGE_URL` | `HttpUrl` | `http://keycloak:9000/` | readiness용 관리 URL |
-| `KEYCLOAK__REALM` | `str` | `restapi` | Realm 이름 |
-| `KEYCLOAK__CLIENT_ID` | `str` | `fastapi` | OAuth client id / JWT audience |
-| `KEYCLOAK__CLIENT_SECRET` | `str \| None` | `None` | Confidential client secret |
-| `KEYCLOAK_USERNAME` | `str` | `test` | 통합 테스트용 사용자명 |
-| `KEYCLOAK_PASSWORD` | `str` | `test` | 통합 테스트용 비밀번호 |
-
-### PostgreSQL
-
-| 변수명 | 타입 | 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `DB__HOST` | `str` | `postgres` | DB 호스트 |
-| `DB__PORT` | `int` | `5432` | DB 포트 |
-| `DB__NAME` | `str` | `postgres` | DB 이름 |
-| `DB__USER` | `str` | `postgres` | DB 사용자 |
-| `DB__PASSWORD` | `str` | `postgres` | DB 비밀번호 |
-| `DB__AUTH_METHOD` | `password \| trust` | `password` | DSN 조합 방식 |
-| `DB__SSLMODE` | `str` | `prefer` | PostgreSQL SSL 모드 |
-| `DB__CONNECT_TIMEOUT` | `int` | `5` | 연결 타임아웃(초) |
-| `DB__ECHO` | `bool` | `false` | SQLAlchemy SQL 로그 출력 |
-| `DB__POOL_SIZE` | `int` | `5` | 기본 커넥션 풀 크기 |
-| `DB__MAX_OVERFLOW` | `int` | `10` | 초과 허용 연결 수 |
-| `DB__POOL_TIMEOUT` | `int` | `30` | 풀 획득 타임아웃(초) |
-| `DB__POOL_RECYCLE` | `int` | `1800` | 커넥션 재생성 주기(초) |
-| `DB__URL` | `str \| None` | `None` | 지정 시 나머지 DB 필드를 무시하고 DSN 직접 사용 |
-
-### MinIO
-
-| 변수명 | 타입 | 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `MINIO__ENDPOINT` | `str` | `minio:9000` | MinIO endpoint (`host:port`) |
-| `MINIO__ACCESS_KEY` | `str` | `admin` | 액세스 키 |
-| `MINIO__SECRET_KEY` | `str` | `password` | 시크릿 키 |
-| `MINIO__SECURE` | `bool` | `false` | HTTPS 사용 여부 |
-| `MINIO__BUCKET` | `str` | `default` | 기본 버킷 |
-| `MINIO__PRESIGNED_EXPIRES_SEC` | `int` | `900` | presigned URL 만료 시간(초) |
-
-### Milvus
-
-| 변수명 | 타입 | 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `MILVUS__URI` | `str` | `http://milvus:19530` | Milvus 엔드포인트 |
-| `MILVUS__DB_NAME` | `str` | `""` | 기본 DB 이름 |
-| `MILVUS__TOKEN` | `str` | `""` | 인증 토큰 |
-| `MILVUS__TIMEOUT` | `float \| None` | `None` | 클라이언트 timeout |
-
-### Ollama
-
-| 변수명 | 타입 | 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `OLLAMA__HOST` | `str` | `http://ollama:11434` | Ollama HTTP API |
-| `OLLAMA__MODEL` | `str` | `llama3.2` | 기본 생성 모델 |
-| `OLLAMA__TIMEOUT` | `float` | `60.0` | HTTP timeout(초) |
-
-### Langfuse
-
-| 변수명 | 타입 | 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `LANGFUSE__HOST` | `str` | `http://langfuse-web:3000` | Langfuse host |
-| `LANGFUSE__PUBLIC_KEY` | `str \| None` | `None` | public key |
-| `LANGFUSE__SECRET_KEY` | `str \| None` | `None` | secret key |
-| `LANGFUSE__TIMEOUT` | `int` | `5` | health/API timeout(초) |
-| `LANGFUSE__TRACING_ENABLED` | `bool` | `true` | tracing 활성화 여부 |
-| `LANGFUSE__ENVIRONMENT` | `str \| None` | `None` | tracing environment |
-| `LANGFUSE__RELEASE` | `str \| None` | `None` | release 태그 |
-
-### NATS
-
-| 변수명 | 타입 | 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `NATS__SERVERS` | `str` (콤마 구분) | `nats://nats:4222` | 서버 목록 원본 문자열 |
-| `NATS__NAME` | `str` | `fastapi-core` | 연결 이름 |
-| `NATS__CONNECT_TIMEOUT` | `int` | `2` | 연결 timeout(초) |
-| `NATS__MAX_RECONNECT_ATTEMPTS` | `int` | `60` | 최대 재연결 횟수 |
-| `NATS__RECONNECT_TIME_WAIT_MS` | `int` | `2000` | 재연결 간격(ms) |
-| `NATS__QUEUE_GROUP` | `str` | `default-workers` | 기본 queue group |
-
-`NatsConfig.server_list`는 `NATS__SERVERS`를 콤마로 분리하고 공백을 제거한 계산 프로퍼티입니다.
+핵심 관점:
+- `create_app(...)`가 어떤 설정을 직접 소비하는가
+- FastAPI dependency가 어떤 설정 객체를 참조하는가
+- readiness가 어떤 방식으로 설정과 연결되는가
+- 로깅/서비스 선택이 어떻게 반영되는가
 
 ---
 
-## 서비스 설정 (`ServiceSettings`, YAML)
+## 2. 현재 구현의 설정 계층
 
-기본 경로: `.devcontainer/config.yaml`
+현재 구현은 설정을 두 층으로 나눈다.
 
-### `cors`
+1. **앱 조립 설정 (`AppConfig`)**
+   - 정의 위치: `fastapi_core.config.AppConfig`
+   - FastAPI app 자체의 동작을 제어한다.
+   - 예: `root_path`, `token_url`, CORS, readiness 병렬화, 로깅, 활성 서비스 집합
 
-| 키 | 타입 | 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `cors.origins` | `list[str]` | `["*"]` | 허용 Origin |
-| `cors.credentials` | `bool` | `false` | `allow_credentials` 값 |
+2. **서비스/외부 의존성 설정 (`docmesh_py_core.ServiceConfigs`)**
+   - 로더: `fastapi_core.docmesh_settings.load_docmesh_settings(...)`
+   - 실제 생성은 `docmesh_py_core.load_service_configs(...)`
+   - Keycloak / SQLite / MinIO / Milvus / Ollama / Langfuse / NATS 등 외부 시스템 설정을 포함한다.
+   - 현재 `fastapi_core`는 이 객체를 service client 구성과 auth provider/서비스 체크 기반값으로 사용한다.
 
-### `auth`
+즉, 현재 코드에서 FastAPI 앱은:
+- `AppConfig`로 앱 조립 방식과 공개 표면 동작을 결정하고
+- `ServiceConfigs`로 외부 시스템 구성을 보관하고 service client 구성에 전달한다.
 
-| 키 | 타입 | 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `auth.verify_jwt` | `bool` | `true` | `true`면 RS256 검증 후 decode |
-| `auth.allow_insecure_jwt_decode` | `bool` | `false` | 검증 없는 decode 허용 여부 |
-| `auth.use_introspection` | `bool` | `false` | Keycloak introspection 사용 여부 |
+---
 
-> Keycloak 접속 정보는 YAML이 아니라 `KEYCLOAK__*` 환경 변수에서 읽습니다.
+## 3. AppConfig
 
-### `health`
+정의 위치: `fastapi_core/config.py`
 
-| 키 | 타입 | 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `health.check_keycloak` | `bool` | `true` | `/health/readiness`에서 Keycloak 확인 |
-| `health.check_database` | `bool` | `true` | `/health/readiness`에서 DB 확인 |
-| `health.check_minio` | `bool` | `true` | `/health/readiness`에서 MinIO 확인 |
-| `health.check_langfuse` | `bool` | `false` | `/health/readiness`에서 Langfuse 확인 |
+```python
+class AppConfig(BaseSettings):
+    root_path: str = ""
+    token_url: str = "/token"
+    cors_origins: list[str] = ["*"]
+    cors_credentials: bool = False
+    readiness_parallel: bool = False
+    log_level: str | None = "WARNING"
+    log_path: str | None = None
+    log_json: bool = True
+    log_force: bool = False
+    enabled_services: list[str] = ["keycloak"]
+    required_services: list[str] = ["keycloak"]
+```
 
-### `lifecycle`
+### 3.1 필드 의미
 
-| 키 | 타입 | 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `lifecycle.eager_keycloak` | `bool \| null` | `null` | `null`이면 `health.check_keycloak` 값을 따름 |
-| `lifecycle.eager_database` | `bool \| null` | `null` | `null`이면 `health.check_database` 값을 따름 |
-| `lifecycle.eager_minio` | `bool \| null` | `null` | `null`이면 `health.check_minio` 값을 따름 |
-| `lifecycle.eager_langfuse` | `bool \| null` | `null` | `null`이면 `health.check_langfuse` 값을 따름 |
-| `lifecycle.eager_milvus` | `bool` | `true` | startup에서 Milvus 준비 여부 |
-| `lifecycle.eager_async_milvus` | `bool` | `false` | startup에서 AsyncMilvus 준비 여부 |
-| `lifecycle.eager_ollama` | `bool` | `true` | startup에서 Ollama 준비 여부 |
-| `lifecycle.eager_nats` | `bool` | `false` | startup에서 NATS 준비 여부 |
-| `lifecycle.use_docmesh_registry` | `bool` | `false` | registry를 명시적으로 먼저 부트스트랩하도록 강제 |
-| `lifecycle.use_docmesh_healthchecks` | `bool` | `false` | readiness에서 `docmesh_py_core.check_all_services()` 사용 시도 |
+| 필드 | 적용 위치 | 현재 동작 |
+| --- | --- | --- |
+| `root_path` | `FastAPI(root_path=...)` | reverse proxy 하위 경로 배포 시 사용 |
+| `token_url` | `set_oauth2_token_url(...)` | OpenAPI OAuth2 password flow token URL 반영 |
+| `cors_origins` | `CORSMiddleware` | 허용 origin 목록 |
+| `cors_credentials` | `CORSMiddleware` | credential 허용 여부 |
+| `readiness_parallel` | `app.state.readiness_parallel` | readiness check 병렬 실행 여부 |
+| `log_level` | `_configure_application_logging(...)` | 루트 로거 레벨 |
+| `log_path` | `_configure_application_logging(...)` | 파일 로그 경로 |
+| `log_json` | `_configure_application_logging(...)` | JSON formatter 사용 여부 |
+| `log_force` | `_configure_application_logging(...)` | 로거 재구성 강제 여부 |
+| `enabled_services` | `load_docmesh_settings(...)`, readiness 기본 구성 | 로딩/체크할 서비스 집합 |
+| `required_services` | `app.state.required_services`, readiness 상태 판정 | 실패 시 `503`을 유발하는 필수 서비스 집합 |
 
-### lifecycle 해석 규칙
+### 3.2 로더
 
-`resolve_lifecycle_policy(settings)`는 다음 규칙으로 startup 정책을 계산합니다.
+`load_app_config()`는 환경변수에서 `AppConfig`를 구성한다.
 
-- `eager_keycloak`, `eager_database`, `eager_minio`, `eager_langfuse`가 `null`이면 각각의 `health.check_*` 값을 상속합니다.
-- `eager_milvus`, `eager_async_milvus`, `eager_ollama`, `eager_nats`는 명시값 그대로 사용합니다.
-- 관리 대상 서비스(`auth_provider`, `db_engine`, `minio_client`, `milvus_client`, `ollama_client`, `langfuse_client`, `nats_client`) 중 하나라도 eager-init 대상이면 startup에서 docmesh registry를 초기화합니다.
-- `async_milvus_client`만 예외적으로 registry가 아니라 `create_async_milvus_client(config.milvus)`로 직접 생성됩니다.
+읽는 환경변수:
+- `ROOT_PATH`
+- `TOKEN_URL`
+- `CORS_ORIGINS`
+- `CORS_CREDENTIALS`
+- `READINESS_PARALLEL`
+- `DOCMESH_LOG_LEVEL` (`log_level` alias)
+- `APP_LOG_PATH` (`log_path` alias)
+- `APP_LOG_JSON` (`log_json` alias)
+- `APP_LOG_FORCE` (`log_force` alias)
+- `DOCMESH_SERVICES` (`enabled_services` alias)
+- `READINESS_REQUIRED_SERVICES` (`required_services` alias)
 
-> 현재 FastAPI dependency 계층의 auth/db/minio/milvus/ollama/langfuse/nats 조회는 docmesh registry 기반 helper를 사용합니다. `use_docmesh_registry`는 이 동작을 끄는 스위치가 아니라, startup 시 registry를 선행 초기화할지까지 포함한 lifecycle 정책 플래그입니다.
+### 3.3 파싱 규칙
 
-### YAML 예시
+- `CORS_ORIGINS`, `DOCMESH_SERVICES`, `READINESS_REQUIRED_SERVICES`는 쉼표 구분 문자열을 list로 읽는다.
+- 비어 있는 문자열은 기본값 처리로 넘긴다.
+- bool 계열은 Pydantic settings 파싱을 따른다.
+- `load_app_config()`는 `lru_cache(maxsize=1)`로 캐시된다.
 
-```yaml
-cors:
-  origins:
-    - https://example.com
-  credentials: false
+예시:
 
-auth:
-  verify_jwt: true
-  allow_insecure_jwt_decode: false
-  use_introspection: false
-
-health:
-  check_keycloak: true
-  check_database: true
-  check_minio: true
-  check_langfuse: false
-
-lifecycle:
-  eager_milvus: true
-  eager_async_milvus: false
-  eager_ollama: true
-  eager_nats: false
-  use_docmesh_registry: false
-  use_docmesh_healthchecks: false
+```env
+ROOT_PATH=/api
+TOKEN_URL=/api/v1/auth/token
+CORS_ORIGINS=https://app.example.com,https://admin.example.com
+CORS_CREDENTIALS=true
+READINESS_PARALLEL=true
+DOCMESH_LOG_LEVEL=INFO
+APP_LOG_PATH=/tmp/app.log
+APP_LOG_JSON=true
+APP_LOG_FORCE=true
+DOCMESH_SERVICES=keycloak,nats
+READINESS_REQUIRED_SERVICES=keycloak
 ```
 
 ---
 
-## 환경 파일
+## 4. `create_app(...)`와 설정 연결
 
-| 환경 | 파일 경로 |
-| --- | --- |
-| 예제 | `.env.example` |
-| 개발 | `.devcontainer/.env` |
-| 배포 | `.release/.env` |
+현재 구현의 `create_app(config=None, settings=None, lifespan=None, include_auth_router=True)`는 다음 순서로 설정을 사용한다.
 
-### `.env` 예시
+1. `config`가 없으면 `load_app_config()` 사용
+2. `settings`가 없으면 `load_docmesh_settings(tuple(config.enabled_services))` 사용
+3. `_configure_application_logging(config)`로 로깅 초기화
+4. `_build_service_clients(settings, config.enabled_services)`로 서비스 클라이언트 맵 생성
+5. `FastAPI(root_path=config.root_path, lifespan=_build_lifespan(...))` 생성
+6. `app.state.config = config`
+7. `app.state.root_logger = root_logger`
+8. `app.state.settings = settings`
+9. `app.state.service_clients = service_clients`
+10. keycloak client가 있으면 `app.state.auth_provider = service_clients["keycloak"].client`
+11. `app.state.readiness_parallel = config.readiness_parallel`
+12. `app.state.readiness_checks = _build_readiness_checks(service_clients)`
+13. `app.state.readiness_services = _build_readiness_metadata(config.enabled_services, config.required_services)`
+14. `app.state.required_services = set(config.required_services)`
+15. `set_oauth2_token_url(config.token_url)` 적용
+16. CORS middleware 등록
+17. health router 포함
+18. 필요 시 auth router 포함
 
-```dotenv
-ENV=dev
-CONFIG_PATH=.devcontainer/config.yaml
-ROOT_PATH=/
-TOKEN_URL=/token
-LOGGING__LEVEL=DEBUG
+즉, 설정은 현재 코드에서 **앱 조립**, **로깅 초기화**, **service_clients/readiness 기본 구성**, **auth 문서 표면(OpenAPI) 조정**에 직접 사용된다.
 
-KEYCLOAK__HTTP_URL=http://keycloak:8080/
-KEYCLOAK__MANAGE_URL=http://keycloak:9000/
-KEYCLOAK__REALM=restapi
-KEYCLOAK__CLIENT_ID=fastapi
-KEYCLOAK__CLIENT_SECRET=
-KEYCLOAK_USERNAME=test
-KEYCLOAK_PASSWORD=test
+---
 
-DB__HOST=postgres
-DB__PORT=5432
-DB__NAME=postgres
-DB__USER=postgres
-DB__PASSWORD=postgres
-DB__AUTH_METHOD=password
-DB__SSLMODE=prefer
-DB__CONNECT_TIMEOUT=5
-DB__ECHO=false
-DB__POOL_SIZE=5
-DB__MAX_OVERFLOW=10
-DB__POOL_TIMEOUT=30
-DB__POOL_RECYCLE=1800
-# DB__URL=postgresql+psycopg://user:pass@postgres:5432/dbname
+## 5. DocMesh settings 로더
 
-MINIO__ENDPOINT=minio:9000
-MINIO__ACCESS_KEY=admin
-MINIO__SECRET_KEY=password
-MINIO__SECURE=false
-MINIO__BUCKET=default
-MINIO__PRESIGNED_EXPIRES_SEC=900
+정의 위치: `fastapi_core/docmesh_settings.py`
 
-MILVUS__URI=http://milvus:19530
-MILVUS__DB_NAME=
-MILVUS__TOKEN=
-MILVUS__TIMEOUT=10.0
+### 5.1 `build_docmesh_env_overlay()`
 
-OLLAMA__HOST=http://ollama:11434
-OLLAMA__MODEL=llama3.2
-OLLAMA__TIMEOUT=60.0
+현재 환경변수를 복사한 뒤, `docmesh_py_core.load_service_configs(...)`가 실패하지 않도록 개발/테스트용 fallback 값을 채운다.
 
-LANGFUSE__HOST=http://langfuse-web:3000
-LANGFUSE__PUBLIC_KEY=
-LANGFUSE__SECRET_KEY=
-LANGFUSE__TIMEOUT=5
-LANGFUSE__TRACING_ENABLED=true
-LANGFUSE__ENVIRONMENT=
-LANGFUSE__RELEASE=
+대표 기본값:
+- `KEYCLOAK_URL=http://keycloak.local`
+- `KEYCLOAK_REALM=docmesh`
+- `KEYCLOAK_CLIENT_ID=fastapi-core`
+- `KEYCLOAK_CLIENT_SECRET=dev-secret`
+- `SQLITE_PATH=:memory:`
+- `MINIO_ENDPOINT=minio.local:9000`
+- `MINIO_ACCESS_KEY=minio`
+- `MINIO_SECRET_KEY=miniosecret`
+- `MILVUS_URI=http://milvus.local:19530`
+- `OLLAMA_HOST=http://ollama.local:11434`
+- `LANGFUSE_HOST=http://langfuse.local:3000`
+- `LANGFUSE_PUBLIC_KEY=dev-public`
+- `LANGFUSE_SECRET_KEY=dev-secret`
+- `NATS_SERVERS=nats://nats.local:4222`
+- `NATS_TOKEN=dev-token`
 
-NATS__SERVERS=nats://nats:4222,nats://nats-2:4222
-NATS__NAME=fastapi-core
-NATS__CONNECT_TIMEOUT=2
-NATS__MAX_RECONNECT_ATTEMPTS=60
-NATS__RECONNECT_TIME_WAIT_MS=2000
-NATS__QUEUE_GROUP=default-workers
+### 5.2 `load_docmesh_settings(enabled_services: tuple[str, ...] | None = None)`
+
+동작:
+- `enabled_services`가 있으면 집합으로 변환한다.
+- 내부 기본값 보강 컨텍스트를 적용한 뒤 `docmesh_py_core.load_service_configs(services=services)`를 호출한다.
+- 서비스 선택이 없으면 전체 기본 서비스를 로딩한다.
+- `lru_cache(maxsize=1)`로 캐시된다.
+
+### 5.3 중요 해석
+
+이 기본값들은 **운영 권장값이 아니라 개발/테스트용 fallback**이다.
+운영 환경에서는 반드시 명시적 환경변수 또는 외부 secret 주입으로 대체해야 한다.
+
+---
+
+## 6. 인증 설정 (현재 구현 관점)
+
+현재 auth 경로에 직접 연결되는 설정은 `docmesh_py_core.ServiceConfigs` 내부의 Keycloak 관련 값들이다.
+
+핵심 필수값:
+- `KEYCLOAK_URL`
+- `KEYCLOAK_REALM`
+- `KEYCLOAK_CLIENT_ID`
+- `KEYCLOAK_CLIENT_SECRET`
+
+현재 구현 기준 영향 범위:
+- `create_app()`의 `service_clients` 구성 중 keycloak client/provider 준비
+- `get_auth_provider()`의 `app.state.service_clients` 기반 provider 재사용
+- `/token` endpoint의 provider 호출 기반값
+- `/user` / `get_current_user()`의 token 해석 기반값
+
+### 현재 문서화 시 주의할 점
+
+다음 항목들은 `fastapi_core`가 직접 노출하는 분기 API가 아니다.
+- secure/insecure decode 분기
+- introspection 모드 분기
+- timeout/retry 정책의 FastAPI 계층 직접 반영
+
+이 값들은 `docmesh_py_core` 내부에서 의미가 있을 수 있지만, 현재 `fastapi_core` 공개 표면 문서에서는 **직접 구현된 FastAPI API처럼 과장하면 안 된다**.
+
+---
+
+## 7. readiness / health 관련 설정
+
+현재 readiness는 `AppConfig`와 `app.state`가 함께 결정한다.
+
+실제 동작:
+- `/health/liveness`는 설정 의존성이 거의 없다.
+- `/health/readiness`는 아래 값을 읽는다.
+  - `app.state.readiness_checks`
+  - `app.state.readiness_services`
+  - `app.state.required_services`
+  - `app.state.readiness_parallel`
+
+### 7.1 현재 설정 연결 방식
+
+| 항목 | 공급 방식 | 설명 |
+| --- | --- | --- |
+| `readiness_checks` | 기본 create_app 자동 구성 또는 사용자/lifespan override | 서비스명 → callable 매핑 |
+| `readiness_services` | 기본 create_app 자동 구성 또는 사용자 override | 서비스별 `{required, enabled}` 메타데이터 |
+| `required_services` | `AppConfig` 또는 직접 state 설정 | 실패 시 503을 유발하는 필수 서비스 집합 |
+| `readiness_parallel` | `AppConfig` 또는 직접 state 설정 | 병렬 실행 여부 |
+
+### 7.2 구현상 의미
+
+- `READINESS_PARALLEL`은 실제로 사용된다.
+- `DOCMESH_SERVICES`는 기본 readiness 대상 집합을 결정한다.
+- `READINESS_REQUIRED_SERVICES`는 필수 실패 기준을 결정한다.
+- health endpoint 자체가 `KEYCLOAK_URL`, `NATS_SERVERS`를 직접 읽는 것은 아니다.
+- 대신 create_app이 service client 기반 check를 미리 구성해 둔다.
+
+기본 예시:
+
+```python
+app.state.readiness_services == {
+    "keycloak": {"enabled": True, "required": True}
+}
+app.state.required_services == {"keycloak"}
+```
+
+수동 override 예시:
+
+```python
+app.state.readiness_checks = {
+    "keycloak": lambda: None,
+    "nats": lambda: None,
+}
+app.state.readiness_services = {
+    "keycloak": {"required": True, "enabled": True},
+    "nats": {"required": False, "enabled": True},
+}
+app.state.required_services = {"keycloak"}
+```
+
+### 7.3 상태 판정 규칙
+
+- 모든 서비스 성공 → `200`, `status="ok"`
+- 선택 서비스만 실패 → `200`, `status="degraded"`
+- 필수 서비스 실패 → `503`, `status="error"`
+
+---
+
+## 8. CORS 설정
+
+현재 CORS는 `create_app()`에서 항상 등록된다.
+
+직접 연결되는 설정:
+- `CORS_ORIGINS`
+- `CORS_CREDENTIALS`
+
+적용 코드:
+- `allow_origins=app_config.cors_origins`
+- `allow_credentials=app_config.cors_credentials`
+- `allow_methods=["*"]`
+- `allow_headers=["*"]`
+
+운영 권장:
+- wildcard 대신 명시 origin 사용
+- credential 허용 시 origin 범위를 엄격하게 제한
+
+---
+
+## 9. 외부 의존성 설정 범위
+
+`load_docmesh_settings()`는 다음 외부 시스템 설정을 다룰 수 있다.
+
+- Keycloak
+- SQLite
+- MinIO
+- Milvus
+- Ollama
+- Langfuse
+- NATS
+
+하지만 현재 `fastapi_core` 자체는 이들을 다음 정도로만 직접 다룬다.
+
+| 시스템 | 현재 fastapi_core 직접 사용 여부 | 비고 |
+| --- | --- | --- |
+| Keycloak | 직접/간접 | auth provider, 기본 readiness 대상 |
+| SQLite | 간접 | 선택 서비스 로딩 및 service_clients/readiness 대상 |
+| MinIO | 간접 | settings/service_clients 기반 확장 지점 |
+| Milvus | 간접 | settings/service_clients 기반 확장 지점 |
+| Ollama | 간접 | settings/service_clients 기반 확장 지점 |
+| Langfuse | 간접 | settings/service_clients 기반 확장 지점 |
+| NATS | 간접 | settings/service_clients 기반 readiness 또는 custom lifespan 확장 지점 |
+
+즉, 현재 구현에서 이 값들은 `ServiceConfigs`와 `app.state.service_clients`를 통한 통합 기반이며, 그 위에 공통 접근용 `get_service_client(service_name)`와 구체 타입 반환용 전용 dependency(`get_keycloak_auth_service`, `get_postgres_engine`, `get_sqlite_engine`, `get_minio_client`, `get_milvus_client`, `get_ollama_client`, `get_langfuse_client`, `get_nats_connection_builder`)가 얹힌 형태다.
+
+---
+
+## 10. 테스트 환경에서 확인된 최소 설정
+
+`test_fastapi_core/conftest.py`의 `build_test_settings()` 기준, 테스트용 `ServiceConfigs`를 만들기 위해 다음 값들이 제공된다.
+
+- `KEYCLOAK_URL`
+- `KEYCLOAK_REALM`
+- `KEYCLOAK_CLIENT_ID`
+- `KEYCLOAK_CLIENT_SECRET`
+- `SQLITE_PATH`
+- `MINIO_ENDPOINT`
+- `MINIO_ACCESS_KEY`
+- `MINIO_SECRET_KEY`
+- `MILVUS_URI`
+- `OLLAMA_HOST`
+- `LANGFUSE_HOST`
+- `LANGFUSE_PUBLIC_KEY`
+- `LANGFUSE_SECRET_KEY`
+- `NATS_SERVERS`
+- `NATS_TOKEN`
+
+문서상 의미:
+- 현재 `docmesh_py_core.load_service_configs(...)`를 통과하려면 위 수준의 필수 세트가 필요했다.
+- 테스트는 단순 mock dict가 아니라 실제 `ServiceConfigs` 생성 경로를 통과한다.
+
+---
+
+## 11. 운영/보안 원칙
+
+- secret / token / password / 전체 URI는 문서 예시와 로그에서 원문 노출 금지
+- 개발 fallback를 운영 기본값처럼 안내하지 말 것
+- readiness 필수/선택 서비스 집합을 운영 정책으로 명시할 것
+- `app.state` override 객체는 startup/lifespan과 정합성을 맞출 것
+
+---
+
+## 12. 현재 구현 기준 제한 사항
+
+현재 구현 기준으로 아직 직접 제공되지 않는 것:
+- auth 전용 exception handler 설정 API
+- secure/insecure JWT decode 분기 설정 API
+- introspection 모드 선택 API
+- 메시징 전용 FastAPI dependency (`get_nats_connection` 등)
+- NATS 연결 상태 객체를 기본 `app.state` 키로 노출하는 표준 API
+
+참고로 실제 외부 연동은 `test_fastapi_core/integration/`의 live integration 테스트에서 별도로 검증된다.
+
+---
+
+## 13. 최소 예시
+
+### 13.1 AppConfig 환경변수
+
+```env
+ROOT_PATH=/api
+TOKEN_URL=/api/v1/auth/token
+CORS_ORIGINS=https://app.example.com
+CORS_CREDENTIALS=true
+READINESS_PARALLEL=false
+DOCMESH_SERVICES=keycloak,nats
+READINESS_REQUIRED_SERVICES=keycloak
+```
+
+### 13.2 테스트/개발용 개념 예시
+
+```env
+KEYCLOAK_URL=http://keycloak.local
+KEYCLOAK_REALM=docmesh
+KEYCLOAK_CLIENT_ID=fastapi-core
+KEYCLOAK_CLIENT_SECRET=[REDACTED]
+SQLITE_PATH=:memory:
+NATS_SERVERS=nats://nats.local:4222
+NATS_TOKEN=[REDACTED]
 ```
 
 ---
 
-## `DatabaseConfig.sqlalchemy_database_url` 조합 규칙
+## 14. 참고 문서
 
-`DB__URL`이 설정되면 그 값을 그대로 사용합니다.
-그 외에는 아래 규칙으로 DSN을 조합합니다.
+- `docs/prd.md`
+- `docs/srs.md`
+- `docs/api.md`
+- `docs/examples.md`
+- `README.md`
+- `fastapi_core/config.py`
+- `fastapi_core/docmesh_settings.py`
+- `fastapi_core/factory.py`
+- `test_fastapi_core/conftest.py`
+- `test_fastapi_core/test_config.py`
 
-| `DB__AUTH_METHOD` | 생성 DSN |
-| --- | --- |
-| `password` | `postgresql+psycopg://user:password@host:port/name?sslmode=...&connect_timeout=...` |
-| `trust` | `postgresql+psycopg://user@host:port/name?sslmode=...&connect_timeout=...` |
+---
+
+## 15. 문서 상태 메모
+
+이 문서는 기존의 광범위한 플랫폼 설정 계획 문서를, **현재 저장소에서 실제 확인된 설정 소비 경로** 중심으로 재정렬한 것이다.
+특히 `load_default_settings()` 중심 설명을 제거하고, 현재 코드가 실제 사용하는 `load_docmesh_settings()`, 로깅 설정, 서비스 선택/필수 readiness 구조를 기준으로 맞췄다.

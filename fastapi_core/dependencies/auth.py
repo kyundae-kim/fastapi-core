@@ -1,210 +1,99 @@
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.params import Depends as DependsParam
-from fastapi.security import OAuth2PasswordBearer
+from collections.abc import Callable
 
-from fastapi_core.bootstrap import get_or_create_state_value, set_state_value
-from fastapi_core.core.auth import KeycloakAuthProvider
-from fastapi_core.core.config import EnvConfig, ServiceSettings
-from fastapi_core.dependencies.config import get_config, get_settings
-from fastapi_core.docmesh_bridge import get_required_docmesh_service
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import OAuth2PasswordBearer
+from docmesh_py_core import AuthenticatedUser, KeycloakAuthService, ServiceConfigs, TokenValidationError
+
+from fastapi_core.dependencies.config import get_settings
 from fastapi_core.schemas.user import UserInfo
 
-oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl=EnvConfig().token_url,
-    auto_error=False,
-)
-
-_AUTH_PROVIDER_STATE_KEY = "auth_provider"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token", auto_error=False)
 
 
-class _RegistryKeycloakAuthAdapter:
-    def __init__(self, service: object) -> None:
-        self._service = service
-        allowed_algorithms = getattr(service, "allowed_algorithms", None)
-        if isinstance(allowed_algorithms, list) and "RS256" not in allowed_algorithms:
-            service.allowed_algorithms = [*allowed_algorithms, "RS256"]
-
-    def decode_token(self, token: str) -> dict[str, object]:
-        user = self._service.extract_user_info(token)
-        claims = getattr(user, "claims", None)
-        if not isinstance(claims, dict):
-            raise ValueError("Registry auth service returned invalid claims")
-        return claims
-
-    def decode_token_insecure(self, token: str) -> dict[str, object]:
-        return KeycloakAuthProvider.decode_token_insecure(self, token)
-
-    def introspect_token(self, token: str) -> dict[str, object]:
-        introspect = getattr(self._service, "introspect_token", None)
-        if callable(introspect):
-            introspected_payload = introspect(token)
-            if not isinstance(introspected_payload, dict):
-                raise ValueError("Registry auth service returned invalid introspection payload")
-            return introspected_payload
-
-        token_endpoint = getattr(self._service, "token_endpoint", None)
-        http_client = getattr(self._service, "http_client", None)
-        settings = getattr(self._service, "settings", None)
-        keycloak_settings = getattr(settings, "keycloak", None)
-        if not isinstance(token_endpoint, str) or http_client is None or keycloak_settings is None:
-            raise ValueError("Registry auth service does not support token introspection")
-
-        payload: dict[str, object] = {
-            "token": token,
-            "client_id": keycloak_settings.client_id,
-        }
-        if getattr(keycloak_settings, "client_secret", None):
-            payload["client_secret"] = keycloak_settings.client_secret
-
-        response = http_client.post(
-            f"{token_endpoint}/introspect",
-            data=payload,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=keycloak_settings.request_timeout_seconds,
-            verify_ssl=keycloak_settings.verify_ssl,
-        )
-        status_code = int(response.get("status_code", 0))
-        body = response.get("json")
-        if not isinstance(body, dict):
-            body = {}
-        if 200 <= status_code < 300:
-            return body
-        detail = body.get("error_description") or body.get("error") or response.get("text") or "token introspection failed"
-        raise ValueError(str(detail))
-
-    def authenticate(self, username: str, password: str) -> dict[str, object]:
-        settings = self._service.settings.keycloak
-        payload: dict[str, str] = {
-            "grant_type": "password",
-            "client_id": settings.client_id,
-            "username": username,
-            "password": password,
-        }
-        if settings.client_secret:
-            payload["client_secret"] = settings.client_secret
-        if settings.token_scope:
-            payload["scope"] = settings.token_scope
-
-        response = self._service.http_client.post(
-            self._service.token_endpoint,
-            data=payload,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=settings.request_timeout_seconds,
-            verify_ssl=settings.verify_ssl,
-        )
-        status_code = int(response.get("status_code", 0))
-        body = response.get("json")
-        if not isinstance(body, dict):
-            body = {}
-        if 200 <= status_code < 300:
-            return {
-                "access_token": body.get("access_token"),
-                "refresh_token": body.get("refresh_token"),
-                "token_type": body.get("token_type", "bearer"),
-                "expires_in": body.get("expires_in"),
-                "scope": body.get("scope"),
-            }
-        detail = body.get("error_description") or body.get("error") or response.get("text") or "token request failed"
-        raise ValueError(str(detail))
-
-    def to_user(self, payload: dict[str, object]) -> UserInfo:
-        return UserInfo(
-            sub=str(payload["sub"]),
-            username=str(payload.get("preferred_username", "")),
-            email=payload.get("email") if isinstance(payload.get("email"), str) else None,
-            name=payload.get("name") if isinstance(payload.get("name"), str) else None,
-            roles=payload.get("realm_access", {}).get("roles", []) if isinstance(payload.get("realm_access"), dict) else [],
-            scopes=(
-                payload["scp"]
-                if isinstance(payload.get("scp"), list)
-                else str(payload.get("scope", "")).split() if payload.get("scope") else []
-            ),
-        )
+def set_oauth2_token_url(token_url: str) -> None:
+    oauth2_scheme.model.flows.password.tokenUrl = token_url
 
 
-def _adapt_auth_provider(provider: KeycloakAuthProvider | object) -> KeycloakAuthProvider | object:
-    if hasattr(provider, "decode_token") and hasattr(provider, "to_user"):
-        return provider
-    if hasattr(provider, "extract_user_info"):
-        return _RegistryKeycloakAuthAdapter(provider)
-    return provider
+def _to_user_info(user: AuthenticatedUser) -> UserInfo:
+    roles: list[str] = []
+    for role in user.realm_roles:
+        if role not in roles:
+            roles.append(role)
+    for client_roles in user.client_roles.values():
+        for role in client_roles:
+            if role not in roles:
+                roles.append(role)
 
+    scopes: list[str] = []
+    raw_scope = user.claims.get("scope")
+    if isinstance(raw_scope, str):
+        scopes = [scope for scope in raw_scope.split() if scope]
 
-def set_auth_provider(
-    app: FastAPI,
-    provider: KeycloakAuthProvider | None = None,
-    *,
-    config: EnvConfig | None = None,
-) -> None:
-    if provider is None:
-        if config is None:
-            raise ValueError("Either provider or config must be provided")
-        provider = _adapt_auth_provider(get_required_docmesh_service(
-            app,
-            _AUTH_PROVIDER_STATE_KEY,
-            config=config,
-        ))
-    set_state_value(app, _AUTH_PROVIDER_STATE_KEY, provider)
+    return UserInfo(
+        sub=user.sub,
+        username=user.preferred_username or user.sub,
+        email=user.email,
+        name=user.name,
+        roles=roles,
+        scopes=scopes,
+    )
 
 
 def get_auth_provider(
     request: Request,
-    config: EnvConfig | DependsParam = Depends(get_config),
-) -> KeycloakAuthProvider:
-    def factory() -> KeycloakAuthProvider:
-        resolved_config = config
-        if isinstance(resolved_config, DependsParam):
-            resolved_config = get_config(request)
-        return _adapt_auth_provider(get_required_docmesh_service(
-            request.app,
-            _AUTH_PROVIDER_STATE_KEY,
-            config=resolved_config,
-        ))
+    settings: ServiceConfigs = Depends(get_settings),
+) -> KeycloakAuthService:
+    cached_provider = getattr(request.app.state, "auth_provider", None)
+    if cached_provider is not None:
+        return cached_provider
+    service_clients = getattr(request.app.state, "service_clients", None)
+    if service_clients is not None:
+        client = service_clients.get("keycloak")
+        if client is not None:
+            provider = client.client
+            request.app.state.auth_provider = provider
+            return provider
+    if settings.keycloak is None:
+        raise RuntimeError("Keycloak configuration is not enabled")
+    provider = KeycloakAuthService(settings.keycloak, allowed_algorithms=["RS256"])
+    request.app.state.auth_provider = provider
+    return provider
 
-    return get_or_create_state_value(request.app, _AUTH_PROVIDER_STATE_KEY, factory)
 
-
-def get_current_user(
+async def get_current_user(
     token: str | None = Depends(oauth2_scheme),
-    provider: KeycloakAuthProvider = Depends(get_auth_provider),
-    settings: ServiceSettings = Depends(get_settings),
+    provider: KeycloakAuthService = Depends(get_auth_provider),
+    settings: ServiceConfigs = Depends(get_settings),
 ) -> UserInfo:
+    del settings
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
     try:
-        if settings.auth.use_introspection:
-            payload = provider.introspect_token(token)
-        elif settings.auth.verify_jwt:
-            payload = provider.decode_token(token)
-        elif settings.auth.allow_insecure_jwt_decode:
-            payload = provider.decode_token_insecure(token)
-        else:
-            raise ValueError(
-                "JWT verification is disabled but insecure decode is not allowed"
-            )
-        return provider.to_user(payload)
-    except ValueError as e:
+        user = provider.extract_user_info(token)
+    except TokenValidationError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e),
+            detail="Invalid token",
             headers={"WWW-Authenticate": "Bearer"},
-        ) from e
+        ) from exc
+
+    return _to_user_info(user)
 
 
-def require_permissions(*roles: str):
-    def _check(user: UserInfo = Depends(get_current_user)) -> UserInfo:
-        for role in roles:
-            if role not in user.roles:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Missing required role: {role}",
-                )
-        return user
+def require_permissions(*roles: str) -> Callable[..., UserInfo]:
+    async def dependency(current_user: UserInfo = Depends(get_current_user)) -> UserInfo:
+        if not set(roles).issubset(set(current_user.roles)):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden",
+            )
+        return current_user
 
-    return _check
+    return dependency

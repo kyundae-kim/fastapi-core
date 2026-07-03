@@ -1,35 +1,22 @@
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, Request
-from fastapi.params import Depends as DependsParam
+from fastapi import Depends, Request
+from docmesh_py_core import ServiceConfigs
 
-from fastapi_core.bootstrap import get_or_create_state_value, set_state_value
-from fastapi_core.core.config import EnvConfig, ServiceSettings
-
-_CONFIG_STATE_KEY = "config"
-_SETTINGS_STATE_KEY = "settings"
+from fastapi_core.config import AppConfig, load_app_config
+from fastapi_core.docmesh_settings import load_docmesh_settings
 
 
-def set_config(app: FastAPI, config: EnvConfig) -> None:
-    set_state_value(app, _CONFIG_STATE_KEY, config)
-
-
-def set_settings(app: FastAPI, settings: ServiceSettings) -> None:
-    set_state_value(app, _SETTINGS_STATE_KEY, settings)
-
-
-def get_config(request: Request) -> EnvConfig:
-    return get_or_create_state_value(request.app, _CONFIG_STATE_KEY, EnvConfig)
+def get_config(request: Request) -> AppConfig:
+    if hasattr(request.app.state, "config"):
+        return request.app.state.config
+    return load_app_config()
 
 
 def get_settings(
     request: Request,
-    config: EnvConfig | DependsParam = Depends(get_config),
-) -> ServiceSettings:
-    def factory() -> ServiceSettings:
-        resolved_config = config
-        if isinstance(resolved_config, DependsParam):
-            resolved_config = get_config(request)
-        return ServiceSettings.from_yaml(resolved_config.config_path)
-
-    return get_or_create_state_value(request.app, _SETTINGS_STATE_KEY, factory)
+    config: AppConfig = Depends(get_config),
+) -> ServiceConfigs:
+    if hasattr(request.app.state, "settings"):
+        return request.app.state.settings
+    return load_docmesh_settings(tuple(config.enabled_services))
