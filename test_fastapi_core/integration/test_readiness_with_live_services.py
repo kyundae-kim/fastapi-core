@@ -52,6 +52,20 @@ def nats_required_readiness_app(
     return integration_app_factory(config, include_auth_router=False)
 
 
+@pytest.fixture
+def postgres_required_readiness_app(
+    integration_app_config_factory,
+    integration_app_factory,
+    postgres_integration_ready,
+):
+    del postgres_integration_ready
+    config = integration_app_config_factory(
+        enabled_services=["postgres"],
+        required_services=["postgres"],
+    )
+    return integration_app_factory(config, include_auth_router=False)
+
+
 
 def test_readiness_reports_keycloak_as_required_live_service(
     keycloak_only_readiness_app,
@@ -94,6 +108,20 @@ def test_readiness_reports_nats_as_required_live_service(nats_required_readiness
     assert body["details"]["nats"]["ok"] is True
     assert body["details"]["nats"]["required"] is True
     assert body["details"]["nats"]["enabled"] is True
+
+
+def test_readiness_reports_postgres_as_required_live_service(
+    postgres_required_readiness_app,
+):
+    with TestClient(postgres_required_readiness_app) as client:
+        response = client.get("/health/readiness")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["details"]["postgres"]["ok"] is True
+    assert body["details"]["postgres"]["required"] is True
+    assert body["details"]["postgres"]["enabled"] is True
 
 
 

@@ -67,10 +67,9 @@ uv run pytest -q -m integration
 ```
 
 최근 실제 실행 결과:
-- `uv run pytest -q -m 'not integration'` → `33 passed, 10 deselected, 2 warnings`
-- `uv run pytest -q` → `1 failed, 42 passed, 2 warnings`
-- `uv run pytest -q -m integration` → `10 passed, 33 deselected, 2 warnings`
-- 현재 전체 suite의 단일 실패는 `test_user_endpoint_returns_live_user_info`이며, 이 세션에서는 live Keycloak token 검증 중 `JWT issued-at claim is invalid`로 `/user`가 `401 Invalid token`을 반환했다.
+- `uv run pytest -q -m 'not integration'` → `34 passed, 11 deselected, 2 warnings`
+- `uv run pytest -q` → `45 passed, 2 warnings`
+- `uv run pytest -q -m integration` → `11 passed, 34 deselected, 2 warnings`
 
 테스트 러너/환경 특성:
 - `pytest` 사용
@@ -100,6 +99,11 @@ NATS 관련 기본 env:
 - `NATS_SERVERS`
 - 선택: `NATS_TOKEN`, `NATS_USER`, `NATS_PASSWORD`
 
+PostgreSQL 통합 테스트 env:
+- `POSTGRES_DSN`
+- 또는 `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+- 선택: `POSTGRES_PORT` (기본값 `5432`)
+
 ---
 
 ## 4. 공통 테스트 fixture
@@ -112,6 +116,7 @@ NATS 관련 기본 env:
 
 포함되는 최소 설정 범위:
 - Keycloak
+- PostgreSQL
 - SQLite
 - MinIO
 - Milvus
@@ -122,6 +127,7 @@ NATS 관련 기본 env:
 의미:
 - 현재 구현에서 `ServiceConfigs` 생성이 성립하도록 필수 환경값 세트를 코드로 고정한 것
 - 테스트는 mock이 아니라 **실제 설정 모델 생성 경로**를 통과한다.
+- PostgreSQL은 테스트용 `POSTGRES_DSN`을 주입하고 선택 서비스에 포함해 `PostgresConfig` 생성까지 검증한다.
 
 ### 4.2 `settings` fixture
 
@@ -235,6 +241,7 @@ NATS 관련 기본 env:
 - 기본 `AppConfig` 값이 현재 구현과 일치한다.
 - `build_docmesh_env_overlay()`가 기본값을 채우되 기존 환경변수를 덮어쓰지 않는다.
 - `load_docmesh_settings(("sqlite",))`가 선택 서비스만 로딩한다.
+- `load_docmesh_settings(("postgres",))`가 fallback `POSTGRES_DSN`으로 PostgreSQL 설정을 로딩한다.
 
 ## 5.6 schema 테스트
 
@@ -261,6 +268,7 @@ NATS 관련 기본 env:
 - invalid bearer token이 `401`로 매핑된다.
 - OpenAPI `tokenUrl`이 live auth 라우터 구성과 일치한다.
 - Keycloak required readiness가 실제 healthcheck 경로로 `200 + status="ok"`를 반환한다.
+- PostgreSQL required readiness가 실제 DB 연결 check를 통해 `200 + status="ok"`를 반환한다.
 - Keycloak + NATS 조합에서 readiness가 실제 service client check 결과를 반영한다.
 - optional NATS가 비정상일 때 readiness가 `200 + status="degraded"`를 반환한다.
 - NATS required 구성일 때 readiness가 `200/503` 계약을 지킨다.
@@ -268,6 +276,7 @@ NATS 관련 기본 env:
 
 설계상 중요한 현재 동작:
 - Keycloak readiness는 `KEYCLOAK_TOKEN_USERNAME` / `KEYCLOAK_TOKEN_PASSWORD`를 사용한 healthcheck로 검증된다.
+- PostgreSQL readiness는 DSN 또는 개별 접속 환경변수의 TCP 도달 가능성을 선행 확인한 뒤 실제 service client check로 검증된다.
 - NATS async check는 readiness 경로에서 동기 wrapper로 실행된다.
 
 ---
@@ -370,7 +379,7 @@ NATS 관련 기본 env:
 - [x] `/token` 실패 경로 일부가 검증되었다.
 - [x] `/user`가 `UserInfo` 구조를 반환한다.
 - [x] readiness `ok/degraded/error`가 검증되었다.
-- [x] 실제 Keycloak/NATS integration test가 분리되어 추가되었다.
+- [x] 실제 Keycloak/PostgreSQL/NATS integration test가 분리되어 추가되었다.
 - [x] invalid token 401 테스트가 있다.
 - [x] `get_current_user()`의 401 경로가 검증되었다.
 - [x] `require_permissions(...)`의 403 경로가 검증되었다.
@@ -411,5 +420,5 @@ NATS 관련 기본 env:
 ## 12. 문서 상태 메모
 
 이 문서는 기존의 넓은 테스트 계획 초안을, **현재 저장소에 실제 존재하는 테스트와 이미 검증된 계약** 중심으로 재정렬한 것이다.
-특히 Keycloak/NATS live integration 테스트 추가, Keycloak readiness credential 기반 검증, RS256 bearer token 검증, async NATS readiness wrapper, 그리고 본 세션에서 재검증한 pytest 결과를 반영해 최신 코드와 맞췄다.
+특히 Keycloak/PostgreSQL/NATS live integration 테스트 추가, Keycloak readiness credential 기반 검증, PostgreSQL 실제 연결 readiness 검증, RS256 bearer token 검증, async NATS readiness wrapper, 그리고 본 세션에서 재검증한 pytest 결과를 반영해 최신 코드와 맞췄다.
 이제 dependency 테스트는 공통 lookup용 `get_service_client(service_name)`뿐 아니라 타입이 구체화된 전용 dependency(`get_keycloak_auth_service`, `get_postgres_engine`, `get_sqlite_engine`, `get_minio_client`, `get_milvus_client`, `get_ollama_client`, `get_langfuse_client`, `get_nats_connection_builder`) 공개 계약도 포함한다.

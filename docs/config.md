@@ -36,7 +36,7 @@
 2. **서비스/외부 의존성 설정 (`docmesh_py_core.ServiceConfigs`)**
    - 로더: `fastapi_core.docmesh_settings.load_docmesh_settings(...)`
    - 실제 생성은 `docmesh_py_core.load_service_configs(...)`
-   - Keycloak / SQLite / MinIO / Milvus / Ollama / Langfuse / NATS 등 외부 시스템 설정을 포함한다.
+   - Keycloak / PostgreSQL / SQLite / MinIO / Milvus / Ollama / Langfuse / NATS 등 외부 시스템 설정을 포함한다.
    - 현재 `fastapi_core`는 이 객체를 service client 구성과 auth provider/서비스 체크 기반값으로 사용한다.
 
 즉, 현재 코드에서 FastAPI 앱은:
@@ -162,6 +162,7 @@ READINESS_REQUIRED_SERVICES=keycloak
 - `KEYCLOAK_REALM=docmesh`
 - `KEYCLOAK_CLIENT_ID=fastapi-core`
 - `KEYCLOAK_CLIENT_SECRET=dev-secret`
+- `POSTGRES_DSN=postgresql+psycopg://docmesh:dev-secret@postgres.local:5432/docmesh`
 - `SQLITE_PATH=:memory:`
 - `MINIO_ENDPOINT=minio.local:9000`
 - `MINIO_ACCESS_KEY=minio`
@@ -301,6 +302,7 @@ app.state.required_services = {"keycloak"}
 `load_docmesh_settings()`는 다음 외부 시스템 설정을 다룰 수 있다.
 
 - Keycloak
+- PostgreSQL
 - SQLite
 - MinIO
 - Milvus
@@ -313,6 +315,7 @@ app.state.required_services = {"keycloak"}
 | 시스템 | 현재 fastapi_core 직접 사용 여부 | 비고 |
 | --- | --- | --- |
 | Keycloak | 직접/간접 | auth provider, 기본 readiness 대상 |
+| PostgreSQL | 간접 | 선택 서비스 로딩 및 service_clients/readiness 대상 |
 | SQLite | 간접 | 선택 서비스 로딩 및 service_clients/readiness 대상 |
 | MinIO | 간접 | settings/service_clients 기반 확장 지점 |
 | Milvus | 간접 | settings/service_clients 기반 확장 지점 |
@@ -332,6 +335,7 @@ app.state.required_services = {"keycloak"}
 - `KEYCLOAK_REALM`
 - `KEYCLOAK_CLIENT_ID`
 - `KEYCLOAK_CLIENT_SECRET`
+- `POSTGRES_DSN`
 - `SQLITE_PATH`
 - `MINIO_ENDPOINT`
 - `MINIO_ACCESS_KEY`
@@ -393,10 +397,13 @@ KEYCLOAK_URL=http://keycloak.local
 KEYCLOAK_REALM=docmesh
 KEYCLOAK_CLIENT_ID=fastapi-core
 KEYCLOAK_CLIENT_SECRET=[REDACTED]
+POSTGRES_DSN=postgresql+psycopg://docmesh:[REDACTED]@postgres.local:5432/docmesh
 SQLITE_PATH=:memory:
 NATS_SERVERS=nats://nats.local:4222
 NATS_TOKEN=[REDACTED]
 ```
+
+`POSTGRES_DSN` 대신 `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`를 설정할 수 있다. 선택 항목은 `POSTGRES_SSLMODE`, `POSTGRES_CONNECT_TIMEOUT_SECONDS`, `POSTGRES_POOL_SIZE`, `POSTGRES_MAX_OVERFLOW`이다.
 
 ---
 

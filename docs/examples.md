@@ -223,14 +223,32 @@ DOCMESH_LOG_LEVEL=INFO
 APP_LOG_PATH=/tmp/app.log
 APP_LOG_JSON=true
 APP_LOG_FORCE=true
-DOCMESH_SERVICES=keycloak,nats
+DOCMESH_SERVICES=keycloak,postgres,nats
 READINESS_REQUIRED_SERVICES=keycloak
+
+# PostgreSQL: DSN 방식
+POSTGRES_DSN=postgresql+psycopg://docmesh:change-me@postgres.example.com:5432/docmesh
 ```
 
 현재 구현 기준 해석:
 - `DOCMESH_SERVICES` → readiness 기본 활성 서비스 목록
 - `READINESS_REQUIRED_SERVICES` → readiness 실패 시 `503`을 유발하는 필수 서비스 목록
 - `APP_LOG_*`, `DOCMESH_LOG_LEVEL` → 앱 로깅 초기화에 사용
+- PostgreSQL은 `POSTGRES_DSN` 하나를 사용하거나, 아래 개별 환경변수를 대신 사용할 수 있음
+
+```env
+POSTGRES_HOST=postgres.example.com
+POSTGRES_PORT=5432
+POSTGRES_DB=docmesh
+POSTGRES_USER=docmesh
+POSTGRES_PASSWORD=change-me
+POSTGRES_SSLMODE=require
+POSTGRES_CONNECT_TIMEOUT_SECONDS=10
+POSTGRES_POOL_SIZE=5
+POSTGRES_MAX_OVERFLOW=10
+```
+
+`POSTGRES_DSN`과 개별 접속 항목을 함께 설정할 필요는 없다. 실제 비밀번호와 DSN은 secret으로 주입하고 문서나 저장소에 커밋하지 않는다.
 
 ---
 
