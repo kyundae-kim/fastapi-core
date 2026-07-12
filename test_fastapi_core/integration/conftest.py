@@ -25,6 +25,12 @@ KEYCLOAK_REQUIRED_ENV = (
 )
 
 NATS_REQUIRED_ENV = ("NATS_SERVERS",)
+POSTGRES_CONNECTION_ENV = (
+    "POSTGRES_HOST",
+    "POSTGRES_DB",
+    "POSTGRES_USER",
+    "POSTGRES_PASSWORD",
+)
 
 
 @contextmanager
@@ -61,6 +67,15 @@ def _parse_nats_server(server: str) -> tuple[str | None, int | None]:
     return host, port
 
 
+def _postgres_target() -> tuple[str | None, int | None]:
+    dsn = os.getenv("POSTGRES_DSN")
+    if dsn:
+        parsed = urlparse(dsn)
+        return parsed.hostname, parsed.port or 5432
+    _require_env(POSTGRES_CONNECTION_ENV, label="postgres")
+    return os.getenv("POSTGRES_HOST"), int(os.getenv("POSTGRES_PORT", "5432"))
+
+
 def require_keycloak_integration() -> None:
     _require_env(KEYCLOAK_REQUIRED_ENV, label="keycloak")
     parsed = urlparse(os.environ["KEYCLOAK_URL"])
@@ -71,13 +86,18 @@ def require_keycloak_integration() -> None:
         )
 
 
-
 def require_nats_integration() -> None:
     _require_env(NATS_REQUIRED_ENV, label="nats")
     first_server = os.environ["NATS_SERVERS"].split(",", 1)[0].strip()
     host, port = _parse_nats_server(first_server)
     if not _is_tcp_reachable(host, port):
         pytest.skip(f"nats integration target is not reachable at {host}:{port}")
+
+
+def require_postgres_integration() -> None:
+    host, port = _postgres_target()
+    if not _is_tcp_reachable(host, port):
+        pytest.skip(f"postgres integration target is not reachable at {host}:{port}")
 
 
 @pytest.fixture
@@ -88,6 +108,11 @@ def keycloak_integration_ready() -> None:
 @pytest.fixture
 def nats_integration_ready() -> None:
     require_nats_integration()
+
+
+@pytest.fixture
+def postgres_integration_ready() -> None:
+    require_postgres_integration()
 
 
 @pytest.fixture

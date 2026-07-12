@@ -1,10 +1,10 @@
 ---
 title: docmesh-py-core vs fastapi-core usage comparison
 created: 2026-06-29
-updated: 2026-07-02
+updated: 2026-07-12
 type: query
 tags: [query, comparison, implementation, api]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-2026.md, pyproject.toml, .venv/lib/python3.11/site-packages/docmesh_py_core/__init__.py, .venv/lib/python3.11/site-packages/docmesh_py_core/config.py, .venv/lib/python3.11/site-packages/docmesh_py_core/factories.py, .venv/lib/python3.11/site-packages/docmesh_py_core/keycloak.py, fastapi_core/config.py, fastapi_core/docmesh_settings.py, fastapi_core/dependencies/auth.py, fastapi_core/routers/auth.py, fastapi_core/routers/health.py, fastapi_core/factory.py, test_fastapi_core/conftest.py, test_fastapi_core/test_factory.py, test_fastapi_core/test_health_router.py, test_fastapi_core/test_auth_router.py, test_fastapi_core/test_dependencies.py, test_fastapi_core/test_config.py]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-2026.md, pyproject.toml, .venv/lib/python3.11/site-packages/docmesh_py_core/__init__.py, .venv/lib/python3.11/site-packages/docmesh_py_core/config.py, .venv/lib/python3.11/site-packages/docmesh_py_core/factories.py, .venv/lib/python3.11/site-packages/docmesh_py_core/keycloak.py, fastapi_core/config.py, fastapi_core/docmesh_settings.py, fastapi_core/dependencies/auth.py, fastapi_core/dependencies/services.py, fastapi_core/routers/auth.py, fastapi_core/routers/health.py, fastapi_core/factory.py, test_fastapi_core/conftest.py, test_fastapi_core/test_factory.py, test_fastapi_core/test_health_router.py, test_fastapi_core/test_auth_router.py, test_fastapi_core/test_dependencies.py, test_fastapi_core/test_config.py, test_fastapi_core/integration/]
 confidence: high
 ---
 
@@ -28,8 +28,8 @@ confidence: high
   - `close_service_clients(clients: Iterable[Any]) -> None`
   - `KeycloakAuthService(config: KeycloakConfig, ...)`
 - Verification commands:
-  - `uv run pytest -q test_fastapi_core/test_factory.py test_fastapi_core/test_dependencies.py test_fastapi_core/test_config.py` → `13 passed, 1 warning in 0.08s`
-  - `uv run pytest -q` → `25 passed, 1 warning in 0.14s`
+  - `uv run pytest --collect-only -q` → `45 tests collected`
+  - `uv run pytest -q` → `45 passed, 2 warnings in 20.55s`
 
 ## Implemented / aligned
 
@@ -51,9 +51,9 @@ confidence: high
 
 ## Remaining nuances
 
-- readiness 계층은 여전히 `check_all_services()`의 동기 `CheckFn` 계약 위에 서 있다. 대부분의 현재 서비스 wrapper는 `.check()`를 동기 호출로 제공하지만, `NatsConnectionBuilder.check()`는 async 메서드라서 장차 실제 NATS readiness를 활성화할 때는 별도 어댑터가 필요할 수 있다.
+- readiness 계층은 `check_all_services()`의 동기 `CheckFn` 계약 위에 서 있다. `factory._wrap_readiness_check()`는 awaitable 결과를 동기 callable로 정규화하므로 `NatsConnectionBuilder.check()` 같은 async check도 현재 readiness 경로에서 처리한다. 이 동작은 factory 및 live NATS integration 테스트로 검증된다.
 - 현재 변경은 `v0.1.4` public surface 적응을 목표로 한 것이므로, 이후 upstream에서 direct factory 표면이 더 바뀌면 `factory.py`의 서비스 매핑 테이블을 다시 점검해야 한다.
 
 ## Verdict
 
-이번 마이그레이션 이후 fastapi-core는 더 이상 제거된 `Settings` / `load_settings` / `ServiceFactoryRegistry` 표면에 기대지 않는다. 현재 코드는 설치된 `docmesh-py-core v0.1.4`의 direct `ServiceConfigs` + `create_*_client()` + `close_service_clients()` 방향과 정합적이며, 검증 기준으로 `uv run pytest -q` 전체 스위트 `25 passed`를 회복했다.
+이번 마이그레이션 이후 fastapi-core는 더 이상 제거된 `Settings` / `load_settings` / `ServiceFactoryRegistry` 표면에 기대지 않는다. 현재 코드는 설치된 `docmesh-py-core v0.1.4`의 direct `ServiceConfigs` + `create_*_client()` + `close_service_clients()` 방향과 정합적이며, 2026-07-12 검증에서 `uv run pytest -q` 전체 스위트 `45 passed, 2 warnings`를 확인했다.

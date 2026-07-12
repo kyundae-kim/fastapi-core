@@ -18,6 +18,9 @@ def build_test_settings(monkeypatch: pytest.MonkeyPatch):
         "KEYCLOAK_REALM": "docmesh",
         "KEYCLOAK_CLIENT_ID": "fastapi-core",
         "KEYCLOAK_CLIENT_SECRET": "secret",
+        "POSTGRES_DSN": (
+            "postgresql+psycopg://docmesh:secret@postgres.test:5432/docmesh"
+        ),
         "SQLITE_PATH": ":memory:",
         "MINIO_ENDPOINT": "minio.test:9000",
         "MINIO_ACCESS_KEY": "minio",
@@ -33,7 +36,7 @@ def build_test_settings(monkeypatch: pytest.MonkeyPatch):
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     load_docmesh_settings.cache_clear()
-    return load_docmesh_settings(("keycloak", "sqlite"))
+    return load_docmesh_settings(("keycloak", "postgres", "sqlite"))
 
 
 @pytest.fixture

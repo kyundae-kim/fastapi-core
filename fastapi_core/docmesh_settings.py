@@ -14,6 +14,9 @@ def _docmesh_default_env() -> dict[str, str]:
         "KEYCLOAK_REALM": "docmesh",
         "KEYCLOAK_CLIENT_ID": "fastapi-core",
         "KEYCLOAK_CLIENT_SECRET": "dev-secret",
+        "POSTGRES_DSN": (
+            "postgresql+psycopg://docmesh:dev-secret@postgres.local:5432/docmesh"
+        ),
         "SQLITE_PATH": ":memory:",
         "MINIO_ENDPOINT": "minio.local:9000",
         "MINIO_ACCESS_KEY": "minio",

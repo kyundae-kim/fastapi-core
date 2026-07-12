@@ -75,6 +75,7 @@ def test_build_docmesh_env_overlay_applies_defaults_without_overwriting(monkeypa
     monkeypatch.setenv("KEYCLOAK_URL", "http://override.test")
     monkeypatch.setenv("NATS_TOKEN", "custom-token")
     monkeypatch.delenv("KEYCLOAK_REALM", raising=False)
+    monkeypatch.delenv("POSTGRES_DSN", raising=False)
     monkeypatch.delenv("SQLITE_PATH", raising=False)
     monkeypatch.delenv("LANGFUSE_HOST", raising=False)
 
@@ -83,6 +84,9 @@ def test_build_docmesh_env_overlay_applies_defaults_without_overwriting(monkeypa
     assert env["KEYCLOAK_URL"] == "http://override.test"
     assert env["NATS_TOKEN"] == "custom-token"
     assert env["KEYCLOAK_REALM"] == "docmesh"
+    assert env["POSTGRES_DSN"] == (
+        "postgresql+psycopg://docmesh:dev-secret@postgres.local:5432/docmesh"
+    )
     assert env["SQLITE_PATH"] == ":memory:"
     assert env["LANGFUSE_HOST"] == "http://langfuse.local:3000"
 
@@ -93,3 +97,16 @@ def test_load_docmesh_settings_uses_selected_services():
 
     assert settings.sqlite is not None
     assert settings.keycloak is None
+
+
+def test_load_docmesh_settings_loads_postgres_from_default_env(monkeypatch):
+    monkeypatch.delenv("POSTGRES_DSN", raising=False)
+    load_docmesh_settings.cache_clear()
+
+    settings = load_docmesh_settings(("postgres",))
+
+    assert settings.postgres is not None
+    assert settings.postgres.dsn == (
+        "postgresql+psycopg://docmesh:dev-secret@postgres.local:5432/docmesh"
+    )
+    load_docmesh_settings.cache_clear()

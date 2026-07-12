@@ -12,7 +12,11 @@ from fastapi_core.factory import _build_readiness_checks, create_app
 
 
 def test_create_app_includes_default_routes(settings):
-    app = create_app(settings=settings)
+    config = AppConfig(
+        enabled_services=["keycloak"],
+        required_services=["keycloak"],
+    )
+    app = create_app(config=config, settings=settings)
 
     with TestClient(app) as client:
         response = client.get("/health/liveness")

@@ -1,10 +1,10 @@
 ---
 title: Keycloak authentication API
 created: 2026-06-25
-updated: 2026-07-02
+updated: 2026-07-12
 type: concept
 tags: [service, api, security, integration, implementation]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-2026.md]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-2026.md, fastapi_core/factory.py, fastapi_core/dependencies/auth.py, fastapi_core/routers/auth.py]
 confidence: medium
 ---
 
@@ -65,6 +65,6 @@ confidence: medium
 
 ## Fastapi-core relevance
 
-fastapi-core가 이 API를 채택하면 인증 검증 규칙, 역할 추출, 토큰 발급 오류 분류를 애플리케이션 전역에서 일관되게 공유할 수 있다.
+fastapi-core는 현재 이 API를 채택해 Keycloak client/provider를 구성한다. `/token`은 `fetch_access_token()`으로 토큰을 발급하고 예외 유형을 HTTP 오류로 매핑하며, `/user`와 `get_current_user()`는 bearer token을 검증해 역할과 scope를 `UserInfo`로 변환한다.
 
 예제 문서는 `client_credentials`와 `password` grant를 분리해 보여주고, RS256 토큰 검증 시 `allowed_algorithms=["RS256"]`를 명시하는 패턴을 제시한다. 즉 fastapi-core 통합에서는 사용자 credential을 설정 객체에 영구 보관하기보다 토큰 요청 시점 인자로 전달하고, JWT 검증은 Keycloak 배포 알고리즘에 맞춰 명시적으로 구성하는 것이 권장된다.

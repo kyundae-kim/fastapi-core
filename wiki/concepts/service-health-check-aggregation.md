@@ -1,10 +1,10 @@
 ---
 title: Service health check aggregation
 created: 2026-06-25
-updated: 2026-07-02
+updated: 2026-07-12
 type: concept
 tags: [service, api, observability, test, implementation]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-examples-guide-2026.md]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-examples-guide-2026.md, fastapi_core/factory.py, fastapi_core/routers/health.py]
 confidence: medium
 ---
 
@@ -47,4 +47,4 @@ FastAPI health endpoint 예시는 반환값을 `{ok, services[]}` 형태로 변�
 
 ## Operational implication
 
-fastapi-core는 이 API를 사용해 readiness/diagnostics 엔드포인트를 단일 서비스 체크의 나열이 아니라 표준 포맷의 집계 결과로 노출할 가능성이 높다.
+fastapi-core는 현재 이 API를 `/health/readiness`에서 사용한다. 앱 팩토리는 service client 기반 check와 필수 서비스 메타데이터를 구성하고, health router는 집계 결과를 `ok`/`degraded`/`error` 상태와 HTTP `200`/`503` 응답으로 변환한다.
