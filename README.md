@@ -9,7 +9,7 @@ DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사
 - health router: `GET /health/liveness`, `GET /health/readiness`
 - dependency: `get_config`, `get_settings`, `get_auth_provider`, `get_current_user`, `require_permissions`
 - schema: `TokenResponse`, `UserInfo`, `HealthResponse`, `HealthServiceDetail`
-- app state integration: `config`, `root_logger`, `settings`, `registry`, `readiness_parallel`, `readiness_checks`, `readiness_services`, `required_services`
+- app state integration: `config`, `root_logger`, `settings`, `service_clients`, `auth_provider`(Keycloak 활성 시), `readiness_parallel`, `readiness_checks`, `readiness_services`, `required_services`
 
 외부 연동은 `docmesh_py_core`를 통해 이어집니다.
 - 인증/인가: Keycloak
@@ -28,6 +28,51 @@ entrypoint = "fastapi_core.factory:create_app"
 ```
 
 패키지 루트 공개 re-export는 현재 `create_app`만 보장합니다.
+
+## 설치
+
+### 요구사항
+
+- Python `>=3.11`
+- [uv](https://docs.astral.sh/uv/)
+
+### 저장소에서 개발 환경 구성
+
+저장소 루트에서 아래 명령을 실행합니다. `uv`가 런타임 의존성과 `dev` dependency group을 함께 설치하고, 로컬 패키지를 editable 방식으로 사용할 수 있게 구성합니다.
+
+```bash
+uv sync --all-groups
+```
+
+설치 확인:
+
+```bash
+uv run python -c "from fastapi_core import create_app; print(create_app)"
+```
+
+### 다른 uv 프로젝트에서 로컬 의존성으로 사용
+
+소비하는 서비스 프로젝트에서 로컬 checkout 경로를 editable dependency로 추가할 수 있습니다.
+
+```bash
+uv add --editable ../fastapi-core
+```
+
+### GitHub에서 uv로 설치
+
+GitHub 저장소를 직접 dependency로 추가하려면 소비하는 프로젝트에서 다음 명령을 실행합니다.
+
+```bash
+uv add "fastapi-core @ git+https://github.com/kyundae-kim/fastapi-core.git"
+```
+
+재현 가능한 배포에서는 기본 브랜치 대신 tag 또는 commit을 고정합니다.
+
+```bash
+uv add "git+https://github.com/kyundae-kim/fastapi-core.git@v0.1.5"
+```
+
+앱 설정은 `.env` 파일을 자동으로 읽지 않고 프로세스 환경변수에서 읽습니다. `.env.example`은 설정 키의 예시이며, 컨테이너 환경·배포 플랫폼·실행 도구를 통해 필요한 값을 환경변수로 주입해야 합니다. 상세 계약은 `docs/config.md`를 참고하세요.
 
 ## Quick start
 
@@ -69,9 +114,9 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 - `config is None`이면 `load_app_config()`를 사용합니다.
 - `settings is None`이면 `load_docmesh_settings(tuple(config.enabled_services))`를 사용합니다.
 - 앱 로깅을 먼저 초기화합니다.
-- `ServiceFactoryRegistry(settings)`를 생성합니다.
-- `FastAPI(root_path=..., lifespan=...)`를 생성하고 내부 lifespan wrapper를 통해 종료 시 `registry.close_all()`을 수행합니다.
-- `app.state.config`, `app.state.root_logger`, `app.state.settings`, `app.state.registry`를 저장합니다.
+- 활성 서비스 설정으로 service client map을 생성합니다.
+- `FastAPI(root_path=..., lifespan=...)`를 생성하고 내부 lifespan wrapper를 통해 종료 시 `close_service_clients(service_clients.values())`를 수행합니다.
+- `app.state.config`, `app.state.root_logger`, `app.state.settings`, `app.state.service_clients`를 저장합니다. Keycloak client가 구성되면 `app.state.auth_provider`도 저장합니다.
 - `app.state.readiness_parallel`, `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services`를 초기화합니다.
 - `set_oauth2_token_url(config.token_url)`로 OpenAPI password flow token URL을 반영합니다.
 - CORS middleware를 등록합니다.
@@ -87,7 +132,7 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 ### 헬스체크
 - `/health/liveness`는 `{"status": "ok", "details": null}`를 반환합니다.
 - `/health/readiness`는 `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services`, `app.state.readiness_parallel`을 사용합니다.
-- 기본 `create_app()` 경로에서는 `enabled_services`를 기준으로 registry-backed readiness check를 자동 구성합니다.
+- 기본 `create_app()` 경로에서는 `enabled_services`를 기준으로 service client 기반 readiness check를 자동 구성합니다.
 - 필수 서비스 실패 시 `503`, 선택 서비스만 실패 시 `200 + degraded`, 모두 성공 시 `200 + ok`를 반환합니다.
 - readiness 로그는 구조화된 이벤트로 남기며, 오류 문자열은 상위 `docmesh_py_core` 마스킹 정책 영향을 받습니다.
 
@@ -125,7 +170,7 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 - auth 전용 exception handler를 별도 등록하는 구조는 없습니다. 대신 route/dependency에서 HTTP 예외 정책을 직접 적용합니다.
 - `get_current_user()`의 secure/insecure decode 분기나 introspection 모드는 `fastapi-core`가 직접 노출하지 않습니다.
 - `get_nats_connection` 같은 메시징 전용 FastAPI dependency는 아직 없습니다.
-- 실제 Keycloak/NATS 서버와의 통합 테스트는 저장소 기본 회귀에 포함되어 있지 않습니다.
+- 외부 서비스 통합 테스트는 `pytest.mark.integration`으로 표시되지만 기본 `uv run pytest -q` 실행에서도 수집됩니다. 필요한 환경변수 또는 대상 서비스가 없으면 해당 테스트는 skip됩니다.
 
 ## 문서
 
@@ -147,4 +192,4 @@ uv run pytest -q
 ```
 
 최근 실행 결과:
-- `25 passed`
+- `45 passed, 2 warnings`

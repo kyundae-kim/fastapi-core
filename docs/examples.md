@@ -71,6 +71,7 @@ app = create_app(include_auth_router=False)
 
 ```python
 from fastapi import APIRouter, Depends
+from fastapi_core import create_app
 from fastapi_core.dependencies.auth import get_current_user
 from fastapi_core.schemas.user import UserInfo
 
@@ -79,6 +80,10 @@ router = APIRouter()
 @router.get("/me", response_model=UserInfo)
 async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
     return user
+
+
+app = create_app()
+app.include_router(router)
 ```
 
 현재 구현 기준 동작:
@@ -97,6 +102,7 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 
 ```python
 from fastapi import APIRouter, Depends
+from fastapi_core import create_app
 from fastapi_core.dependencies.auth import require_permissions
 from fastapi_core.schemas.user import UserInfo
 
@@ -107,6 +113,10 @@ async def admin_only(
     user: UserInfo = Depends(require_permissions("admin")),
 ) -> dict[str, bool]:
     return {"ok": True}
+
+
+app = create_app()
+app.include_router(router)
 ```
 
 현재 구현 기준 동작:
@@ -122,6 +132,8 @@ async def admin_only(
 현재 구현은 `username`, `password`, `scope`를 provider의 `fetch_access_token(...)`에 직접 전달한다.
 
 ### 6.1 curl 예시
+
+이 요청이 실제로 성공하려면 Keycloak 서버가 도달 가능해야 하며, `KEYCLOAK_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET`와 유효한 사용자 credential이 준비되어야 한다. 로컬 app 실행과 환경변수 설정은 [설정 문서](config.md)를 따른다.
 
 ```bash
 curl -X POST http://localhost:8000/token \

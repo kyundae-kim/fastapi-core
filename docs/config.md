@@ -69,7 +69,7 @@ class AppConfig(BaseSettings):
 | 필드 | 적용 위치 | 현재 동작 |
 | --- | --- | --- |
 | `root_path` | `FastAPI(root_path=...)` | reverse proxy 하위 경로 배포 시 사용 |
-| `token_url` | `set_oauth2_token_url(...)` | OpenAPI OAuth2 password flow token URL 반영 |
+| `token_url` | `set_oauth2_token_url(...)` | 모듈 전역 OAuth2 password flow의 token URL 반영 |
 | `cors_origins` | `CORSMiddleware` | 허용 origin 목록 |
 | `cors_credentials` | `CORSMiddleware` | credential 허용 여부 |
 | `readiness_parallel` | `app.state.readiness_parallel` | readiness check 병렬 실행 여부 |
@@ -97,10 +97,14 @@ class AppConfig(BaseSettings):
 - `DOCMESH_SERVICES` (`enabled_services` alias)
 - `READINESS_REQUIRED_SERVICES` (`required_services` alias)
 
+`AliasChoices`로 인해 아래 lowercase field 이름도 직접 입력 alias로 허용된다.
+- `log_level`, `log_path`, `log_json`, `log_force`
+- `enabled_services`, `required_services`
+
 ### 3.3 파싱 규칙
 
 - `CORS_ORIGINS`, `DOCMESH_SERVICES`, `READINESS_REQUIRED_SERVICES`는 쉼표 구분 문자열을 list로 읽는다.
-- 비어 있는 문자열은 기본값 처리로 넘긴다.
+- 위 CSV 환경변수에 빈 문자열을 지정하면 validator가 `None`으로 변환한다. 세 필드는 non-optional `list[str]`이므로 기본값으로 복원되지 않고 validation error가 발생한다. 기본값을 사용하려면 변수를 설정하지 않는다.
 - bool 계열은 Pydantic settings 파싱을 따른다.
 - `load_app_config()`는 `lru_cache(maxsize=1)`로 캐시된다.
 
@@ -127,8 +131,8 @@ READINESS_REQUIRED_SERVICES=keycloak
 현재 구현의 `create_app(config=None, settings=None, lifespan=None, include_auth_router=True)`는 다음 순서로 설정을 사용한다.
 
 1. `config`가 없으면 `load_app_config()` 사용
-2. `settings`가 없으면 `load_docmesh_settings(tuple(config.enabled_services))` 사용
-3. `_configure_application_logging(config)`로 로깅 초기화
+2. `_configure_application_logging(config)`로 로깅 초기화
+3. `settings`가 없으면 `load_docmesh_settings(tuple(config.enabled_services))` 사용
 4. `_build_service_clients(settings, config.enabled_services)`로 서비스 클라이언트 맵 생성
 5. `FastAPI(root_path=config.root_path, lifespan=_build_lifespan(...))` 생성
 6. `app.state.config = config`
@@ -145,7 +149,7 @@ READINESS_REQUIRED_SERVICES=keycloak
 17. health router 포함
 18. 필요 시 auth router 포함
 
-즉, 설정은 현재 코드에서 **앱 조립**, **로깅 초기화**, **service_clients/readiness 기본 구성**, **auth 문서 표면(OpenAPI) 조정**에 직접 사용된다.
+즉, 설정은 현재 코드에서 **앱 조립**, **로깅 초기화**, **service_clients/readiness 기본 구성**, **auth 문서 표면(OpenAPI) 조정**에 직접 사용된다. `token_url`은 앱 인스턴스별 값이 아니라 module-global `oauth2_scheme`을 변경하므로, 한 프로세스에서 서로 다른 `token_url`로 여러 앱을 만들면 마지막 `create_app()` 호출 값이 OpenAPI password flow에 반영된다.
 
 ---
 
@@ -314,14 +318,14 @@ app.state.required_services = {"keycloak"}
 
 | 시스템 | 현재 fastapi_core 직접 사용 여부 | 비고 |
 | --- | --- | --- |
-| Keycloak | 직접/간접 | auth provider, 기본 readiness 대상 |
-| PostgreSQL | 간접 | 선택 서비스 로딩 및 service_clients/readiness 대상 |
-| SQLite | 간접 | 선택 서비스 로딩 및 service_clients/readiness 대상 |
-| MinIO | 간접 | settings/service_clients 기반 확장 지점 |
-| Milvus | 간접 | settings/service_clients 기반 확장 지점 |
-| Ollama | 간접 | settings/service_clients 기반 확장 지점 |
-| Langfuse | 간접 | settings/service_clients 기반 확장 지점 |
-| NATS | 간접 | settings/service_clients 기반 readiness 또는 custom lifespan 확장 지점 |
+| Keycloak | 직접/간접 | auth provider, service client가 생성되면 readiness 대상 |
+| PostgreSQL | 간접 | 선택 서비스 로딩 및 service client/readiness 대상 |
+| SQLite | 간접 | 선택 서비스 로딩 및 service client/readiness 대상 |
+| MinIO | 간접 | 선택 서비스 로딩 및 service client/readiness 대상 |
+| Milvus | 간접 | 선택 서비스 로딩 및 service client/readiness 대상 |
+| Ollama | 간접 | 선택 서비스 로딩 및 service client/readiness 대상 |
+| Langfuse | 간접 | 선택 서비스 로딩 및 service client/readiness 대상 |
+| NATS | 간접 | 선택 서비스 로딩 및 service client/readiness 또는 custom lifespan 확장 지점 |
 
 즉, 현재 구현에서 이 값들은 `ServiceConfigs`와 `app.state.service_clients`를 통한 통합 기반이며, 그 위에 공통 접근용 `get_service_client(service_name)`와 구체 타입 반환용 전용 dependency(`get_keycloak_auth_service`, `get_postgres_engine`, `get_sqlite_engine`, `get_minio_client`, `get_milvus_client`, `get_ollama_client`, `get_langfuse_client`, `get_nats_connection_builder`)가 얹힌 형태다.
 
@@ -329,7 +333,7 @@ app.state.required_services = {"keycloak"}
 
 ## 10. 테스트 환경에서 확인된 최소 설정
 
-`test_fastapi_core/conftest.py`의 `build_test_settings()` 기준, 테스트용 `ServiceConfigs`를 만들기 위해 다음 값들이 제공된다.
+`test_fastapi_core/conftest.py`의 `build_test_settings()`는 fixture 편의를 위해 다음 값을 제공한다.
 
 - `KEYCLOAK_URL`
 - `KEYCLOAK_REALM`
@@ -349,7 +353,7 @@ app.state.required_services = {"keycloak"}
 - `NATS_TOKEN`
 
 문서상 의미:
-- 현재 `docmesh_py_core.load_service_configs(...)`를 통과하려면 위 수준의 필수 세트가 필요했다.
+- 실제 필요한 환경변수는 `load_docmesh_settings(...)`에 전달한 서비스 선택에 따라 달라진다. 예를 들어 `load_docmesh_settings(("sqlite",))`는 SQLite 설정만 로드한다.
 - 테스트는 단순 mock dict가 아니라 실제 `ServiceConfigs` 생성 경로를 통과한다.
 
 ---

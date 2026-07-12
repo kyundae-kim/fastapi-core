@@ -111,7 +111,8 @@ app = create_app(config=config)
 
 기본 `create_app()` 경로에서는:
 - `enabled_services`를 기준으로 service client 기반 check를 자동 생성한다.
-- 따라서 NATS를 `enabled_services`에 포함하면 readiness 대상에 들어갈 수 있다.
+- NATS 설정이 존재하고 `create_nats_client()`가 client를 생성하면 NATS check가 readiness 대상에 들어간다.
+- `enabled_services` metadata와 실제 readiness check 등록은 별개다. 지원되지 않거나 settings에서 `None`인 서비스는 metadata에는 남아도 client/check가 생성되지 않는다.
 
 상태 판정 규칙:
 - 모든 서비스 성공 → `200`, `status="ok"`
@@ -128,7 +129,7 @@ app = create_app(config=config)
 
 - `create_app()`는 내부적으로 `service_clients`를 구성한다.
 - 내부 lifespan wrapper는 사용자가 준 custom lifespan을 감싼다.
-- 종료 시 항상 `close_service_clients(service_clients.values())`를 호출한다.
+- custom lifespan이 정상적으로 종료되는 경로에서는 `close_service_clients(service_clients.values())`를 호출한다. custom lifespan의 startup 또는 shutdown에서 예외가 나면 이 호출은 보장되지 않는다.
 
 즉, `service_clients`가 관리하는 서비스 자원 정리는 shutdown 경로에 연결돼 있다.
 
@@ -206,6 +207,10 @@ async def nats_status(conn=Depends(get_nats_connection)):
 
 이 예시는 현재 `fastapi-core`가 NATS builder 접근용 `get_nats_connection_builder()`는 제공하지만, 연결 상태 객체를 `app.state.nats`로 저장/관리하는 dependency는 기본 제공하지 않는다는 점을 전제로,
 서비스 레이어에서 어떤 방식으로 `app.state` 확장을 붙여야 하는지 보여준다.
+
+`get_nats_connection_builder()`의 현재 실패 계약:
+- NATS가 활성화되지 않았거나 `app.state.service_clients`에 없으면 `503 Service Unavailable`과 `Service client 'nats' is not enabled`를 반환한다.
+- 등록된 객체가 `NatsConnectionBuilder`가 아니면 `500 Internal Server Error`를 반환한다.
 
 ---
 
