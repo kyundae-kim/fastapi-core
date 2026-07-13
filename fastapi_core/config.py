@@ -23,6 +23,36 @@ class AppConfig(BaseSettings):
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
     cors_credentials: bool = False
     readiness_parallel: bool = False
+    readiness_timeout_seconds: float | None = Field(
+        default=None,
+        gt=0,
+        validation_alias=AliasChoices(
+            "readiness_timeout_seconds",
+            "READINESS_TIMEOUT_SECONDS",
+        ),
+    )
+    readiness_overall_timeout_seconds: float | None = Field(
+        default=None,
+        gt=0,
+        validation_alias=AliasChoices(
+            "readiness_overall_timeout_seconds",
+            "READINESS_OVERALL_TIMEOUT_SECONDS",
+        ),
+    )
+    service_alternatives: list[list[str]] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices(
+            "service_alternatives",
+            "DOCMESH_SERVICE_ALTERNATIVES",
+        ),
+    )
+    startup_healthcheck: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "startup_healthcheck",
+            "DOCMESH_HEALTHCHECK_ENABLED",
+        ),
+    )
     log_level: str | None = Field(
         default="WARNING",
         validation_alias=AliasChoices("log_level", "DOCMESH_LOG_LEVEL"),
@@ -55,6 +85,19 @@ class AppConfig(BaseSettings):
             return None
         if isinstance(value, str):
             return _parse_csv_env(value)
+        return value
+
+    @field_validator("service_alternatives", mode="before")
+    @classmethod
+    def _parse_service_alternatives(cls, value: Any) -> Any:
+        if value in (None, ""):
+            return []
+        if isinstance(value, str):
+            return [
+                services
+                for group in value.split(";")
+                if (services := _parse_csv_env(group))
+            ]
         return value
 
 

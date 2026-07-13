@@ -57,17 +57,20 @@ from fastapi_core import create_app
 
 #### 현재 구현 동작
 - `config is None`이면 `load_app_config()`를 사용한다.
-- `settings is None`이면 `load_docmesh_settings(tuple(config.enabled_services))`를 사용한다.
 - `_configure_application_logging(config)`로 앱 로깅을 초기화한다.
-- `_build_service_clients(settings, config.enabled_services)`로 서비스 클라이언트 맵을 생성한다.
-- `FastAPI(root_path=config.root_path, lifespan=_build_lifespan(lifespan, service_clients))` 인스턴스를 생성한다.
+- `settings is None`이면 lifespan startup에서 `assemble_service_runtime(...)`을 호출해 설정 탐색, required 검증, client 생성, 선택적 startup healthcheck를 수행한다.
+- `settings`가 명시되면 direct factory로 client를 만들고 `ServiceRuntime`에 담는 테스트/특수 실행용 주입 경로를 사용한다.
+- `FastAPI(root_path=config.root_path, lifespan=_build_lifespan(...))` 인스턴스를 생성한다.
 - `app.state`에 아래 값을 저장한다.
   - `config`
   - `root_logger`
+  - `service_runtime`
   - `settings`
   - `service_clients`
   - `auth_provider` (keycloak client가 구성된 경우)
   - `readiness_parallel`
+  - `readiness_timeout_seconds`
+  - `readiness_overall_timeout_seconds`
   - `readiness_checks`
   - `readiness_services`
   - `required_services`
@@ -86,7 +89,9 @@ from fastapi_core import create_app
 기본 `AppConfig`에서는 `enabled_services == ["keycloak"]`, `required_services == ["keycloak"]`다.
 
 #### lifespan 동작
-내부 lifespan wrapper는 사용자가 전달한 custom lifespan을 먼저 실행하고, 종료 시 항상 `close_service_clients(service_clients.values())`를 호출한다.
+기본 경로에서는 lifespan startup이 `assemble_service_runtime(...)`을 await한 뒤 `app.state.service_runtime/settings/service_clients/readiness_checks`를 설치한다. enabled/required와 함께 `one_of`, 병렬 실행, per-service/overall timeout을 전달한다. `startup_healthcheck=True`이면 assembly 단계에서 동일한 timeout 정책으로 startup healthcheck를 수행하고, 명시적 `settings` 주입 경로에서는 생성된 runtime의 `check()`를 호출한다.
+
+사용자가 전달한 custom lifespan은 runtime 준비 뒤 실행된다. startup check 실패 시 assembly API가 생성된 client를 rollback한다. 종료 시 `finally`에서 항상 `await service_runtime.close()`를 호출하므로 sync/async client close를 모두 처리하며 custom lifespan shutdown이 실패해도 공통 client cleanup을 시도한다. 종료 실패는 `service_runtime_close_failed` 구조화 로그를 남긴 뒤 `ServiceCloseError`로 전파한다.
 
 #### 반환값
 - `FastAPI`
@@ -198,8 +203,12 @@ app = create_app(include_auth_router=False)
 - `app.state.readiness_services`에서 서비스별 메타데이터(`required`, `enabled`)를 읽는다.
 - `app.state.required_services`에서 필수 서비스 집합을 읽는다.
 - `app.state.readiness_parallel`에서 병렬 실행 여부를 읽는다.
+- `app.state.readiness_timeout_seconds`에서 서비스별 제한 시간을 읽는다.
+- `app.state.readiness_overall_timeout_seconds`에서 전체 제한 시간을 읽는다.
 - readiness check가 비어 있으면 `{"status": "ok", "details": null}`을 반환한다.
-- readiness check가 있으면 `docmesh_py_core.check_all_services(...)`로 집계한다.
+- readiness check가 있으면 `docmesh_py_core.async_check_all_services(...)`로 집계한다.
+- 서비스별 timeout은 해당 서비스 실패로 집계하며 빈 timeout 오류 문자열은 `health check timed out`으로 정규화한다.
+- overall timeout은 `503 + status="error" + details=null`로 반환하고 `readiness_check_timeout` 경고 로그를 남긴다.
 - 필수 서비스 실패 시 `503 + status="error"`를 반환한다.
 - 선택 서비스만 실패 시 `200 + status="degraded"`를 반환한다.
 - 모두 성공 시 `200 + status="ok"`를 반환한다.
@@ -255,8 +264,8 @@ app = create_app(include_auth_router=False)
 정의 위치: `fastapi_core.dependencies.config`
 
 #### 동작
-- `request.app.state.settings`가 있으면 그것을 반환한다.
-- 없으면 `load_docmesh_settings(tuple(config.enabled_services))`를 사용한다.
+- `request.app.state.settings`가 `None`이 아니면 그것을 반환한다.
+- state가 없거나 기본 runtime startup 전이라 값이 `None`이면 `load_docmesh_settings(tuple(config.enabled_services))`를 사용한다.
 - 현재 `config` 인자는 dependency wiring 목적이며 함수 본문에서는 `enabled_services` 계산 외 직접 사용하지 않는다.
 
 ### 5.3 `get_auth_provider(request: Request, settings: ServiceConfigs = Depends(get_settings)) -> KeycloakAuthService`
@@ -458,6 +467,10 @@ class AppConfig(BaseSettings):
     cors_origins: list[str] = ["*"]
     cors_credentials: bool = False
     readiness_parallel: bool = False
+    readiness_timeout_seconds: float | None = None
+    readiness_overall_timeout_seconds: float | None = None
+    service_alternatives: list[list[str]] = []
+    startup_healthcheck: bool = False
     log_level: str | None = "WARNING"
     log_path: str | None = None
     log_json: bool = True
@@ -472,6 +485,10 @@ class AppConfig(BaseSettings):
 - `CORS_ORIGINS`
 - `CORS_CREDENTIALS`
 - `READINESS_PARALLEL`
+- `READINESS_TIMEOUT_SECONDS`
+- `READINESS_OVERALL_TIMEOUT_SECONDS`
+- `DOCMESH_SERVICE_ALTERNATIVES`
+- `DOCMESH_HEALTHCHECK_ENABLED` (`startup_healthcheck` alias)
 - `DOCMESH_LOG_LEVEL` (`log_level` alias)
 - `APP_LOG_PATH` (`log_path` alias)
 - `APP_LOG_JSON` (`log_json` alias)
@@ -511,7 +528,7 @@ class AppConfig(BaseSettings):
 
 정의 위치: `fastapi_core.docmesh_settings`
 
-내부 기본값 보강 컨텍스트를 적용한 뒤 `docmesh_py_core.load_service_configs(...)`를 호출한다.
+`build_docmesh_env_overlay()` mapping을 `docmesh_py_core.load_service_configs(env, ...)`에 직접 전달한다. 프로세스 `os.environ`은 변경하지 않는다.
 
 #### 동작
 - `enabled_services`가 주어지면 해당 서비스 집합만 선택적으로 로딩한다.
@@ -525,9 +542,12 @@ class AppConfig(BaseSettings):
 `create_app(..., lifespan=...)`는 외부 의존성 초기화를 FastAPI 수명주기와 연결하는 핵심 진입점이다.
 
 현재 코드의 통합 포인트:
-- startup 이전에 service_clients / logging / readiness metadata가 app assembly 단계에서 준비된다.
-- custom lifespan이 있으면 내부 wrapper가 이를 감싼다.
-- 종료 시 service client 자원 정리를 보장한다.
+- logging과 readiness metadata는 app 생성 단계에서 준비되고, 기본 경로의 `ServiceRuntime` / settings / service_clients / checks는 lifespan startup에서 조립된다.
+- custom lifespan이 있으면 runtime state를 설치한 뒤 내부 wrapper가 이를 실행한다.
+- 종료 시 `ServiceRuntime.close()`로 sync/async service client 자원을 정리한다.
+- custom lifespan shutdown 예외가 발생해도 내부 client 정리는 `finally`에서 실행된다.
+- readiness router는 `async_check_all_services(...)`를 await하며 sync/async check를 native async 경로에서 집계한다.
+- 필수 서비스 실패 시 `HealthCheckError.result`의 전체 서비스 상태를 응답 details에 보존한다.
 
 권장 통합 지점:
 - startup에서 추가 연결 객체를 `app.state`에 저장

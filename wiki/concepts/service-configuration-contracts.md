@@ -1,16 +1,16 @@
 ---
 title: Service configuration contracts
 created: 2026-06-25
-updated: 2026-07-02
+updated: 2026-07-13
 type: concept
 tags: [config, contract, integration, implementation, security]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-2026.md]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md]
 confidence: medium
 ---
 
 # Service configuration contracts
 
-`docmesh-py-core`의 현재 설정 표면은 환경변수에서 직접 서비스별 config class를 만들거나, `load_service_configs(*, services=None)`로 선택 서비스 묶음을 로드하는 방식으로 정리된다.^[raw/articles/docmesh-py-core-api-reference-2026.md]^[raw/articles/docmesh-py-core-configuration-guide-2026.md]
+`docmesh-py-core`의 현재 설정 표면은 일반 lifecycle의 assembly-first 경로와 direct-api-when-needed 경로를 함께 제공한다. direct 경로에서는 서비스별 config class를 만들거나 `load_service_configs(env, *, services=None)`로 선택 서비스 묶음을 로드한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md]
 
 ## Global rules
 
@@ -28,12 +28,13 @@ confidence: medium
 - `load_service_configs()`는 선택된 서비스만 읽고, 지원하지 않는 서비스명/필수값 누락/타입·범위 위반을 `ConfigError`로 감싸서 반환한다.
 - `services=None`이면 `keycloak`, `postgres`, `sqlite`, `minio`, `milvus`, `ollama`, `langfuse`, `nats` 전체를 검증한다.
 - `services={...}`를 주면 지정한 서비스만 로드하고 나머지는 `None`으로 둔다.
+- 명시 mapping을 `env`로 전달하면 프로세스 환경을 수정하지 않고 그 mapping만 설정 소스로 사용한다. `load_available_service_configs()`는 관련 key가 있는 후보만 로드하며 부분 설정은 오류로 처리한다.
 - 마지막 단계에서 `validate_runtime_security()`를 호출해 production 계열 런타임 보안 제약을 확인한다.
-- production 보안 제약은 `DOCMESH_ENV`가 `production` 또는 `prod`일 때만 활성화된다.^[raw/articles/docmesh-py-core-api-reference-2026.md]^[raw/articles/docmesh-py-core-configuration-guide-2026.md]
+- production 보안 제약은 `DOCMESH_SECURITY_MODE`가 있으면 그 값을 우선 사용하고, 없으면 `CommonConfig.env`를 `DOCMESH_PRODUCTION_ALIASES`(기본 `prod,production`)와 비교해 활성화한다.^[raw/articles/docmesh-py-core-api-reference-v0.2.0.md]
 
 ## Service-specific contracts
 
-- Keycloak: `KeycloakDiscoveryConfig()`와 `KeycloakConfig()`를 구분하며, `KEYCLOAK_CLIENT_PUBLIC=false`면 `KEYCLOAK_CLIENT_SECRET`가 필요하다. `password` grant 사용자명/비밀번호는 환경변수에 넣더라도 자동 사용되지 않고 실제 `fetch_access_token(username=..., password=...)` 함수 인자로 넘겨야 한다.^[raw/articles/docmesh-py-core-configuration-guide-2026.md]
+- Keycloak: `KeycloakDiscoveryConfig()`와 `KeycloakConfig()`를 구분하며, `KEYCLOAK_CLIENT_PUBLIC=false`면 `KEYCLOAK_CLIENT_SECRET`가 필요하다. password grant에서는 함수 인자가 우선이고, 생략된 username/password는 `KEYCLOAK_TOKEN_USERNAME`/`KEYCLOAK_TOKEN_PASSWORD`에서 보완한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md]
 - PostgreSQL: `config.dsn`이 있으면 host/db/user/password 개별 필드보다 우선한다.
 - SQLite: 로컬 개발과 테스트에 적합하며 `:memory:`를 지원한다. 상위 디렉터리 자동 생성은 하지 않고, 파일 경로 문제는 설정 로딩이 아니라 실제 연결 단계에서 드러난다.^[raw/articles/docmesh-py-core-configuration-guide-2026.md]
 - MinIO / Milvus / Ollama: 여러 timeout/retry/model 관련 env가 설정 모델에는 존재하지만, 현재 팩토리 구현이 일부 값을 생성자에 직접 전달하지 않는다고 문서가 명시한다.
@@ -61,7 +62,8 @@ confidence: medium
 - 빈 문자열도 미설정처럼 취급될 수 있으므로 export는 되었지만 값이 비어 있는 경우에도 검증 실패가 날 수 있다.
 - Keycloak 기본값은 confidential client 전제이므로 `KEYCLOAK_CLIENT_PUBLIC=true`를 명시하지 않으면 `KEYCLOAK_CLIENT_SECRET` 누락이 대표적 실패 원인이다.
 - Keycloak provisioning은 service account 방식과 username/password 방식을 동시에 주거나 둘 다 주지 않으면 `single admin auth mode` 오류가 발생한다.
-- password grant는 설정 로딩 단계에서 username/password를 강제하지 않지만, 실제 토큰 요청 함수 호출 시에는 반드시 전달해야 한다.
+- password grant는 설정 로딩 단계에서 username/password를 강제하지 않으며, 실제 토큰 요청 시 함수 인자와 config fallback을 합쳐 완전한 credential이 있어야 한다.
+- `DOCMESH_HEALTHCHECK_ENABLED`는 `check_on_startup`에 자동 연결되지 않으므로, 소비 애플리케이션이 startup 정책에 반영해야 한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md]
 - production/prod 환경에서는 `KEYCLOAK_VERIFY_SSL=false`, `MINIO_SECURE=false`, `MILVUS_SECURE=false` 같은 비보안 설정이 `validate_runtime_security()`에 의해 거부된다.
 
 ## Operational significance

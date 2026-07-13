@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`에서 메시징을 **현재 구현된 FastAPI lifecycle / service_clients / readiness 구조에 맞춰** 설명한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`, `docs/config.md`
-> 문서 상태: 구현 반영본(v0.4)
+> 문서 상태: 구현 반영본(v0.7)
 
 ---
 
@@ -12,7 +12,7 @@
 
 - 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 버전: `v0.4`
+- 버전: `v0.7`
 - 상태: `implemented-surface`
 
 핵심 질문은 다음과 같다.
@@ -28,9 +28,9 @@
 `fastapi-core`에서 메시징은 독립 FastAPI 공개 API라기보다 **service_clients와 readiness 체계에 연결되는 외부 서비스 범주**다.
 
 현재 코드 흐름:
-1. `create_app(...)`가 `ServiceConfigs`와 `service_clients` 맵을 만든다.
-2. `AppConfig.enabled_services`에 포함된 서비스 목록을 기준으로 readiness check를 자동 구성한다.
-3. 종료 시 내부 lifespan wrapper가 `close_service_clients(service_clients.values())`를 호출한다.
+1. 기본 `create_app(...)` 경로는 lifespan startup에서 `assemble_service_runtime(...)`으로 `ServiceRuntime`과 client map을 만든다.
+2. `AppConfig.enabled_services`와 `required_services`를 assembly/runtime 및 readiness 정책에 전달한다.
+3. 종료 시 내부 lifespan wrapper가 `await service_runtime.close()`를 호출한다.
 4. 공통 서비스 접근용 `get_service_client(service_name)`와 NATS 전용 `get_nats_connection_builder()` dependency는 제공하지만, publisher/subscriber helper나 route는 현재 패키지에서 직접 제공하지 않는다.
 
 즉, 현재 `fastapi-core`에서 메시징은:
@@ -55,7 +55,11 @@
 메시징 쪽에서 현재 활용 가능한 확장 지점:
 - `AppConfig.enabled_services`
 - `AppConfig.required_services`
+- `AppConfig.service_alternatives`
+- `AppConfig.readiness_timeout_seconds`
+- `AppConfig.readiness_overall_timeout_seconds`
 - `load_docmesh_settings(...)`
+- `app.state.service_runtime`
 - `app.state.service_clients`
 - `app.state.readiness_checks`
 - `app.state.readiness_services`
@@ -112,6 +116,8 @@ app = create_app(config=config)
 기본 `create_app()` 경로에서는:
 - `enabled_services`를 기준으로 service client 기반 check를 자동 생성한다.
 - NATS 설정이 존재하고 `create_nats_client()`가 client를 생성하면 NATS check가 readiness 대상에 들어간다.
+- `async_check_all_services(...)`가 sync/async check를 await 가능한 한 경로에서 집계한다.
+- 필수 서비스 실패 시에도 `HealthCheckError.result`를 사용해 성공한 선택 서비스를 포함한 전체 details를 보존한다.
 - `enabled_services` metadata와 실제 readiness check 등록은 별개다. 지원되지 않거나 settings에서 `None`인 서비스는 metadata에는 남아도 client/check가 생성되지 않는다.
 
 상태 판정 규칙:
@@ -127,9 +133,15 @@ app = create_app(config=config)
 
 ### 6.1 현재 코드가 직접 보장하는 것
 
-- `create_app()`는 내부적으로 `service_clients`를 구성한다.
+- 기본 `create_app()`는 lifespan startup에서 `assemble_service_runtime(...)`으로 NATS를 포함한 runtime/client를 구성한다.
+- 명시적 `settings` 주입은 direct factory client를 동일한 `ServiceRuntime` lifecycle로 감싼다.
 - 내부 lifespan wrapper는 사용자가 준 custom lifespan을 감싼다.
-- custom lifespan이 정상적으로 종료되는 경로에서는 `close_service_clients(service_clients.values())`를 호출한다. custom lifespan의 startup 또는 shutdown에서 예외가 나면 이 호출은 보장되지 않는다.
+- custom lifespan은 runtime과 `app.state.service_runtime/service_clients`가 준비된 뒤 실행된다.
+- lifespan 종료 시 `service_runtime.close()`를 await해 sync/async client를 모두 정리한다.
+- client 정리는 `finally`에 있으므로 custom lifespan의 startup 또는 shutdown에서 예외가 발생해도 실행된다.
+- NATS builder의 async `close()`도 await되며, 이전 동기 close helper 사용 시 발생하던 unawaited-coroutine 경고는 제거됐다.
+- startup healthcheck 실패 시 조립된 NATS 등 client는 custom lifespan 진입 전에 rollback된다.
+- close 실패는 client/error 원문을 구조화 payload에 넣지 않고 실패 개수만 기록한 `service_runtime_close_failed` 이벤트와 `ServiceCloseError`로 처리된다.
 
 즉, `service_clients`가 관리하는 서비스 자원 정리는 shutdown 경로에 연결돼 있다.
 
@@ -263,8 +275,9 @@ custom lifespan이나 route/service layer에서 별도 메시징 호출을 추�
 그러나 아래 관련 계약은 검증된다.
 
 - 선택/필수 서비스 readiness 상태 분기 (`ok/degraded/error`)
+- 필수 서비스 실패 시 성공한 선택 서비스를 포함한 전체 readiness details 보존
 - 선택 서비스만 로딩하는 `load_docmesh_settings(("sqlite",))` 패턴
-- shutdown 시 내부 lifecycle 경로 존재
+- async service client close await 및 custom shutdown 실패 시 cleanup 보장
 - custom lifespan과 live NATS service client 공존
 - `enabled_services=["nats"]`, `required_services=["nats"]` 구성에서 readiness `ok` 경로
 
@@ -306,3 +319,6 @@ custom lifespan이나 route/service layer에서 별도 메시징 호출을 추�
 
 이 문서는 기존의 NATS 일반론 중심 초안을, **현재 저장소 코드가 실제로 제공하는 service_clients/readiness/lifecycle 구조** 중심으로 다시 정렬한 것이다.
 특히 메시징을 1차 공개 FastAPI API로 과장하지 않고, `enabled_services`, `required_services`, `app.state`, custom lifespan을 통한 확장 지점으로 명확히 구분했다.
+v0.5에서는 native async readiness 집계, 전체 실패 결과 보존, async-aware shutdown cleanup과 예외 안전성을 반영했다.
+v0.6에서는 기본 앱 경로의 assembly-first `ServiceRuntime`, required 검증, mapping 기반 설정, startup healthcheck 정책을 반영했다.
+v0.7에서는 서비스 대안(`one_of`), per-service/overall timeout, startup rollback, runtime close 실패 로깅을 반영했다.

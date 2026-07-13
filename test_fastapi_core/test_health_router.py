@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 
+import pytest
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from fastapi_core.factory import create_app
+from fastapi_core.routers.health import readiness
 
 
 def test_readiness_returns_ok_when_checks_pass(settings, caplog):
@@ -106,3 +112,76 @@ def test_readiness_returns_503_when_required_check_fails(settings, caplog):
     assert record.event["required"] is True
     assert record.event["enabled"] is True
     assert "top-secret" not in record.event["error"]
+
+
+def test_readiness_preserves_all_service_results_when_required_check_fails(settings):
+    app = create_app(settings=settings, include_auth_router=False)
+
+    def fail_required():
+        raise RuntimeError("keycloak unavailable")
+
+    app.state.readiness_checks = {
+        "keycloak": fail_required,
+        "nats": lambda: None,
+    }
+    app.state.readiness_services = {
+        "keycloak": {"required": True, "enabled": True},
+        "nats": {"required": False, "enabled": True},
+    }
+    app.state.required_services = {"keycloak"}
+
+    with TestClient(app) as client:
+        response = client.get("/health/readiness")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "error"
+    assert body["details"]["keycloak"]["ok"] is False
+    assert body["details"]["nats"]["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_readiness_applies_per_service_timeout(settings):
+    app = create_app(settings=settings, include_auth_router=False)
+
+    async def slow_check():
+        await asyncio.sleep(0.05)
+
+    app.state.readiness_checks = {"keycloak": slow_check}
+    app.state.readiness_services = {
+        "keycloak": {"required": True, "enabled": True},
+    }
+    app.state.required_services = {"keycloak"}
+    app.state.readiness_timeout_seconds = 0.001
+    request = Request({"type": "http", "app": app})
+
+    response = await readiness(request)
+
+    assert isinstance(response, JSONResponse)
+    assert response.status_code == 503
+    body = json.loads(response.body)
+    assert body["status"] == "error"
+    assert body["details"]["keycloak"]["ok"] is False
+    assert body["details"]["keycloak"]["error"]
+
+
+@pytest.mark.asyncio
+async def test_readiness_returns_503_on_overall_timeout(settings):
+    app = create_app(settings=settings, include_auth_router=False)
+
+    async def slow_check():
+        await asyncio.sleep(0.05)
+
+    app.state.readiness_checks = {"keycloak": slow_check}
+    app.state.readiness_services = {
+        "keycloak": {"required": True, "enabled": True},
+    }
+    app.state.required_services = {"keycloak"}
+    app.state.readiness_overall_timeout_seconds = 0.001
+    request = Request({"type": "http", "app": app})
+
+    response = await readiness(request)
+
+    assert isinstance(response, JSONResponse)
+    assert response.status_code == 503
+    assert json.loads(response.body) == {"status": "error", "details": None}

@@ -112,12 +112,15 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 
 ### `create_app(...)`
 - `config is None`이면 `load_app_config()`를 사용합니다.
-- `settings is None`이면 `load_docmesh_settings(tuple(config.enabled_services))`를 사용합니다.
+- `settings is None`이면 lifespan startup에서 `assemble_service_runtime(...)`으로 설정 검증, 필수 서비스 검증, client 조립을 수행합니다.
+- 명시적 `settings`를 전달하면 direct API 주입 경로를 유지하되 동일한 `ServiceRuntime` lifecycle로 감쌉니다.
 - 앱 로깅을 먼저 초기화합니다.
-- 활성 서비스 설정으로 service client map을 생성합니다.
-- `FastAPI(root_path=..., lifespan=...)`를 생성하고 내부 lifespan wrapper를 통해 종료 시 `close_service_clients(service_clients.values())`를 수행합니다.
-- `app.state.config`, `app.state.root_logger`, `app.state.settings`, `app.state.service_clients`를 저장합니다. Keycloak client가 구성되면 `app.state.auth_provider`도 저장합니다.
+- 기본 경로의 service client map은 lifespan startup에서 준비됩니다.
+- `FastAPI(root_path=..., lifespan=...)`를 생성하고 내부 lifespan wrapper의 `finally`에서 `await service_runtime.close()`를 수행합니다.
+- `app.state.config`, `app.state.root_logger`, `app.state.service_runtime`, `app.state.settings`, `app.state.service_clients`를 저장합니다. Keycloak client가 구성되면 `app.state.auth_provider`도 저장합니다.
 - `app.state.readiness_parallel`, `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services`를 초기화합니다.
+- per-service/overall readiness timeout을 state와 startup runtime check에 동일하게 적용합니다.
+- `service_alternatives`가 있으면 각 그룹에서 최소 한 서비스가 구성됐는지 `one_of` 정책으로 검증합니다.
 - `set_oauth2_token_url(config.token_url)`로 OpenAPI password flow token URL을 반영합니다.
 - CORS middleware를 등록합니다.
 - health router를 기본 포함하고, `include_auth_router=True`일 때 auth router를 포함합니다.
@@ -133,6 +136,8 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 - `/health/liveness`는 `{"status": "ok", "details": null}`를 반환합니다.
 - `/health/readiness`는 `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services`, `app.state.readiness_parallel`을 사용합니다.
 - 기본 `create_app()` 경로에서는 `enabled_services`를 기준으로 service client 기반 readiness check를 자동 구성합니다.
+- sync/async readiness check는 `async_check_all_services(...)`로 집계되며 필수 실패 시에도 전체 서비스 details를 보존합니다.
+- per-service timeout은 해당 서비스 실패로 변환되고, overall timeout은 `503 + status="error"`로 반환됩니다.
 - 필수 서비스 실패 시 `503`, 선택 서비스만 실패 시 `200 + degraded`, 모두 성공 시 `200 + ok`를 반환합니다.
 - readiness 로그는 구조화된 이벤트로 남기며, 오류 문자열은 상위 `docmesh_py_core` 마스킹 정책 영향을 받습니다.
 
@@ -144,6 +149,10 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 - `cors_origins: list[str] = ["*"]`
 - `cors_credentials: bool = False`
 - `readiness_parallel: bool = False`
+- `readiness_timeout_seconds: float | None = None`
+- `readiness_overall_timeout_seconds: float | None = None`
+- `service_alternatives: list[list[str]] = []`
+- `startup_healthcheck: bool = False`
 - `log_level: str | None = "WARNING"`
 - `log_path: str | None = None`
 - `log_json: bool = True`
@@ -157,6 +166,10 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 - `CORS_ORIGINS`
 - `CORS_CREDENTIALS`
 - `READINESS_PARALLEL`
+- `READINESS_TIMEOUT_SECONDS`
+- `READINESS_OVERALL_TIMEOUT_SECONDS`
+- `DOCMESH_SERVICE_ALTERNATIVES`
+- `DOCMESH_HEALTHCHECK_ENABLED`
 - `DOCMESH_LOG_LEVEL`
 - `APP_LOG_PATH`
 - `APP_LOG_JSON`
@@ -192,4 +205,4 @@ uv run pytest -q
 ```
 
 최근 실행 결과:
-- `45 passed, 2 warnings`
+- `57 passed, 2 third-party deprecation warnings`

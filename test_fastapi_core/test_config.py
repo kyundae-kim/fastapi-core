@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+
+import fastapi_core.docmesh_settings as docmesh_settings_module
 from fastapi_core.config import AppConfig, load_app_config
 from fastapi_core.docmesh_settings import build_docmesh_env_overlay, load_docmesh_settings
 
@@ -11,6 +14,13 @@ def test_app_config_reads_env_fields_from_settings(monkeypatch):
     monkeypatch.setenv("CORS_ORIGINS", "https://a.example, https://b.example")
     monkeypatch.setenv("CORS_CREDENTIALS", "true")
     monkeypatch.setenv("READINESS_PARALLEL", "true")
+    monkeypatch.setenv("READINESS_TIMEOUT_SECONDS", "0.25")
+    monkeypatch.setenv("READINESS_OVERALL_TIMEOUT_SECONDS", "1.5")
+    monkeypatch.setenv(
+        "DOCMESH_SERVICE_ALTERNATIVES",
+        "postgres,sqlite;minio,milvus",
+    )
+    monkeypatch.setenv("DOCMESH_HEALTHCHECK_ENABLED", "true")
     monkeypatch.setenv("DOCMESH_LOG_LEVEL", "INFO")
     monkeypatch.setenv("APP_LOG_PATH", "/tmp/app.log")
     monkeypatch.setenv("APP_LOG_JSON", "false")
@@ -26,6 +36,13 @@ def test_app_config_reads_env_fields_from_settings(monkeypatch):
     assert config.cors_origins == ["https://a.example", "https://b.example"]
     assert config.cors_credentials is True
     assert config.readiness_parallel is True
+    assert config.readiness_timeout_seconds == 0.25
+    assert config.readiness_overall_timeout_seconds == 1.5
+    assert config.service_alternatives == [
+        ["postgres", "sqlite"],
+        ["minio", "milvus"],
+    ]
+    assert config.startup_healthcheck is True
     assert config.log_level == "INFO"
     assert config.log_path == "/tmp/app.log"
     assert config.log_json is False
@@ -43,6 +60,10 @@ def test_app_config_defaults_match_existing_behavior(monkeypatch):
         "CORS_ORIGINS",
         "CORS_CREDENTIALS",
         "READINESS_PARALLEL",
+        "READINESS_TIMEOUT_SECONDS",
+        "READINESS_OVERALL_TIMEOUT_SECONDS",
+        "DOCMESH_SERVICE_ALTERNATIVES",
+        "DOCMESH_HEALTHCHECK_ENABLED",
         "DOCMESH_LOG_LEVEL",
         "APP_LOG_PATH",
         "APP_LOG_JSON",
@@ -61,6 +82,10 @@ def test_app_config_defaults_match_existing_behavior(monkeypatch):
     assert config.cors_origins == ["*"]
     assert config.cors_credentials is False
     assert config.readiness_parallel is False
+    assert config.readiness_timeout_seconds is None
+    assert config.readiness_overall_timeout_seconds is None
+    assert config.service_alternatives == []
+    assert config.startup_healthcheck is False
     assert config.log_level == "WARNING"
     assert config.log_path is None
     assert config.log_json is True
@@ -97,6 +122,32 @@ def test_load_docmesh_settings_uses_selected_services():
 
     assert settings.sqlite is not None
     assert settings.keycloak is None
+
+
+def test_load_docmesh_settings_passes_overlay_without_mutating_environment(monkeypatch):
+    captured: dict[str, object] = {}
+    sentinel = object()
+    original_environment = dict(os.environ)
+
+    def fake_load_service_configs(env, *, services):
+        captured["env"] = env
+        captured["services"] = services
+        return sentinel
+
+    monkeypatch.setattr(
+        docmesh_settings_module,
+        "load_service_configs",
+        fake_load_service_configs,
+    )
+    load_docmesh_settings.cache_clear()
+
+    result = load_docmesh_settings(("sqlite",))
+
+    assert result is sentinel
+    assert captured["services"] == {"sqlite"}
+    assert captured["env"]["SQLITE_PATH"] == ":memory:"
+    assert dict(os.environ) == original_environment
+    load_docmesh_settings.cache_clear()
 
 
 def test_load_docmesh_settings_loads_postgres_from_default_env(monkeypatch):

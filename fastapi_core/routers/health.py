@@ -4,7 +4,11 @@ import logging
 
 from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse
-from docmesh_py_core import HealthCheckError, build_service_log_event, check_all_services
+from docmesh_py_core import (
+    HealthCheckError,
+    async_check_all_services,
+    build_service_log_event,
+)
 
 from fastapi_core.schemas.health import HealthResponse, HealthServiceDetail, HealthStatus
 
@@ -60,34 +64,47 @@ async def liveness() -> HealthResponse:
 
 
 @router.get("/readiness", response_model=HealthResponse)
-async def readiness(request: Request) -> HealthResponse:
+async def readiness(request: Request) -> HealthResponse | JSONResponse:
     checks = getattr(request.app.state, "readiness_checks", {})
     service_metadata = getattr(request.app.state, "readiness_services", {})
     required_services = getattr(request.app.state, "required_services", set())
     parallel = getattr(request.app.state, "readiness_parallel", False)
+    timeout_seconds = getattr(
+        request.app.state,
+        "readiness_timeout_seconds",
+        None,
+    )
+    overall_timeout_seconds = getattr(
+        request.app.state,
+        "readiness_overall_timeout_seconds",
+        None,
+    )
 
     if not checks:
         return HealthResponse(status="ok")
 
     try:
-        result = check_all_services(
+        result = await async_check_all_services(
             checks,
             required_services=required_services,
             parallel=parallel,
+            timeout_seconds=timeout_seconds,
+            overall_timeout_seconds=overall_timeout_seconds,
         )
     except HealthCheckError as exc:
-        metadata = service_metadata.get(exc.service, {"required": True, "enabled": True})
-        detail = _build_service_detail(
-            exc.service,
-            metadata,
-            ok=False,
-            error=exc.error,
+        result = exc.result
+    except TimeoutError:
+        logger.warning(
+            "readiness_check_timeout",
+            extra={
+                "event": {
+                    "operation": "readiness_check",
+                    "outcome": "error",
+                    "timeout_scope": "overall",
+                }
+            },
         )
-        _log_readiness_failure(exc.service, detail, outcome="error")
-        body = HealthResponse(
-            status="error",
-            details={exc.service: detail},
-        ).model_dump()
+        body = HealthResponse(status="error").model_dump()
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content=body,
@@ -99,7 +116,14 @@ async def readiness(request: Request) -> HealthResponse:
             service_metadata.get(service.service, {}),
             ok=service.ok,
             latency_ms=service.latency_ms,
-            error=service.error,
+            error=(
+                service.error
+                or (
+                    "health check timed out"
+                    if not service.ok and timeout_seconds is not None
+                    else None
+                )
+            ),
         )
         for service in result.services
     }

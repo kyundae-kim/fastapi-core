@@ -83,7 +83,7 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 - SR-005. 커스텀 lifespan을 주입할 수 있어야 한다.
 - SR-006. 생성된 앱은 `app.state.config`, `app.state.settings`, `app.state.service_clients`, `app.state.root_logger`를 저장해야 한다.
 - SR-006A. Keycloak 서비스가 활성화된 경우 생성된 앱은 `app.state.auth_provider`에 현재 auth provider를 저장하거나 재사용할 수 있어야 한다.
-- SR-007. readiness 제어용 상태(`app.state.readiness_parallel`, `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services`)를 저장할 수 있어야 한다.
+- SR-007. readiness 제어용 상태(`app.state.readiness_parallel`, timeout, `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services`)를 저장할 수 있어야 한다.
 - SR-008. 시스템은 `app.state.service_clients`와 lifespan 경로를 통해 외부 의존성 정리와 readiness 구성을 연결할 수 있어야 한다.
 
 ### 4.2 Middleware / exception handling
@@ -201,6 +201,7 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 - SR-134. readiness의 필수 서비스 집합을 분리해 표현할 수 있어야 한다.
 - SR-135. 선택 서비스 실패만 있을 경우 부분 저하(`degraded`) 상태를 표현할 수 있어야 한다.
 - SR-136. readiness는 서비스별 메타데이터(`required`, `enabled`)를 함께 해석할 수 있어야 한다.
+- SR-137. readiness는 sync/async check를 native async 집계 경로에서 실행하고, 필수 서비스 실패 시에도 전체 서비스 결과를 보존해야 한다.
 
 ---
 
@@ -208,9 +209,18 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 
 - SR-140. app factory는 lifespan 주입을 허용해야 한다.
 - SR-141. 메시징/NATS 같은 비동기 연결은 startup 단계에서 초기화되거나 공통 `service_clients`/lifespan 흐름에 연결될 수 있어야 한다.
-- SR-142. 연결 자원은 shutdown 단계에서 정리할 수 있어야 한다.
+- SR-142. sync/async 연결 자원은 shutdown 단계에서 await 가능한 공통 정리 경로로 정리되어야 한다.
 - SR-143. FastAPI lifecycle과 외부 의존성 lifecycle이 문서상 명확히 연결되어야 한다.
 - SR-144. 전용 메시징 FastAPI dependency가 없더라도 custom lifespan과 `app.state` 확장 지점을 통해 통합 가능해야 한다.
+- SR-145. custom lifespan shutdown이 실패하더라도 공통 service client 정리는 `finally` 경로에서 실행되어야 한다.
+- SR-146. 기본 앱 경로는 `assemble_service_runtime(...)`으로 설정 탐색, required 검증, client 조립을 수행하고 runtime을 `app.state.service_runtime`에 노출해야 한다.
+- SR-147. `DOCMESH_HEALTHCHECK_ENABLED`는 명시적 startup healthcheck 정책으로 연결되어야 하며 기본값은 비활성화여야 한다.
+- SR-148. 서비스 설정 mapping 로딩은 프로세스 `os.environ`을 변경하지 않아야 한다.
+- SR-149. 서비스별 및 전체 healthcheck timeout은 startup check와 readiness endpoint에 동일하게 적용되어야 한다.
+- SR-150. overall readiness timeout은 HTTP 503 오류 응답으로 정규화되어야 한다.
+- SR-151. 서비스 대안 그룹은 assembly `one_of` 정책으로 검증되어야 한다.
+- SR-152. startup healthcheck 실패 시 조립된 서비스 client는 custom lifespan 진입 전에 rollback되어야 한다.
+- SR-153. service runtime 종료 실패는 민감정보 없는 구조화 이벤트로 기록하고 `ServiceCloseError`로 전파해야 한다.
 
 ---
 
@@ -232,6 +242,9 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 - `require_permissions()`의 403 경로 검증
 - `create_app(include_auth_router=False)` 동작 검증
 - lifespan 주입 시 startup/shutdown 연결 검증
+- async service client close가 await되는지 검증
+- custom lifespan shutdown 실패 시에도 공통 client가 정리되는지 검증
+- 필수 readiness 실패 응답에 전체 서비스 결과가 보존되는지 검증
 
 ---
 

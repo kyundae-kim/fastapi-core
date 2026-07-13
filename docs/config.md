@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`의 설정을 **현재 구현된 FastAPI 앱 조립 / dependency / readiness 관점**에서 설명한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`
-> 문서 상태: 구현 반영본(v0.5)
+> 문서 상태: 구현 반영본(v0.7)
 
 ---
 
@@ -13,7 +13,7 @@
 
 - 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 버전: `v0.5`
+- 버전: `v0.7`
 - 상태: `implemented-surface`
 
 핵심 관점:
@@ -56,6 +56,10 @@ class AppConfig(BaseSettings):
     cors_origins: list[str] = ["*"]
     cors_credentials: bool = False
     readiness_parallel: bool = False
+    readiness_timeout_seconds: float | None = None
+    readiness_overall_timeout_seconds: float | None = None
+    service_alternatives: list[list[str]] = []
+    startup_healthcheck: bool = False
     log_level: str | None = "WARNING"
     log_path: str | None = None
     log_json: bool = True
@@ -73,6 +77,10 @@ class AppConfig(BaseSettings):
 | `cors_origins` | `CORSMiddleware` | 허용 origin 목록 |
 | `cors_credentials` | `CORSMiddleware` | credential 허용 여부 |
 | `readiness_parallel` | `app.state.readiness_parallel` | readiness check 병렬 실행 여부 |
+| `readiness_timeout_seconds` | runtime startup/readiness endpoint | 서비스별 healthcheck 제한 시간 |
+| `readiness_overall_timeout_seconds` | runtime startup/readiness endpoint | 전체 healthcheck 실행 제한 시간 |
+| `service_alternatives` | runtime `one_of` 검증 | 각 그룹에서 최소 한 서비스가 구성되어야 하는 대안 정책 |
+| `startup_healthcheck` | `assemble_service_runtime(..., check_on_startup=...)` | startup에서 required service healthcheck를 수행할지 여부 |
 | `log_level` | `_configure_application_logging(...)` | 루트 로거 레벨 |
 | `log_path` | `_configure_application_logging(...)` | 파일 로그 경로 |
 | `log_json` | `_configure_application_logging(...)` | JSON formatter 사용 여부 |
@@ -90,6 +98,10 @@ class AppConfig(BaseSettings):
 - `CORS_ORIGINS`
 - `CORS_CREDENTIALS`
 - `READINESS_PARALLEL`
+- `READINESS_TIMEOUT_SECONDS`
+- `READINESS_OVERALL_TIMEOUT_SECONDS`
+- `DOCMESH_SERVICE_ALTERNATIVES`
+- `DOCMESH_HEALTHCHECK_ENABLED` (`startup_healthcheck` alias)
 - `DOCMESH_LOG_LEVEL` (`log_level` alias)
 - `APP_LOG_PATH` (`log_path` alias)
 - `APP_LOG_JSON` (`log_json` alias)
@@ -98,12 +110,15 @@ class AppConfig(BaseSettings):
 - `READINESS_REQUIRED_SERVICES` (`required_services` alias)
 
 `AliasChoices`로 인해 아래 lowercase field 이름도 직접 입력 alias로 허용된다.
+- `readiness_timeout_seconds`, `readiness_overall_timeout_seconds`, `service_alternatives`, `startup_healthcheck`
 - `log_level`, `log_path`, `log_json`, `log_force`
 - `enabled_services`, `required_services`
 
 ### 3.3 파싱 규칙
 
 - `CORS_ORIGINS`, `DOCMESH_SERVICES`, `READINESS_REQUIRED_SERVICES`는 쉼표 구분 문자열을 list로 읽는다.
+- `DOCMESH_SERVICE_ALTERNATIVES`는 세미콜론으로 그룹을, 쉼표로 그룹 내 서비스를 구분한다. 예: `postgres,sqlite;minio,milvus`.
+- readiness timeout 두 필드는 양수만 허용하며 미설정 시 제한을 적용하지 않는다.
 - 위 CSV 환경변수에 빈 문자열을 지정하면 validator가 `None`으로 변환한다. 세 필드는 non-optional `list[str]`이므로 기본값으로 복원되지 않고 validation error가 발생한다. 기본값을 사용하려면 변수를 설정하지 않는다.
 - bool 계열은 Pydantic settings 파싱을 따른다.
 - `load_app_config()`는 `lru_cache(maxsize=1)`로 캐시된다.
@@ -116,6 +131,10 @@ TOKEN_URL=/api/v1/auth/token
 CORS_ORIGINS=https://app.example.com,https://admin.example.com
 CORS_CREDENTIALS=true
 READINESS_PARALLEL=true
+READINESS_TIMEOUT_SECONDS=5
+READINESS_OVERALL_TIMEOUT_SECONDS=15
+DOCMESH_SERVICE_ALTERNATIVES=postgres,sqlite;minio,milvus
+DOCMESH_HEALTHCHECK_ENABLED=true
 DOCMESH_LOG_LEVEL=INFO
 APP_LOG_PATH=/tmp/app.log
 APP_LOG_JSON=true
@@ -132,22 +151,23 @@ READINESS_REQUIRED_SERVICES=keycloak
 
 1. `config`가 없으면 `load_app_config()` 사용
 2. `_configure_application_logging(config)`로 로깅 초기화
-3. `settings`가 없으면 `load_docmesh_settings(tuple(config.enabled_services))` 사용
-4. `_build_service_clients(settings, config.enabled_services)`로 서비스 클라이언트 맵 생성
-5. `FastAPI(root_path=config.root_path, lifespan=_build_lifespan(...))` 생성
-6. `app.state.config = config`
-7. `app.state.root_logger = root_logger`
-8. `app.state.settings = settings`
-9. `app.state.service_clients = service_clients`
-10. keycloak client가 있으면 `app.state.auth_provider = service_clients["keycloak"].client`
-11. `app.state.readiness_parallel = config.readiness_parallel`
-12. `app.state.readiness_checks = _build_readiness_checks(service_clients)`
-13. `app.state.readiness_services = _build_readiness_metadata(config.enabled_services, config.required_services)`
-14. `app.state.required_services = set(config.required_services)`
-15. `set_oauth2_token_url(config.token_url)` 적용
-16. CORS middleware 등록
-17. health router 포함
-18. 필요 시 auth router 포함
+3. 명시적 `settings`가 있으면 direct factory client를 `ServiceRuntime`으로 감싸 주입 경로 구성
+4. `FastAPI(root_path=config.root_path, lifespan=_build_lifespan(...))` 생성
+5. lifespan startup에서 `settings`가 없으면 `assemble_service_runtime(build_docmesh_env_overlay(), services=..., required=..., one_of=..., check_on_startup=..., healthcheck_timeout_seconds=..., overall_healthcheck_timeout_seconds=...)` 실행
+6. runtime의 `configs`, `clients`, readiness check를 `app.state`에 설치
+7. `app.state.config = config`, `app.state.root_logger = root_logger`
+8. `app.state.service_runtime = runtime`
+9. `app.state.settings = runtime.configs`
+10. `app.state.service_clients = runtime.clients`
+11. keycloak client가 있으면 `app.state.auth_provider = service_clients["keycloak"].client`
+12. `app.state.readiness_parallel = config.readiness_parallel`
+13. per-service/overall timeout을 `app.state`에 저장
+14. `app.state.readiness_checks = _build_readiness_checks(service_clients)`
+15. `app.state.readiness_services = _build_readiness_metadata(config.enabled_services, config.required_services)`
+16. `app.state.required_services = set(config.required_services)`
+17. `set_oauth2_token_url(config.token_url)` 적용
+18. CORS middleware 등록 및 router 포함
+19. lifespan 종료 시 `await service_runtime.close()` 실행; 실패 시 구조화 로그 후 `ServiceCloseError` 전파
 
 즉, 설정은 현재 코드에서 **앱 조립**, **로깅 초기화**, **service_clients/readiness 기본 구성**, **auth 문서 표면(OpenAPI) 조정**에 직접 사용된다. `token_url`은 앱 인스턴스별 값이 아니라 module-global `oauth2_scheme`을 변경하므로, 한 프로세스에서 서로 다른 `token_url`로 여러 앱을 만들면 마지막 `create_app()` 호출 값이 OpenAPI password flow에 반영된다.
 
@@ -183,7 +203,9 @@ READINESS_REQUIRED_SERVICES=keycloak
 
 동작:
 - `enabled_services`가 있으면 집합으로 변환한다.
-- 내부 기본값 보강 컨텍스트를 적용한 뒤 `docmesh_py_core.load_service_configs(services=services)`를 호출한다.
+- `build_docmesh_env_overlay()`로 현재 환경의 복사본과 fallback을 결합한다.
+- `docmesh_py_core.load_service_configs(env, services=services)`에 mapping을 직접 전달한다.
+- 로딩 과정에서 프로세스 `os.environ`을 추가·삭제·수정하지 않는다.
 - 서비스 선택이 없으면 전체 기본 서비스를 로딩한다.
 - `lru_cache(maxsize=1)`로 캐시된다.
 
@@ -191,6 +213,18 @@ READINESS_REQUIRED_SERVICES=keycloak
 
 이 기본값들은 **운영 권장값이 아니라 개발/테스트용 fallback**이다.
 운영 환경에서는 반드시 명시적 환경변수 또는 외부 secret 주입으로 대체해야 한다.
+
+### 5.4 공통 보안 모드
+
+mapping loader를 통해 다음 `docmesh-py-core` 공통 설정도 실제 검증에 사용된다.
+
+| 환경변수 | 기본값 | 의미 |
+| --- | --- | --- |
+| `DOCMESH_SECURITY_MODE` | 없음 | `development` 또는 `production`; 설정 시 환경 이름보다 우선 |
+| `DOCMESH_PRODUCTION_ALIASES` | `prod,production` | `DOCMESH_ENV`를 운영으로 판정할 alias 목록 |
+| `DOCMESH_HEALTHCHECK_ENABLED` | `true` (Py Core config) | Py Core 공통 값; FastAPI startup 정책은 `AppConfig.startup_healthcheck` 기본값 `False`로 별도 연결 |
+
+production 판정 시 `validate_runtime_security()`가 TLS 등 추가 보안 제약을 검사한다. FastAPI Core가 이 검증을 재구현하지 않고 v0.2.0 loader/assembly 결과를 그대로 사용한다.
 
 ---
 
@@ -203,6 +237,8 @@ READINESS_REQUIRED_SERVICES=keycloak
 - `KEYCLOAK_REALM`
 - `KEYCLOAK_CLIENT_ID`
 - `KEYCLOAK_CLIENT_SECRET`
+
+password grant에서는 함수 인자의 `username` / `password`가 우선하고, 생략한 값은 `KEYCLOAK_TOKEN_USERNAME` / `KEYCLOAK_TOKEN_PASSWORD`에서 fallback한다. 두 경로 모두 필요한 자격증명을 제공하지 않으면 Keycloak configuration error가 발생한다. 실제 값은 문서나 로그에 기록하지 않는다.
 
 현재 구현 기준 영향 범위:
 - `create_app()`의 `service_clients` 구성 중 keycloak client/provider 준비
@@ -232,6 +268,8 @@ READINESS_REQUIRED_SERVICES=keycloak
   - `app.state.readiness_services`
   - `app.state.required_services`
   - `app.state.readiness_parallel`
+  - `app.state.readiness_timeout_seconds`
+  - `app.state.readiness_overall_timeout_seconds`
 
 ### 7.1 현재 설정 연결 방식
 
@@ -241,14 +279,24 @@ READINESS_REQUIRED_SERVICES=keycloak
 | `readiness_services` | 기본 create_app 자동 구성 또는 사용자 override | 서비스별 `{required, enabled}` 메타데이터 |
 | `required_services` | `AppConfig` 또는 직접 state 설정 | 실패 시 503을 유발하는 필수 서비스 집합 |
 | `readiness_parallel` | `AppConfig` 또는 직접 state 설정 | 병렬 실행 여부 |
+| `readiness_timeout_seconds` | `AppConfig` 또는 직접 state 설정 | 서비스별 제한 시간 |
+| `readiness_overall_timeout_seconds` | `AppConfig` 또는 직접 state 설정 | 전체 제한 시간 |
+| `service_alternatives` | `AppConfig` | assembly `one_of` 구성 검증 |
+| `startup_healthcheck` | `AppConfig` | runtime 조립 직후 required service check 실행 여부 |
 
 ### 7.2 구현상 의미
 
 - `READINESS_PARALLEL`은 실제로 사용된다.
+- 두 timeout은 startup healthcheck와 `/health/readiness`에 동일하게 전달된다.
+- 서비스별 timeout은 해당 서비스 실패로, overall timeout은 details 없는 `503 error`로 반환된다.
+- `DOCMESH_SERVICE_ALTERNATIVES` 각 그룹은 assembly 시 적어도 하나의 설정된 서비스를 요구한다.
+- `DOCMESH_HEALTHCHECK_ENABLED`는 `AppConfig.startup_healthcheck`로 연결된다.
+- 앱 정책 기본값은 `False`이며, 환경변수를 설정하지 않으면 startup network check 없이 readiness endpoint에서 상태를 확인한다.
+- `startup_healthcheck=True`이면 custom lifespan 진입 전에 runtime healthcheck가 실행되고 required 실패 시 앱 startup이 실패한다.
 - `DOCMESH_SERVICES`는 기본 readiness 대상 집합을 결정한다.
 - `READINESS_REQUIRED_SERVICES`는 필수 실패 기준을 결정한다.
 - health endpoint 자체가 `KEYCLOAK_URL`, `NATS_SERVERS`를 직접 읽는 것은 아니다.
-- 대신 create_app이 service client 기반 check를 미리 구성해 둔다.
+- 대신 기본 create_app lifespan startup이 runtime client 기반 check를 구성해 둔다.
 
 기본 예시:
 
@@ -390,6 +438,10 @@ TOKEN_URL=/api/v1/auth/token
 CORS_ORIGINS=https://app.example.com
 CORS_CREDENTIALS=true
 READINESS_PARALLEL=false
+READINESS_TIMEOUT_SECONDS=5
+READINESS_OVERALL_TIMEOUT_SECONDS=15
+DOCMESH_SERVICE_ALTERNATIVES=postgres,sqlite
+DOCMESH_HEALTHCHECK_ENABLED=true
 DOCMESH_SERVICES=keycloak,nats
 READINESS_REQUIRED_SERVICES=keycloak
 ```

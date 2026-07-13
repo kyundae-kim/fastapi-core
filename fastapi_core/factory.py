@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import asyncio
-import inspect
 import json
 import logging
 import os
 from collections.abc import Callable
 from contextlib import asynccontextmanager
-from threading import Thread
 from typing import Any
 
 from fastapi import FastAPI
@@ -15,8 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from docmesh_py_core import (
     NatsConnectionBuilder,
     ServiceClientWrapper,
+    ServiceCloseError,
     ServiceConfigs,
-    close_service_clients,
+    ServiceRuntime,
+    assemble_service_runtime,
     configure_logging,
     create_keycloak_client,
     create_langfuse_client,
@@ -26,13 +25,16 @@ from docmesh_py_core import (
     create_ollama_client,
     create_postgres_client,
     create_sqlite_client,
+    validate_service_requirements,
 )
 
 from fastapi_core.config import AppConfig, load_app_config
 from fastapi_core.dependencies.auth import set_oauth2_token_url
-from fastapi_core.docmesh_settings import load_docmesh_settings
+from fastapi_core.docmesh_settings import build_docmesh_env_overlay
 from fastapi_core.routers.auth import router as auth_router
 from fastapi_core.routers.health import router as health_router
+
+logger = logging.getLogger(__name__)
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -96,29 +98,6 @@ def _build_service_clients(
     return clients
 
 
-def _run_awaitable_synchronously(awaitable: Any) -> Any:
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(awaitable)
-
-    result: dict[str, Any] = {}
-    error: dict[str, BaseException] = {}
-
-    def _runner() -> None:
-        try:
-            result["value"] = asyncio.run(awaitable)
-        except BaseException as exc:  # pragma: no cover
-            error["exception"] = exc
-
-    thread = Thread(target=_runner)
-    thread.start()
-    thread.join()
-    if error:
-        raise error["exception"]
-    return result.get("value")
-
-
 def _build_keycloak_check_kwargs() -> dict[str, str]:
     kwargs: dict[str, str] = {}
     username = os.getenv("KEYCLOAK_TOKEN_USERNAME")
@@ -143,13 +122,10 @@ def _configure_keycloak_provider(client: ServiceClientWrapper) -> None:
 def _wrap_readiness_check(
     check: Callable[..., object],
     *,
-    kwargs: dict[str, str] | None = None,
+    kwargs: dict[str, str],
 ) -> Callable[[], object]:
     def run_check() -> object:
-        result = check(**(kwargs or {}))
-        if inspect.isawaitable(result):
-            return _run_awaitable_synchronously(result)
-        return result
+        return check(**kwargs)
 
     return run_check
 
@@ -160,11 +136,13 @@ def _build_readiness_checks(
     checks: dict[str, Callable[[], object]] = {}
     for service_name, client in service_clients.items():
         check = client.check
-        kwargs = None
         if service_name == "keycloak":
-            kwargs = _build_keycloak_check_kwargs()
             check = getattr(client, "healthcheck", client.check)
-        checks[service_name] = _wrap_readiness_check(check, kwargs=kwargs)
+            check = _wrap_readiness_check(
+                check,
+                kwargs=_build_keycloak_check_kwargs(),
+            )
+        checks[service_name] = check
     return checks
 
 
@@ -182,18 +160,85 @@ def _build_readiness_metadata(
     }
 
 
+def _build_injected_service_runtime(
+    settings: ServiceConfigs,
+    config: AppConfig,
+) -> ServiceRuntime:
+    if config.service_alternatives:
+        validate_service_requirements(
+            settings,
+            one_of=tuple(set(group) for group in config.service_alternatives),
+        )
+    clients = _build_service_clients(settings, config.enabled_services)
+    return ServiceRuntime(
+        configs=settings,
+        clients=clients,
+        selected_services=frozenset(clients),
+        required_services=frozenset(config.required_services),
+    )
+
+
+def _configure_service_runtime(app: FastAPI, runtime: ServiceRuntime) -> None:
+    app.state.service_runtime = runtime
+    app.state.settings = runtime.configs
+    app.state.service_clients = runtime.clients
+    app.state.readiness_checks = _build_readiness_checks(runtime.clients)
+    keycloak_client = runtime.clients.get("keycloak")
+    if keycloak_client is not None:
+        _configure_keycloak_provider(keycloak_client)
+        if hasattr(keycloak_client, "client"):
+            app.state.auth_provider = keycloak_client.client
+
+
 def _build_lifespan(
     lifespan: Callable | None,
-    service_clients: dict[str, ServiceClientWrapper | NatsConnectionBuilder],
+    config: AppConfig,
+    runtime: ServiceRuntime | None,
 ) -> Callable:
     @asynccontextmanager
     async def managed_lifespan(app: FastAPI):
-        if lifespan is None:
-            yield
-        else:
-            async with lifespan(app):
+        app_runtime = runtime
+        if app_runtime is None:
+            app_runtime = await assemble_service_runtime(
+                build_docmesh_env_overlay(),
+                services=set(config.enabled_services),
+                required=set(config.required_services),
+                one_of=tuple(set(group) for group in config.service_alternatives),
+                check_on_startup=config.startup_healthcheck,
+                parallel_healthchecks=config.readiness_parallel,
+                healthcheck_timeout_seconds=config.readiness_timeout_seconds,
+                overall_healthcheck_timeout_seconds=(
+                    config.readiness_overall_timeout_seconds
+                ),
+            )
+            _configure_service_runtime(app, app_runtime)
+        elif config.startup_healthcheck:
+            await app_runtime.check(
+                parallel=config.readiness_parallel,
+                timeout_seconds=config.readiness_timeout_seconds,
+                overall_timeout_seconds=config.readiness_overall_timeout_seconds,
+            )
+        try:
+            if lifespan is None:
                 yield
-        close_service_clients(service_clients.values())
+            else:
+                async with lifespan(app):
+                    yield
+        finally:
+            try:
+                await app_runtime.close()
+            except ServiceCloseError as exc:
+                logger.error(
+                    "service_runtime_close_failed",
+                    extra={
+                        "event": {
+                            "operation": "service_runtime_close",
+                            "outcome": "error",
+                            "failure_count": len(exc.failures),
+                        }
+                    },
+                )
+                raise
 
     return managed_lifespan
 
@@ -206,27 +251,34 @@ def create_app(
 ) -> FastAPI:
     app_config = config or load_app_config()
     root_logger = _configure_application_logging(app_config)
-    app_settings = settings or load_docmesh_settings(tuple(app_config.enabled_services))
-    service_clients = _build_service_clients(app_settings, app_config.enabled_services)
+    service_runtime = (
+        _build_injected_service_runtime(settings, app_config)
+        if settings is not None
+        else None
+    )
 
     app = FastAPI(
         root_path=app_config.root_path,
-        lifespan=_build_lifespan(lifespan, service_clients),
+        lifespan=_build_lifespan(lifespan, app_config, service_runtime),
     )
     app.state.config = app_config
     app.state.root_logger = root_logger
-    app.state.settings = app_settings
-    app.state.service_clients = service_clients
-    keycloak_client = service_clients.get("keycloak")
-    if keycloak_client is not None and hasattr(keycloak_client, "client"):
-        app.state.auth_provider = keycloak_client.client
+    app.state.service_runtime = service_runtime
+    app.state.settings = settings
+    app.state.service_clients = {}
     app.state.readiness_parallel = app_config.readiness_parallel
-    app.state.readiness_checks = _build_readiness_checks(service_clients)
+    app.state.readiness_timeout_seconds = app_config.readiness_timeout_seconds
+    app.state.readiness_overall_timeout_seconds = (
+        app_config.readiness_overall_timeout_seconds
+    )
+    app.state.readiness_checks = {}
     app.state.readiness_services = _build_readiness_metadata(
         app_config.enabled_services,
         app_config.required_services,
     )
     app.state.required_services = set(app_config.required_services)
+    if service_runtime is not None:
+        _configure_service_runtime(app, service_runtime)
     set_oauth2_token_url(app_config.token_url)
 
     app.add_middleware(

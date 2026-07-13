@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import os
-from contextlib import contextmanager
 from functools import lru_cache
-from typing import Iterator
 
 from docmesh_py_core import ServiceConfigs, load_service_configs
 
@@ -38,25 +36,12 @@ def build_docmesh_env_overlay() -> dict[str, str]:
     return env
 
 
-@contextmanager
-def _apply_missing_docmesh_defaults() -> Iterator[None]:
-    added_keys: list[str] = []
-    for key, value in _docmesh_default_env().items():
-        if key in os.environ:
-            continue
-        os.environ[key] = value
-        added_keys.append(key)
-    try:
-        yield
-    finally:
-        for key in added_keys:
-            os.environ.pop(key, None)
-
-
 @lru_cache(maxsize=1)
 def load_docmesh_settings(
     enabled_services: tuple[str, ...] | None = None,
 ) -> ServiceConfigs:
     services = set(enabled_services) if enabled_services else None
-    with _apply_missing_docmesh_defaults():
-        return load_service_configs(services=services)
+    return load_service_configs(
+        build_docmesh_env_overlay(),
+        services=services,
+    )

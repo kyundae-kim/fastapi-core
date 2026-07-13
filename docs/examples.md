@@ -206,7 +206,11 @@ config = AppConfig(
     cors_origins=["https://app.example.com"],
     cors_credentials=True,
     readiness_parallel=True,
-    enabled_services=["keycloak", "nats"],
+    readiness_timeout_seconds=5,
+    readiness_overall_timeout_seconds=15,
+    service_alternatives=[["postgres", "sqlite"]],
+    startup_healthcheck=True,
+    enabled_services=["keycloak", "postgres", "sqlite", "nats"],
     required_services=["keycloak"],
 )
 
@@ -215,8 +219,10 @@ app = create_app(config=config)
 
 이 예제의 현재 의미:
 - OpenAPI password flow의 `tokenUrl`이 `/api/v1/auth/token`으로 반영됨
-- readiness 기본 체크 대상은 `keycloak`, `nats`
+- readiness 기본 체크 대상은 `keycloak`, `postgres`, `sqlite`, `nats`
 - `keycloak`만 필수 서비스로 간주
+- PostgreSQL 또는 SQLite 중 적어도 하나의 설정이 필요
+- startup과 readiness endpoint 모두 서비스별 5초, 전체 15초 제한 적용
 - `nats` 실패는 degraded 후보, `keycloak` 실패는 error 후보
 
 ---
@@ -231,6 +237,10 @@ TOKEN_URL=/api/v1/auth/token
 CORS_ORIGINS=https://app.example.com,https://admin.example.com
 CORS_CREDENTIALS=true
 READINESS_PARALLEL=true
+READINESS_TIMEOUT_SECONDS=5
+READINESS_OVERALL_TIMEOUT_SECONDS=15
+DOCMESH_SERVICE_ALTERNATIVES=postgres,sqlite
+DOCMESH_HEALTHCHECK_ENABLED=true
 DOCMESH_LOG_LEVEL=INFO
 APP_LOG_PATH=/tmp/app.log
 APP_LOG_JSON=true
@@ -245,6 +255,8 @@ POSTGRES_DSN=postgresql+psycopg://docmesh:change-me@postgres.example.com:5432/do
 현재 구현 기준 해석:
 - `DOCMESH_SERVICES` → readiness 기본 활성 서비스 목록
 - `READINESS_REQUIRED_SERVICES` → readiness 실패 시 `503`을 유발하는 필수 서비스 목록
+- `DOCMESH_SERVICE_ALTERNATIVES` → 세미콜론/쉼표 형식의 `one_of` 서비스 그룹
+- timeout 값 → startup healthcheck와 readiness endpoint에 공통 적용
 - `APP_LOG_*`, `DOCMESH_LOG_LEVEL` → 앱 로깅 초기화에 사용
 - PostgreSQL은 `POSTGRES_DSN` 하나를 사용하거나, 아래 개별 환경변수를 대신 사용할 수 있음
 
@@ -369,8 +381,14 @@ app = create_app(lifespan=lifespan)
 ```
 
 현재 구현 기준 보장되는 점:
+- `settings`를 생략한 기본 경로는 custom lifespan보다 먼저 `assemble_service_runtime(...)`으로 외부 서비스 runtime을 준비한다.
+- 준비된 runtime은 `app.state.service_runtime`에 저장되고 clients/settings도 기존 state 키로 노출된다.
 - custom lifespan startup/shutdown이 호출된다.
-- 내부 `service_clients`는 lifespan 종료 뒤 `close_service_clients(service_clients.values())`로 정리된다.
+- 내부 `service_clients`는 lifespan 종료 시 `await service_runtime.close()`를 통해 정리된다.
+- custom lifespan shutdown이 예외를 발생시켜도 내부 client 정리는 `finally` 경로에서 실행된다.
+- sync/async `close()`를 모두 지원하므로 NATS builder의 비동기 종료도 await된다.
+- startup healthcheck 실패 시 custom lifespan 진입 전에 생성된 client를 rollback한다.
+- runtime close 실패 시 `service_runtime_close_failed` 이벤트를 남기고 `ServiceCloseError`를 전파한다.
 
 메시징/NATS 같은 외부 자원은 이 지점에서 초기화/정리하는 패턴이 권장된다.
 

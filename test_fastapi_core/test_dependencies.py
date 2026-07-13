@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import get_type_hints
 
+import fastapi_core.dependencies.config as config_module
 import fastapi_core.dependencies.services as services_module
 from docmesh_py_core import KeycloakAuthService, NatsConnectionBuilder
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
@@ -16,6 +17,7 @@ from fastapi_core.dependencies import (
     get_sqlite_engine,
 )
 from fastapi_core.dependencies.auth import get_current_user, require_permissions
+from fastapi_core.dependencies.config import get_settings
 from fastapi_core.docmesh_settings import load_docmesh_settings
 from fastapi_core.factory import create_app
 from fastapi_core.schemas.user import UserInfo
@@ -45,6 +47,25 @@ class FakeServiceClient:
 class FakeServiceClients(dict[str, FakeServiceClient]):
     def __init__(self, provider: FakeAuthProvider):
         super().__init__({"keycloak": FakeServiceClient(provider)})
+
+
+def test_get_settings_falls_back_before_default_runtime_startup(monkeypatch):
+    sentinel = object()
+    config = AppConfig(
+        enabled_services=["sqlite"],
+        required_services=["sqlite"],
+    )
+    app = create_app(config=config, include_auth_router=False)
+    request = Request({"type": "http", "app": app})
+    monkeypatch.setattr(
+        config_module,
+        "load_docmesh_settings",
+        lambda _services: sentinel,
+    )
+
+    result = get_settings(request, config)
+
+    assert result is sentinel
 
 
 def test_service_dependency_module_exposes_typed_service_getters():
