@@ -286,18 +286,15 @@ POSTGRES_MAX_OVERFLOW=10
 기본값은 `keycloak`만 활성/필수다.
 
 ```python
+from fastapi.testclient import TestClient
 from fastapi_core import create_app
 
 app = create_app(include_auth_router=False)
-```
 
-위와 같이 생성했을 때 앱 상태 예시는 다음과 같다.
-
-```python
-app.state.readiness_services == {
-    "keycloak": {"enabled": True, "required": True}
-}
-app.state.required_services == {"keycloak"}
+# 기본 runtime과 readiness spec은 lifespan startup에서 구성된다.
+with TestClient(app):
+    spec = app.state.readiness_registry.specs["keycloak"]
+    assert spec.required is True
 ```
 
 즉, 현재 구현은 예전 문서 초안처럼 “readiness check가 비어 있으면 단순 ok”에만 머물지 않고,

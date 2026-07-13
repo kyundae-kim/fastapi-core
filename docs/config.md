@@ -77,7 +77,7 @@ class AppConfig(BaseSettings):
 | `token_url` | 앱별 `OAuth2PasswordBearer`와 OpenAPI schema | 앱 인스턴스별 password flow token URL 반영 |
 | `cors_origins` | `CORSMiddleware` | 허용 origin 목록 |
 | `cors_credentials` | `CORSMiddleware` | credential 허용 여부 |
-| `readiness_parallel` | `app.state.readiness_parallel` | readiness check 병렬 실행 여부 |
+| `readiness_parallel` | `app.state.config`, readiness endpoint | readiness check 병렬 실행 여부 |
 | `readiness_timeout_seconds` | runtime startup/readiness endpoint | 서비스별 healthcheck 제한 시간 |
 | `readiness_overall_timeout_seconds` | runtime startup/readiness endpoint | 전체 healthcheck 실행 제한 시간 |
 | `service_alternatives` | runtime `one_of` 검증 | 각 그룹에서 최소 한 서비스가 구성되어야 하는 대안 정책 |
@@ -87,7 +87,7 @@ class AppConfig(BaseSettings):
 | `log_json` | `_configure_application_logging(...)` | JSON formatter 사용 여부 |
 | `log_force` | `_configure_application_logging(...)` | 로거 재구성 강제 여부 |
 | `enabled_services` | `load_docmesh_settings(...)`, readiness 기본 구성 | 로딩/체크할 서비스 집합 |
-| `required_services` | `app.state.required_services`, readiness 상태 판정 | 실패 시 `503`을 유발하는 필수 서비스 집합 |
+| `required_services` | typed readiness spec, readiness 상태 판정 | 실패 시 `503`을 유발하는 필수 서비스 집합 |
 
 ### 3.2 로더
 
@@ -158,21 +158,18 @@ READINESS_REQUIRED_SERVICES=keycloak
 3. 명시적 `settings`가 있으면 direct factory client를 `ServiceRuntime`으로 감싸 주입 경로 구성
 4. `FastAPI(root_path=config.root_path, lifespan=_build_lifespan(...))` 생성
 5. lifespan startup에서 `settings`가 없으면 `assemble_service_runtime(build_docmesh_env_overlay(), services=..., required=..., one_of=..., check_on_startup=..., healthcheck_timeout_seconds=..., overall_healthcheck_timeout_seconds=...)` 실행
-6. runtime의 `configs`, `clients`, readiness check를 `app.state`에 설치
+6. runtime의 `configs`, `clients`를 `app.state`에 설치하고 readiness check를 typed registry에 등록
 7. `app.state.config = config`, `app.state.root_logger = root_logger`
 8. `app.state.service_runtime = runtime`
 9. `app.state.settings = runtime.configs`
 10. `app.state.service_clients = runtime.clients`
 11. keycloak client가 있으면 `app.state.auth_provider = service_clients["keycloak"].client`
-12. `app.state.readiness_parallel = config.readiness_parallel`
-13. per-service/overall timeout을 `app.state`에 저장
-14. 앱별 `ReadinessRegistry`에 service client check와 required 메타데이터 등록
-15. legacy readiness state 키를 registry의 내부 컨테이너와 연결
-16. `ResourceRegistry`에서 managed resource를 생성하고 healthcheck를 readiness에 자동 등록
-17. 앱별 OAuth2 scheme과 OpenAPI security metadata 구성
-18. CORS, correlation ID middleware 및 표준 exception handler 등록
-19. router 포함
-20. custom lifespan 종료 후 managed resource를 역순 정리하고 service runtime 종료
+12. 앱별 `ReadinessRegistry`에 service client check와 required 메타데이터 등록
+13. `ResourceRegistry`에서 managed resource를 생성하고 healthcheck를 readiness에 자동 등록
+14. 앱별 OAuth2 scheme과 OpenAPI security metadata 구성
+15. CORS, correlation ID middleware 및 표준 exception handler 등록
+16. router 포함
+17. custom lifespan 종료 후 managed resource를 역순 정리하고 service runtime 종료
 
 즉, 설정은 현재 코드에서 **앱 조립**, **로깅 초기화**, **service_clients/readiness 기본 구성**, **auth 문서 표면(OpenAPI) 조정**에 직접 사용된다. `token_url`은 앱마다 별도 `OAuth2PasswordBearer`에 저장되므로, 한 프로세스에서 서로 다른 값을 사용하는 여러 앱을 생성해도 기존 앱의 OpenAPI password flow가 변경되지 않는다.
 
@@ -264,27 +261,20 @@ password grant에서는 함수 인자의 `username` / `password`가 우선하고
 
 ## 7. readiness / health 관련 설정
 
-현재 readiness는 `AppConfig`와 앱별 `ReadinessRegistry`가 함께 결정한다. legacy `app.state` readiness 키는 기존 직접 override 호환을 위한 내부 표면이다.
+현재 readiness는 `app.state.config`와 앱별 `app.state.readiness_registry`가 함께 결정한다. 제거된 legacy readiness state 키는 제공하지 않는다.
 
 실제 동작:
 - `/health/liveness`는 설정 의존성이 거의 없다.
-- `/health/readiness`는 아래 값을 읽는다.
-  - `app.state.readiness_checks`
-  - `app.state.readiness_services`
-  - `app.state.required_services`
-  - `app.state.readiness_parallel`
-  - `app.state.readiness_timeout_seconds`
-  - `app.state.readiness_overall_timeout_seconds`
+- `/health/readiness`는 `app.state.readiness_registry.specs`와 `app.state.config`를 읽는다.
 
 ### 7.1 현재 설정 연결 방식
 
 | 항목 | 공급 방식 | 설명 |
 | --- | --- | --- |
 | typed readiness registry | 기본 service check, `register_readiness_check(...)`, managed resource | check와 required/timeout/redaction 정책 |
-| legacy readiness state | 기존 직접 override 호환 | 신규 애플리케이션의 public 등록 경로가 아님 |
-| `readiness_parallel` | `AppConfig` 또는 직접 state 설정 | 병렬 실행 여부 |
-| `readiness_timeout_seconds` | `AppConfig` 또는 직접 state 설정 | 서비스별 제한 시간 |
-| `readiness_overall_timeout_seconds` | `AppConfig` 또는 직접 state 설정 | 전체 제한 시간 |
+| `readiness_parallel` | `AppConfig` | 병렬 실행 여부 |
+| `readiness_timeout_seconds` | `AppConfig` | 서비스별 제한 시간 |
+| `readiness_overall_timeout_seconds` | `AppConfig` | 전체 제한 시간 |
 | `service_alternatives` | `AppConfig` | assembly `one_of` 구성 검증 |
 | `startup_healthcheck` | `AppConfig` | runtime 조립 직후 required service check 실행 여부 |
 
@@ -305,10 +295,15 @@ password grant에서는 함수 인자의 `username` / `password`가 우선하고
 기본 예시:
 
 ```python
-app.state.readiness_services == {
-    "keycloak": {"enabled": True, "required": True}
-}
-app.state.required_services == {"keycloak"}
+from fastapi.testclient import TestClient
+from fastapi_core import create_app
+
+app = create_app(include_auth_router=False)
+
+# 기본 runtime과 readiness spec은 lifespan startup에서 구성된다.
+with TestClient(app):
+    spec = app.state.readiness_registry.specs["keycloak"]
+    assert spec.required is True
 ```
 
 사용자 정의 readiness 등록 예시:

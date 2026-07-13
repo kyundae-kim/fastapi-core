@@ -10,17 +10,17 @@
 
 | 구분 | 파일 수 | Code LOC |
 |---|---:|---:|
-| `fastapi_core/` | 18 | 1,272 |
-| `test_fastapi_core/` | 13 | 1,581 |
-| 합계 | 31 | 2,853 |
+| `fastapi_core/` | 18 | 1,127 |
+| `test_fastapi_core/` | 14 | 1,617 |
+| 합계 | 32 | 2,744 |
 
 프로덕션 코드 상위 모듈:
 
 | 모듈 | Code LOC | 관찰 |
 |---|---:|---|
-| `fastapi_core/factory.py` | 282 | 서비스 조립, readiness 연결, lifecycle, 앱 초기화가 집중됨 |
-| `fastapi_core/extensions.py` | 246 | typed registry와 legacy state 호환 자료구조를 동시에 유지함 |
-| `fastapi_core/routers/health.py` | 150 | registry 경로와 legacy state 경로가 함께 존재함 |
+| `fastapi_core/factory.py` | 246 | 서비스 조립, readiness 연결, lifecycle, 앱 초기화가 집중됨 |
+| `fastapi_core/extensions.py` | 198 | typed readiness와 managed resource lifecycle을 관리함 |
+| `fastapi_core/routers/health.py` | 100 | typed registry 결과를 HTTP 응답으로 변환함 |
 | `fastapi_core/http.py` | 128 | HTTP 오류 정규화와 correlation ID 처리 |
 | `fastapi_core/config.py` | 114 | 환경변수 alias/파싱/검증 |
 
@@ -28,13 +28,13 @@
 
 | 모듈 | Code LOC |
 |---|---:|
-| `test_fastapi_core/test_factory.py` | 307 |
-| `test_fastapi_core/test_extensions.py` | 209 |
-| `test_fastapi_core/test_dependencies.py` | 178 |
-| `test_fastapi_core/test_health_router.py` | 155 |
-| `test_fastapi_core/test_config.py` | 128 |
+| `test_fastapi_core/test_factory.py` | 342 |
+| `test_fastapi_core/test_dependencies.py` | 174 |
+| `test_fastapi_core/test_extensions.py` | 168 |
+| `test_fastapi_core/test_config.py` | 131 |
+| `test_fastapi_core/test_health_router.py` | 120 |
 
-기준 동작은 `uv run pytest -q` 실행에서 `90 passed`다.
+P4 완료 후 기준 동작은 `uv run pytest -q` 실행에서 `101 passed`다.
 
 ## 3. 핵심 판단
 
@@ -48,6 +48,8 @@
 ## 4. 권장 리팩토링
 
 ### P0. 축소 기준과 보호 계약 고정
+
+**상태: 완료**
 
 **대상**
 - `docs/srs.md`
@@ -63,9 +65,17 @@
 - 직접 LOC 절감 없음.
 - 이후 단계가 공개 API 제거가 아닌 내부 중복 제거임을 보장한다.
 
+**수행 결과**
+- `docs/srs.md`와 `docs/api.md`에 보호할 package export, endpoint, signature/default 계약을 명시했다.
+- `test_fastapi_core/test_public_api.py`를 추가해 curated export, `create_app(...)`, runtime extension dataclass/function, legacy readiness compatibility alias를 고정했다.
+- P0 전 기준은 프로덕션 1,272 Code LOC, 테스트 1,581 Code LOC, `90 passed`다.
+- P0 후 기준은 프로덕션 1,272 Code LOC, 테스트 1,660 Code LOC, `95 passed`다. 테스트 증가는 향후 축소 단계에서 공개 계약의 우발적 변경을 막기 위한 characterization 비용이다.
+
 ---
 
 ### P1. 공개·legacy 계약을 유지한 즉시 축소
+
+**상태: 완료**
 
 이 단계는 breaking change 없이 먼저 적용할 수 있는 묶음이다.
 
@@ -89,11 +99,11 @@
 **근거**
 - `fastapi_core/factory.py:130-154`는 Keycloak 인자 고정 closure와 client→check 중간 dict를 만든다.
 - `fastapi_core/factory.py:198-206`은 이 dict를 다시 registry spec으로 변환한다.
-- upstream `ServiceRuntime.checks`는 일반 서비스 check mapping을 이미 제공한다.
+- runtime client를 직접 순회하면 중간 dict 없이 기존 missing-check fail-fast 의미를 유지할 수 있다.
 
 **방안**
-- Keycloak만 `functools.partial()` adapter를 유지한다.
-- 일반 서비스는 `runtime.checks`를 사용하고 registry에 바로 등록한다.
+- 일반 서비스는 `runtime.clients`의 `client.check`를 registry에 바로 등록한다.
+- Keycloak credential은 callable `repr`에 secret이 노출되지 않는 inline closure에 snapshot한다.
 - `FASTAPI_CORE_TEST_SCOPE`의 앱 구성 시점 snapshot, async callable, `redact_errors=False`는 그대로 유지한다.
 
 **예상 절감:** 프로덕션 15~25 LOC
@@ -112,15 +122,23 @@
 
 #### P1-4. 작은 선언 반복 축소
 
-- `factory.py:80-106`: settings 주입 경로의 서비스 factory 분기를 명시적 module-level mapping으로 바꾸면 8~14 LOC 절감할 수 있다. Keycloak, Langfuse `None`, NATS 타입의 특수 의미는 유지한다.
-- `config.py:54-107`: `AliasChoices(field_name, ENV_NAME)` 생성 helper로 8~14 LOC 절감할 수 있다.
+- `factory.py`: settings 주입 경로의 서비스 factory 분기를 호출 시점의 명시적 mapping으로 바꿨다. 개별 factory monkeypatch, Keycloak, Langfuse `None`, NATS 타입의 기존 의미를 유지한다.
+- `config.py`: 문자열 `validation_alias`와 `populate_by_name=True` 조합은 field name과 alias가 동시에 입력될 때 기존 우선순위를 바꾸므로 적용하지 않았다. 해당 계약을 회귀 테스트로 추가하고 기존 `AliasChoices`를 유지했다.
 - 동적 함수 생성이나 숨은 registration은 사용하지 않는다.
 
-**P1 묶음 예상 순절감:** 프로덕션 약 60~100 LOC
+**P1 수행 결과**
+- 프로덕션 Code LOC: 1,272 → 1,208, **64 LOC 감소(5.0%)**
+- 프로덕션 physical LOC: 1,719 → 1,636, **83 LOC 감소(4.8%)**
+- 테스트 Code LOC: 1,660 → 1,713. 제거된 private helper 대신 runtime 통합 경로, missing-check fail-fast, secret-safe repr, factory 교체 가능성, config alias 우선순위를 검증하기 위한 증가다.
+- 독립 리뷰에서 발견한 Keycloak secret repr 노출과 missing-check fail-open 회귀를 수정했다.
+- 수정 후 독립 재리뷰는 보안·로직 차단 이슈 없이 `PASS`했다.
+- 전체 테스트: `99 passed`
 
 ---
 
 ### P2. breaking release에서 readiness를 `ReadinessRegistry` 단일 경로로 통합
+
+**상태: 완료**
 
 **근거**
 - `fastapi_core/extensions.py:68-154`는 `specs` 외에도 `checks`, `services`, `required_services`를 중복 저장한다.
@@ -148,6 +166,14 @@
 **검증**
 - 필수 실패 `503`, 선택 실패 `200/degraded`, 전체 timeout `503`, per-check timeout, error redaction, sync/async check 테스트를 유지한다.
 - managed resource가 등록한 check도 동일 registry에서 동작하는지 검증한다.
+
+**P2 수행 결과**
+- 프로덕션 Code LOC: 1,208 → 1,138, **70 LOC 감소**
+- 프로덕션 physical LOC: 1,636 → 1,552, **84 LOC 감소**
+- 테스트 Code LOC: 1,713 → 1,697, **16 LOC 감소**
+- legacy readiness state와 실행 옵션 mirror를 제거하고 `app.state.readiness_registry` 및 `app.state.config`만 사용한다.
+- 독립 리뷰에서 발견한 readiness lifespan 예제의 조기 registry 조회를 수정하고 실제 startup 경로로 검증했다.
+- 전체 테스트: `98 passed`
 
 ---
 
@@ -183,6 +209,8 @@
 
 ### P4. 반복 테스트를 fixture와 parametrize로 통합
 
+**상태: 완료**
+
 #### P4-1. auth 실패 매핑 table-driven 테스트
 
 **근거**
@@ -207,7 +235,7 @@
 - `test_fastapi_core/conftest.py`에 다음처럼 의미가 명확한 fixture/factory만 둔다.
   - `empty_app_factory(...)`
   - `auth_app_factory(provider=...)`
-  - `register_check(app, name, check, required=..., timeout=..., redact=...)`
+  - `readiness_app_factory(checks, required=..., ...)`
 - endpoint별 결과 assertion은 각 테스트에 남겨 과도한 test DSL을 피한다.
 - 비동기 단위 테스트는 기존 선호대로 `pytest.mark.asyncio` 함수와 `await`를 유지한다.
 - `test_health_router.py`의 상태 설정 및 timeout 사례는 helper/parametrize로 47~60 LOC를 줄일 수 있다.
@@ -230,6 +258,19 @@
 **예상 절감**
 - 테스트: 약 8~12 LOC
 
+**P4 수행 결과**
+- auth 오류 분기를 immutable tuple mapping으로 바꾸고 known 오류를 table-driven 테스트로 통합했다. generic Keycloak 오류와 unknown fallback 검증은 추가했다.
+- `empty_app_factory`, `auth_app_factory`, `readiness_app_factory`로 readiness, managed resource, auth dependency 준비 코드를 통합했다.
+- live readiness의 Keycloak/NATS/Postgres 필수 서비스 사례를 parameterize하고 optional/unreachable NATS 시나리오는 독립 테스트로 유지했다.
+- factory lifecycle은 client 주입 monkeypatch만 파일 로컬 helper로 묶고 각 fake의 check/close/rollback assertion은 유지했다.
+- 프로덕션 Code LOC: 1,138 → 1,127, **11 LOC 감소**
+- 프로덕션 physical LOC: 1,552 → 1,544, **8 LOC 감소**
+- 테스트 Code LOC: 1,697 → 1,617, **80 LOC 감소**
+- 합계 Code LOC: 2,835 → 2,744, **91 LOC 감소**
+- P2에서 legacy readiness 테스트 준비가 이미 제거됐고 generic/unknown auth coverage를 추가했기 때문에 최초 예상치보다 절감 폭이 작다.
+- 독립 리뷰는 보안 concern, 로직 오류, assertion coverage 약화 없이 `PASS`했다.
+- 전체 테스트: `101 passed`
+
 ---
 
 ### P5. 작은 축소는 동작 경계를 유지하는 범위에서만 수행
@@ -249,14 +290,13 @@
 
 ## 5. 권장 실행 순서
 
-1. **P4 테스트 중복 축소**: 동작 변경 없이 보호망을 간결하게 만든다.
-2. **P1 즉시 축소**: health 조립, readiness adapter, resource binding을 legacy 호환 상태로 단순화한다.
-3. 전체 pytest 및 LOC 재측정.
-4. breaking release 범위가 확정되면 **P2 legacy readiness 제거**를 적용한다. minor release에서는 deprecation을 먼저 적용한다.
+1. **P0 완료**: 공개 계약과 기준선을 고정했다.
+2. **P1 완료**: health 조립, readiness adapter, resource binding을 호환 상태로 단순화했다.
+3. **P2 완료**: breaking 범위에서 legacy readiness state를 제거하고 typed registry로 통합했다.
+4. **P4 테스트 중복 축소**: 동작 변경 없이 보호망을 간결하게 만든다.
 5. **P3 upstream runtime API 추가**: `docmesh_py_core` 변경과 릴리스를 먼저 완료한다.
 6. `fastapi_core`에서 로컬 service factory 분기를 제거한다.
 7. **P5 작은 축소**를 적용하되, 각 변경이 실제 순감소인지 diff로 확인한다.
-8. API/설정/예제/테스트 문서를 현재 계약에 맞게 동기화한다.
 
 ## 6. 목표치
 
@@ -265,10 +305,10 @@
 | 구분 | 현재 | 목표 | 예상 감소 |
 |---|---:|---:|---:|
 | 프로덕션 Code LOC | 1,272 | 1,122~1,162 | 110~150 (8.6~11.8%) |
-| 테스트 Code LOC | 1,581 | 1,361~1,401 | 180~220 (11.4~13.9%) |
-| 합계 | 2,853 | 2,483~2,563 | 290~370 (10.2~13.0%) |
+| 테스트 Code LOC | 1,660 | 1,440~1,480 | 180~220 (10.8~13.3%) |
+| 합계 | 2,932 | 2,562~2,642 | 290~370 (9.9~12.6%) |
 
-P2 breaking 변경과 P3 upstream 변경을 제외하고 이 저장소만 먼저 정리하면 프로덕션 절감 폭은 약 60~100 LOC로 보는 것이 안전하다.
+P2까지 프로덕션 Code LOC는 1,272 → 1,138로 134 LOC(10.5%) 감소했다. 테스트 보호망 증가를 포함한 전체 Code LOC는 2,932 → 2,835로 97 LOC(3.3%) 감소했다.
 
 ## 7. 완료 조건
 

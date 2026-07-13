@@ -21,6 +21,7 @@
 - typed readiness 및 managed resource lifecycle
 - 앱별 OAuth2, 선언적 authorization, correlation ID 및 problem-details 오류 처리
 - 구조화 로깅
+- curated package export, app factory/runtime extension signature, legacy readiness state 부재 계약
 
 - 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
@@ -49,6 +50,7 @@ test_fastapi_core/
   test_http.py
   test_dependencies.py
   test_extensions.py
+  test_public_api.py
   test_schemas.py
 ```
 
@@ -72,9 +74,9 @@ uv run pytest -q -m integration
 ```
 
 최근 실제 실행 결과:
-- `uv run pytest -q -m 'not integration'` → `79 passed, 11 deselected, 2 warnings`
-- `uv run pytest -q` → `90 passed, 2 warnings`
-- `uv run pytest -q -m integration` → `11 passed, 79 deselected, 2 warnings`
+- `uv run pytest -q -m 'not integration'` → `90 passed, 11 deselected, 2 warnings`
+- `uv run pytest -q` → `101 passed, 2 warnings`
+- `uv run pytest -q -m integration` → `11 passed, 90 deselected, 2 warnings`
 
 테스트 러너/환경 특성:
 - `pytest` 사용
@@ -279,7 +281,7 @@ PostgreSQL 통합 테스트 env:
 - 후속 factory 실패 시 startup rollback
 - required startup healthcheck 실패 시 async close rollback
 - 빈 이름과 framework 예약 이름 거부
-- legacy readiness state의 재할당 및 in-place override 호환
+- typed registry 단일 경로와 legacy readiness state 부재
 
 ## 5.5B HTTP contract 테스트
 
@@ -339,7 +341,7 @@ PostgreSQL 통합 테스트 env:
 
 문서 계획이 아니라 현재 구현된 계약을 검증한다.
 예를 들어:
-- readiness는 typed registry를 기본 경로로 검증하고 legacy state override 호환도 별도로 검증한다.
+- readiness는 typed registry 단일 경로와 공개 registration API를 검증한다.
 - auth는 빠른 회귀에서는 fake provider 주입으로 계약을 고정하고, live integration에서는 실제 Keycloak 서버 경로를 검증한다.
 - config는 실제 `AppConfig` 및 `docmesh_settings` 로더를 직접 통과시킨다.
 
@@ -452,6 +454,8 @@ PostgreSQL 통합 테스트 env:
 - [x] multi-app OAuth2 OpenAPI 격리 테스트가 있다.
 - [x] role/scope/permission authorization dependency 테스트가 있다.
 - [x] correlation ID 및 problem-details 오류 처리 테스트가 있다.
+- [x] curated package export와 app factory/runtime extension signature/default가 회귀 테스트로 고정되었다.
+- [x] legacy readiness state가 노출되지 않고 typed registry만 제공된다는 동작이 검증되었다.
 
 미완료 체크:
 - [ ] `/token`의 502/unexpected 500 테스트
@@ -476,6 +480,7 @@ PostgreSQL 통합 테스트 env:
 - `test_fastapi_core/test_auth_router.py`
 - `test_fastapi_core/test_health_router.py`
 - `test_fastapi_core/test_dependencies.py`
+- `test_fastapi_core/test_public_api.py`
 - `test_fastapi_core/test_schemas.py`
 - `test_fastapi_core/integration/conftest.py`
 - `test_fastapi_core/integration/test_keycloak_auth_flow.py`

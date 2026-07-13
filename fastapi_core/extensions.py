@@ -4,6 +4,7 @@ import asyncio
 import inspect
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, Generic, TypeVar
 
 from docmesh_py_core import HealthCheckResult, async_check_all_services
@@ -16,10 +17,7 @@ _RESERVED_RESOURCE_NAMES = frozenset(
     {
         "auth_provider",
         "config",
-        "readiness_checks",
         "readiness_registry",
-        "readiness_services",
-        "required_services",
         "resource_registry",
         "resources",
         "root_logger",
@@ -59,26 +57,13 @@ async def _invoke_check(check: Check, timeout_seconds: float | None) -> None:
         if inspect.isawaitable(result):
             await result
 
-    if timeout_seconds is None:
-        await invoke()
-    else:
-        await asyncio.wait_for(invoke(), timeout=timeout_seconds)
+    await asyncio.wait_for(invoke(), timeout=timeout_seconds)
 
 
 class ReadinessRegistry:
     def __init__(self, *, default_timeout_seconds: float | None = None) -> None:
         self.default_timeout_seconds = default_timeout_seconds
         self.specs: dict[str, ReadinessCheckSpec] = {}
-        self.checks: dict[str, Check] = {}
-        self.services: dict[str, dict[str, bool]] = {}
-        self.required_services: set[str] = set()
-
-    def declare(self, name: str, *, required: bool, enabled: bool = True) -> None:
-        self.services[name] = {"enabled": enabled, "required": required}
-        if required:
-            self.required_services.add(name)
-        else:
-            self.required_services.discard(name)
 
     def register(self, spec: ReadinessCheckSpec) -> None:
         if not spec.name.strip():
@@ -88,34 +73,9 @@ class ReadinessRegistry:
         if spec.timeout_seconds is not None and spec.timeout_seconds <= 0:
             raise ValueError("readiness check timeout_seconds must be greater than zero")
         self.specs[spec.name] = spec
-        self.checks[spec.name] = spec.check
-        self.declare(spec.name, required=spec.required)
 
     def unregister(self, name: str) -> None:
         self.specs.pop(name, None)
-        self.checks.pop(name, None)
-        self.services.pop(name, None)
-        self.required_services.discard(name)
-
-    def owns_legacy_state(
-        self,
-        checks: object,
-        services: object,
-        required_services: object,
-    ) -> bool:
-        if (
-            checks is not self.checks
-            or services is not self.services
-            or required_services is not self.required_services
-            or set(self.checks) != set(self.specs)
-        ):
-            return False
-        return all(
-            self.checks[name] is spec.check
-            and self.services.get(name, {}).get("required") is spec.required
-            and (name in self.required_services) is spec.required
-            for name, spec in self.specs.items()
-        )
 
     async def check(
         self,
@@ -194,7 +154,7 @@ class ResourceRegistry:
                     value = await value
                 self.instances[resource.name] = value
                 if resource.healthcheck is not None:
-                    check = self._bind_healthcheck(resource, value)
+                    check = partial(resource.healthcheck, value)
                     self.readiness.register(
                         ReadinessCheckSpec(
                             name=resource.name,
@@ -211,26 +171,6 @@ class ResourceRegistry:
             except BaseException as close_exc:
                 exc.add_note(f"managed resource rollback failed: {close_exc}")
             raise
-
-    def _bind_healthcheck(
-        self,
-        resource: ManagedResource[Any],
-        value: Any,
-    ) -> Check:
-        healthcheck = resource.healthcheck
-        if healthcheck is None:
-            raise ValueError("managed resource healthcheck is not configured")
-        if inspect.iscoroutinefunction(healthcheck):
-
-            async def async_check() -> None:
-                await healthcheck(value)
-
-            return async_check
-
-        def sync_check() -> object | Awaitable[object]:
-            return healthcheck(value)
-
-        return sync_check
 
     async def check_startup(
         self,

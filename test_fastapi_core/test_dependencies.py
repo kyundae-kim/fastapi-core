@@ -100,9 +100,8 @@ def test_service_dependency_module_exposes_typed_service_getters():
     assert get_type_hints(services_module.get_nats_connection_builder)["return"] is NatsConnectionBuilder
 
 
-def test_get_current_user_returns_401_when_token_missing(settings):
-    app = create_app(settings=settings, include_auth_router=False)
-    app.state.auth_provider = FakeAuthProvider()
+def test_get_current_user_returns_401_when_token_missing(auth_app_factory):
+    app = auth_app_factory(FakeAuthProvider(), include_auth_router=False)
 
     @app.get("/me", response_model=UserInfo)
     async def me(user: UserInfo = Depends(get_current_user)):
@@ -115,9 +114,8 @@ def test_get_current_user_returns_401_when_token_missing(settings):
     assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
-def test_require_permissions_returns_403_when_role_missing(settings):
-    app = create_app(settings=settings, include_auth_router=False)
-    app.state.auth_provider = FakeAuthProvider()
+def test_require_permissions_returns_403_when_role_missing(auth_app_factory):
+    app = auth_app_factory(FakeAuthProvider(), include_auth_router=False)
 
     @app.get("/admin")
     async def admin(_user: UserInfo = Depends(require_permissions("admin"))):
@@ -130,9 +128,8 @@ def test_require_permissions_returns_403_when_role_missing(settings):
     assert response.json()["detail"] == "Forbidden"
 
 
-def test_require_permissions_accepts_scope_permissions(settings):
-    app = create_app(settings=settings, include_auth_router=False)
-    app.state.auth_provider = FakeAuthProvider()
+def test_require_permissions_accepts_scope_permissions(auth_app_factory):
+    app = auth_app_factory(FakeAuthProvider(), include_auth_router=False)
 
     @app.get("/profile")
     async def profile(_user: UserInfo = Depends(require_permissions("openid"))):
@@ -148,9 +145,8 @@ def test_require_permissions_accepts_scope_permissions(settings):
     assert response.json() == {"ok": True}
 
 
-def test_require_roles_and_scopes_are_declarative_dependencies(settings):
-    app = create_app(settings=settings, include_auth_router=False)
-    app.state.auth_provider = FakeAuthProvider()
+def test_require_roles_and_scopes_are_declarative_dependencies(auth_app_factory):
+    app = auth_app_factory(FakeAuthProvider(), include_auth_router=False)
 
     @app.get("/secured")
     async def secured(
@@ -170,8 +166,8 @@ def test_require_roles_and_scopes_are_declarative_dependencies(settings):
     assert {"OAuth2PasswordBearer": ["openid"]} in security
 
 
-def test_get_current_user_uses_service_client_backed_auth_provider(settings):
-    app = create_app(settings=settings, include_auth_router=False)
+def test_get_current_user_uses_service_client_backed_auth_provider(empty_app_factory):
+    app = empty_app_factory()
     provider = FakeAuthProvider()
     app.state.auth_provider = None
     app.state.service_clients = FakeServiceClients(provider)

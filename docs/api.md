@@ -49,6 +49,18 @@ from fastapi_core import (
 )
 ```
 
+### 2.1 공개 계약 안정성
+
+코드 크기 축소 리팩토링에서 위 package-root re-export와 다음 package API는 보호 계약이다.
+
+- `fastapi_core.dependencies`: `get_auth_provider`, `get_config`, `get_current_user`, `get_keycloak_auth_service`, `get_langfuse_client`, `get_milvus_client`, `get_minio_client`, `get_nats_connection_builder`, `get_ollama_client`, `get_postgres_engine`, `get_resource`, `get_service_client`, `get_settings`, `get_sqlite_engine`, `require_permissions`, `require_roles`, `require_scopes`
+- `fastapi_core.schemas`: `HealthResponse`, `HealthServiceDetail`, `ProblemDetail`, `TokenResponse`, `UserInfo`
+- endpoint: `POST /token`, `GET /user`, `GET /health/liveness`, `GET /health/readiness`
+
+`test_fastapi_core/test_public_api.py`는 curated export 집합, `create_app(...)` parameter/default, runtime extension dataclass field/default, extension 함수 parameter/default를 characterization contract로 고정한다. 의도적인 공개 API 변경은 이 문서와 SRS 및 해당 테스트를 함께 변경해야 한다.
+
+readiness state의 단일 통합 지점은 `app.state.readiness_registry`다. 제거된 `readiness_checks`, `readiness_services`, `required_services` alias는 제공하지 않는다. 사용자 정의 check는 `register_readiness_check(...)` 또는 `ManagedResource`로 등록한다.
+
 ---
 
 ## 3. App factory API
@@ -78,12 +90,6 @@ from fastapi_core import (
   - `service_clients`
   - `auth_provider` (keycloak client가 구성된 경우)
   - `oauth2_scheme`
-  - `readiness_parallel`
-  - `readiness_timeout_seconds`
-  - `readiness_overall_timeout_seconds`
-  - `readiness_checks`
-  - `readiness_services`
-  - `required_services`
   - `readiness_registry`
   - `resource_registry`
 - `config.token_url`로 앱 전용 OAuth2 scheme을 만들고 dependency override와 OpenAPI password flow에 반영한다. module-global scheme model은 변경하지 않는다.
@@ -95,16 +101,12 @@ from fastapi_core import (
 - resource startup 실패 시 이미 생성한 resource를 역순 rollback한다.
 
 #### readiness 기본 구성
-기본 `create_app()` 경로는 `config.enabled_services`를 기준으로 `service_clients` 기반 readiness check를 자동 생성한다.
-
-- `app.state.readiness_checks[service_name] = service client wrapper의 check callable`
-- `app.state.readiness_services[service_name] = {"enabled": True, "required": ...}`
-- `app.state.required_services = set(config.required_services)`
+기본 `create_app()` 경로는 `config.enabled_services`를 기준으로 service client check를 `app.state.readiness_registry.specs`에 등록한다. 각 `ReadinessCheckSpec`이 check와 required/timeout/redaction 정책을 함께 보관한다.
 
 기본 `AppConfig`에서는 `enabled_services == ["keycloak"]`, `required_services == ["keycloak"]`다.
 
 #### lifespan 동작
-기본 경로에서는 lifespan startup이 `assemble_service_runtime(...)`을 await한 뒤 `app.state.service_runtime/settings/service_clients/readiness_checks`를 설치한다. enabled/required와 함께 `one_of`, 병렬 실행, per-service/overall timeout을 전달한다. `startup_healthcheck=True`이면 assembly 단계에서 동일한 timeout 정책으로 startup healthcheck를 수행하고, 명시적 `settings` 주입 경로에서는 생성된 runtime의 `check()`를 호출한다.
+기본 경로에서는 lifespan startup이 `assemble_service_runtime(...)`을 await한 뒤 `app.state.service_runtime/settings/service_clients`를 설치하고 service check를 typed registry에 등록한다. enabled/required와 함께 `one_of`, 병렬 실행, per-service/overall timeout을 전달한다. `startup_healthcheck=True`이면 assembly 단계에서 동일한 timeout 정책으로 startup healthcheck를 수행하고, 명시적 `settings` 주입 경로에서는 생성된 runtime의 `check()`를 호출한다.
 
 사용자가 전달한 custom lifespan은 service runtime과 managed resource 준비 뒤 실행된다. startup check 실패 시 생성된 client/resource를 rollback한다. custom lifespan shutdown 뒤 managed resource를 역순으로 정리하고, 마지막으로 service runtime을 닫는다. service runtime 종료 실패는 `service_runtime_close_failed` 구조화 로그를 남긴 뒤 `ServiceCloseError`로 전파한다.
 
@@ -273,13 +275,8 @@ package root에서 import할 수 있는 immutable 오류 매핑 선언이다.
 
 ##### 현재 구현 동작
 - 기본 경로는 앱별 `ReadinessRegistry`에 등록된 typed check를 실행한다.
-- legacy state 객체가 교체된 경우 기존 테스트/호환 경로로 아래 state 구조를 집계한다.
-- `app.state.readiness_checks`에서 서비스명 → check callable 매핑을 읽는다.
-- `app.state.readiness_services`에서 서비스별 메타데이터(`required`, `enabled`)를 읽는다.
-- `app.state.required_services`에서 필수 서비스 집합을 읽는다.
-- `app.state.readiness_parallel`에서 병렬 실행 여부를 읽는다.
-- `app.state.readiness_timeout_seconds`에서 서비스별 제한 시간을 읽는다.
-- `app.state.readiness_overall_timeout_seconds`에서 전체 제한 시간을 읽는다.
+- check와 required/timeout/redaction 정책은 `app.state.readiness_registry.specs`에서 읽는다.
+- 병렬 실행과 overall timeout은 `app.state.config`에서 읽는다.
 - readiness check가 비어 있으면 `{"status": "ok", "details": null}`을 반환한다.
 - readiness check가 있으면 `docmesh_py_core.async_check_all_services(...)`로 집계한다.
 - 서비스별 timeout은 해당 서비스 실패로 집계하며 빈 timeout 오류 문자열은 `health check timed out`으로 정규화한다.

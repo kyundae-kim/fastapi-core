@@ -107,7 +107,7 @@ app = create_app(config=config)
 ## 5. 현재 readiness 계약에서 메시징
 
 `/health/readiness`는 메시징 상태를 직접 환경변수에서 읽지 않는다.
-대신 app assembly에서 준비된 typed readiness registry를 사용한다. legacy state 키는 기존 override 호환을 위한 내부 표면이다.
+대신 app assembly에서 준비된 typed readiness registry를 사용하며 legacy readiness state 키는 제공하지 않는다.
 
 - service client 기반 기본 check
 - `register_readiness_check(...)`로 등록한 custom check
@@ -119,7 +119,7 @@ app = create_app(config=config)
 - NATS 설정이 존재하고 `create_nats_client()`가 client를 생성하면 NATS check가 readiness 대상에 들어간다.
 - `async_check_all_services(...)`가 sync/async check를 await 가능한 한 경로에서 집계한다.
 - 필수 서비스 실패 시에도 `HealthCheckError.result`를 사용해 성공한 선택 서비스를 포함한 전체 details를 보존한다.
-- `enabled_services` metadata와 실제 readiness check 등록은 별개다. 지원되지 않거나 settings에서 `None`인 서비스는 metadata에는 남아도 client/check가 생성되지 않는다.
+- 지원되지 않거나 settings에서 `None`인 서비스는 client와 typed readiness spec이 생성되지 않는다.
 
 상태 판정 규칙:
 - 모든 서비스 성공 → `200`, `status="ok"`

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from docmesh_py_core import (
     KeycloakTokenAuthenticationError,
@@ -18,6 +18,14 @@ from fastapi_core.schemas.user import UserInfo
 
 router = APIRouter(tags=["auth"])
 logger = logging.getLogger(__name__)
+
+_TOKEN_ISSUE_ERRORS = (
+    (KeycloakTokenAuthenticationError, (401, "Authentication failed", "authentication_failed")),
+    (KeycloakTokenConfigurationError, (500, "Authentication service misconfigured", "configuration_error")),
+    (KeycloakTokenTemporaryError, (503, "Authentication service unavailable", "temporary_error")),
+    (KeycloakTokenError, (502, "Authentication service error", "upstream_error")),
+)
+_UNEXPECTED_TOKEN_ISSUE_ERROR = (500, "Authentication service error", "unexpected_error")
 
 
 def _log_token_issue_failure(
@@ -45,26 +53,10 @@ def _log_token_issue_failure(
 
 
 def _raise_token_issue_error(exc: Exception, scope: str | None) -> None:
-    if isinstance(exc, KeycloakTokenAuthenticationError):
-        status_code = status.HTTP_401_UNAUTHORIZED
-        detail = "Authentication failed"
-        outcome = "authentication_failed"
-    elif isinstance(exc, KeycloakTokenConfigurationError):
-        status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        detail = "Authentication service misconfigured"
-        outcome = "configuration_error"
-    elif isinstance(exc, KeycloakTokenTemporaryError):
-        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-        detail = "Authentication service unavailable"
-        outcome = "temporary_error"
-    elif isinstance(exc, KeycloakTokenError):
-        status_code = status.HTTP_502_BAD_GATEWAY
-        detail = "Authentication service error"
-        outcome = "upstream_error"
-    else:
-        status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        detail = "Authentication service error"
-        outcome = "unexpected_error"
+    status_code, detail, outcome = next(
+        (mapping for error_type, mapping in _TOKEN_ISSUE_ERRORS if isinstance(exc, error_type)),
+        _UNEXPECTED_TOKEN_ISSUE_ERROR,
+    )
 
     _log_token_issue_failure(
         outcome=outcome,

@@ -81,43 +81,35 @@ def _build_service_clients(
     settings: ServiceConfigs,
     services: list[str],
 ) -> dict[str, ServiceClientWrapper | NatsConnectionBuilder]:
+    factories: dict[str, Callable[[Any], Any]] = {
+        "keycloak": create_keycloak_client,
+        "postgres": create_postgres_client,
+        "sqlite": create_sqlite_client,
+        "minio": create_minio_client,
+        "milvus": create_milvus_client,
+        "ollama": create_ollama_client,
+        "langfuse": create_langfuse_client,
+        "nats": create_nats_client,
+    }
     clients: dict[str, ServiceClientWrapper | NatsConnectionBuilder] = {}
     for service_name in services:
-        if service_name == "keycloak" and settings.keycloak is not None:
-            client = create_keycloak_client(settings.keycloak)
-            _configure_keycloak_provider(client)
+        factory = factories.get(service_name)
+        service_config = getattr(settings, service_name, None)
+        if factory is None or service_config is None:
+            continue
+        client = factory(service_config)
+        if service_name != "langfuse" or client is not None:
             clients[service_name] = client
-        elif service_name == "postgres" and settings.postgres is not None:
-            clients[service_name] = create_postgres_client(settings.postgres)
-        elif service_name == "sqlite" and settings.sqlite is not None:
-            clients[service_name] = create_sqlite_client(settings.sqlite)
-        elif service_name == "minio" and settings.minio is not None:
-            clients[service_name] = create_minio_client(settings.minio)
-        elif service_name == "milvus" and settings.milvus is not None:
-            clients[service_name] = create_milvus_client(settings.milvus)
-        elif service_name == "ollama" and settings.ollama is not None:
-            clients[service_name] = create_ollama_client(settings.ollama)
-        elif service_name == "langfuse" and settings.langfuse is not None:
-            client = create_langfuse_client(settings.langfuse)
-            if client is not None:
-                clients[service_name] = client
-        elif service_name == "nats" and settings.nats is not None:
-            clients[service_name] = create_nats_client(settings.nats)
     return clients
 
 
 def _build_keycloak_check_kwargs() -> dict[str, str]:
-    kwargs: dict[str, str] = {}
-    username = os.getenv("KEYCLOAK_TOKEN_USERNAME")
-    password = os.getenv("KEYCLOAK_TOKEN_PASSWORD")
-    scope = os.getenv("FASTAPI_CORE_TEST_SCOPE", "").strip()
-    if username:
-        kwargs["username"] = username
-    if password:
-        kwargs["password"] = password
-    if scope:
-        kwargs["scope"] = scope
-    return kwargs
+    values = {
+        "username": os.getenv("KEYCLOAK_TOKEN_USERNAME"),
+        "password": os.getenv("KEYCLOAK_TOKEN_PASSWORD"),
+        "scope": os.getenv("FASTAPI_CORE_TEST_SCOPE", "").strip(),
+    }
+    return {name: value for name, value in values.items() if value}
 
 
 def _configure_keycloak_provider(client: ServiceClientWrapper) -> None:
@@ -125,33 +117,6 @@ def _configure_keycloak_provider(client: ServiceClientWrapper) -> None:
     if provider is None or not hasattr(provider, "allowed_algorithms"):
         return
     provider.allowed_algorithms = ["RS256"]
-
-
-def _wrap_readiness_check(
-    check: Callable[..., object],
-    *,
-    kwargs: dict[str, str],
-) -> Callable[[], object]:
-    def run_check() -> object:
-        return check(**kwargs)
-
-    return run_check
-
-
-def _build_readiness_checks(
-    service_clients: dict[str, ServiceClientWrapper | NatsConnectionBuilder],
-) -> dict[str, Callable[[], object]]:
-    checks: dict[str, Callable[[], object]] = {}
-    for service_name, client in service_clients.items():
-        check = client.check
-        if service_name == "keycloak":
-            check = getattr(client, "healthcheck", client.check)
-            check = _wrap_readiness_check(
-                check,
-                kwargs=_build_keycloak_check_kwargs(),
-            )
-        checks[service_name] = check
-    return checks
 
 
 def _build_injected_service_runtime(
@@ -195,7 +160,16 @@ def _configure_service_runtime(app: FastAPI, runtime: ServiceRuntime) -> None:
     app.state.service_clients = runtime.clients
     readiness_registry: ReadinessRegistry = app.state.readiness_registry
     required_services = set(app.state.config.required_services)
-    for service_name, check in _build_readiness_checks(runtime.clients).items():
+    for service_name, client in runtime.clients.items():
+        check = client.check
+        if service_name == "keycloak":
+            healthcheck = getattr(client, "healthcheck", check)
+            kwargs = _build_keycloak_check_kwargs()
+
+            def keycloak_check(healthcheck=healthcheck, kwargs=kwargs) -> object:
+                return healthcheck(**kwargs)
+
+            check = keycloak_check
         readiness_registry.register(
             ReadinessCheckSpec(
                 name=service_name,
@@ -293,12 +267,6 @@ def create_app(
     readiness_registry = ReadinessRegistry(
         default_timeout_seconds=app_config.readiness_timeout_seconds
     )
-    required_services = set(app_config.required_services)
-    for service_name in app_config.enabled_services:
-        readiness_registry.declare(
-            service_name,
-            required=service_name in required_services,
-        )
     resource_registry = ResourceRegistry(resources, readiness_registry)
     app = FastAPI(
         root_path=app_config.root_path,
@@ -316,14 +284,6 @@ def create_app(
     app.state.service_clients = {}
     app.state.readiness_registry = readiness_registry
     app.state.resource_registry = resource_registry
-    app.state.readiness_parallel = app_config.readiness_parallel
-    app.state.readiness_timeout_seconds = app_config.readiness_timeout_seconds
-    app.state.readiness_overall_timeout_seconds = (
-        app_config.readiness_overall_timeout_seconds
-    )
-    app.state.readiness_checks = readiness_registry.checks
-    app.state.readiness_services = readiness_registry.services
-    app.state.required_services = readiness_registry.required_services
     if service_runtime is not None:
         _configure_service_runtime(app, service_runtime)
     _configure_oauth2_scheme(app, app_config.token_url)

@@ -17,7 +17,19 @@ from fastapi.testclient import TestClient
 import fastapi_core.factory as factory_module
 from fastapi_core.config import AppConfig
 from fastapi_core.docmesh_settings import load_docmesh_settings
-from fastapi_core.factory import _build_readiness_checks, create_app
+from fastapi_core.factory import (
+    _build_service_clients,
+    _configure_service_runtime,
+    create_app,
+)
+
+
+def _patch_injected_client(monkeypatch, client, service="keycloak"):
+    monkeypatch.setattr(
+        factory_module,
+        "_build_service_clients",
+        lambda _settings, _services: {service: client},
+    )
 
 
 def test_create_app_includes_default_routes(settings):
@@ -41,11 +53,8 @@ def test_create_app_includes_default_routes(settings):
     assert sorted(app.state.service_clients) == ["keycloak"]
     assert app.state.auth_provider is app.state.service_clients["keycloak"].client
     assert app.state.root_logger is not None
-    assert sorted(app.state.readiness_checks) == ["keycloak"]
-    assert app.state.readiness_services == {
-        "keycloak": {"enabled": True, "required": True},
-    }
-    assert app.state.required_services == {"keycloak"}
+    assert sorted(app.state.readiness_registry.specs) == ["keycloak"]
+    assert app.state.readiness_registry.specs["keycloak"].required is True
 
 
 def test_create_app_applies_configured_token_url_to_openapi(settings):
@@ -132,27 +141,64 @@ def test_create_app_uses_selected_services_for_readiness_and_settings():
 
     assert app.state.settings.sqlite is not None
     assert app.state.settings.keycloak is None
-    assert sorted(app.state.readiness_checks) == ["sqlite"]
+    assert sorted(app.state.readiness_registry.specs) == ["sqlite"]
     assert sorted(app.state.service_clients) == ["sqlite"]
-    assert app.state.readiness_services == {
-        "sqlite": {"enabled": True, "required": True},
-    }
-    assert app.state.required_services == {"sqlite"}
+    assert app.state.readiness_registry.specs["sqlite"].required is True
+
+
+def test_build_service_clients_resolves_factory_at_call_time(monkeypatch, settings):
+    sentinel = object()
+    monkeypatch.setattr(
+        factory_module,
+        "create_sqlite_client",
+        lambda _config: sentinel,
+    )
+
+    clients = _build_service_clients(settings, ["sqlite"])
+
+    assert clients == {"sqlite": sentinel}
 
 
 @pytest.mark.asyncio
-async def test_build_readiness_checks_preserves_async_checks():
+async def test_configure_service_runtime_preserves_async_checks(settings):
     events: list[str] = []
 
     class AsyncClient:
         async def check(self):
             events.append("checked")
 
-    checks = _build_readiness_checks({"nats": AsyncClient()})
+    app = create_app(
+        config=AppConfig(enabled_services=[], required_services=[]),
+        settings=settings,
+        include_auth_router=False,
+    )
+    runtime = ServiceRuntime(
+        configs=settings,
+        clients={"nats": AsyncClient()},
+        selected_services=frozenset({"nats"}),
+    )
+    _configure_service_runtime(app, runtime)
 
-    await checks["nats"]()
+    await app.state.readiness_registry.specs["nats"].check()
 
     assert events == ["checked"]
+
+
+def test_configure_service_runtime_rejects_client_without_check(settings):
+    app = create_app(
+        config=AppConfig(enabled_services=[], required_services=[]),
+        settings=settings,
+        include_auth_router=False,
+    )
+    runtime = ServiceRuntime(
+        configs=settings,
+        clients={"keycloak": object()},
+        selected_services=frozenset({"keycloak"}),
+        required_services=frozenset({"keycloak"}),
+    )
+
+    with pytest.raises(AttributeError):
+        _configure_service_runtime(app, runtime)
 
 
 def test_create_app_awaits_async_service_client_close(monkeypatch, settings):
@@ -165,11 +211,7 @@ def test_create_app_awaits_async_service_client_close(monkeypatch, settings):
         async def close(self):
             events.append("closed")
 
-    monkeypatch.setattr(
-        factory_module,
-        "_build_service_clients",
-        lambda _settings, _services: {"nats": AsyncClient()},
-    )
+    _patch_injected_client(monkeypatch, AsyncClient(), "nats")
     app = create_app(settings=settings, include_auth_router=False)
 
     with TestClient(app):
@@ -196,11 +238,7 @@ def test_create_app_closes_service_clients_when_custom_shutdown_fails(
         yield
         raise RuntimeError("custom shutdown failed")
 
-    monkeypatch.setattr(
-        factory_module,
-        "_build_service_clients",
-        lambda _settings, _services: {"nats": AsyncClient()},
-    )
+    _patch_injected_client(monkeypatch, AsyncClient(), "nats")
     app = create_app(
         settings=settings,
         lifespan=lifespan,
@@ -214,7 +252,10 @@ def test_create_app_closes_service_clients_when_custom_shutdown_fails(
     assert events == ["closed"]
 
 
-def test_build_readiness_checks_passes_keycloak_healthcheck_credentials(monkeypatch):
+def test_configure_service_runtime_passes_keycloak_healthcheck_credentials(
+    monkeypatch,
+    settings,
+):
     calls: list[tuple[str | None, str | None, str | None]] = []
 
     class KeycloakClient:
@@ -228,10 +269,23 @@ def test_build_readiness_checks_passes_keycloak_healthcheck_credentials(monkeypa
     monkeypatch.setenv("KEYCLOAK_TOKEN_PASSWORD", "secret")
     monkeypatch.setenv("FASTAPI_CORE_TEST_SCOPE", "openid profile")
 
-    checks = _build_readiness_checks({"keycloak": KeycloakClient()})
-    checks["keycloak"]()
+    app = create_app(
+        config=AppConfig(enabled_services=[], required_services=[]),
+        settings=settings,
+        include_auth_router=False,
+    )
+    runtime = ServiceRuntime(
+        configs=settings,
+        clients={"keycloak": KeycloakClient()},
+        selected_services=frozenset({"keycloak"}),
+    )
+    _configure_service_runtime(app, runtime)
+    monkeypatch.setenv("KEYCLOAK_TOKEN_PASSWORD", "changed")
+    check = app.state.readiness_registry.specs["keycloak"].check
+    check()
 
     assert calls == [("tester", "secret", "openid profile")]
+    assert "secret" not in repr(check)
 
 
 def test_create_app_uses_rs256_for_keycloak_auth_provider(settings):
@@ -285,7 +339,7 @@ def test_create_app_assembles_default_runtime_during_lifespan(monkeypatch):
         assert app.state.service_runtime is runtime
         assert app.state.settings is settings
         assert app.state.service_clients is runtime.clients
-        assert sorted(app.state.readiness_checks) == ["sqlite"]
+        assert sorted(app.state.readiness_registry.specs) == ["sqlite"]
 
     assert calls["services"] == {"sqlite"}
     assert calls["required"] == {"sqlite"}
@@ -308,11 +362,7 @@ def test_create_app_checks_injected_runtime_on_startup(monkeypatch, settings):
         def close(self):
             events.append("closed")
 
-    monkeypatch.setattr(
-        factory_module,
-        "_build_service_clients",
-        lambda _settings, _services: {"keycloak": Client()},
-    )
+    _patch_injected_client(monkeypatch, Client())
     config = AppConfig(startup_healthcheck=True)
     app = create_app(
         config=config,
@@ -395,11 +445,7 @@ def test_create_app_logs_service_runtime_close_failures(monkeypatch, settings, c
         def close(self):
             raise RuntimeError("close failed token=secret-token")
 
-    monkeypatch.setattr(
-        factory_module,
-        "_build_service_clients",
-        lambda _settings, _services: {"keycloak": Client()},
-    )
+    _patch_injected_client(monkeypatch, Client())
     app = create_app(settings=settings, include_auth_router=False)
 
     with caplog.at_level(logging.ERROR):

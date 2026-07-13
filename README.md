@@ -120,9 +120,9 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 - 기본 경로의 service client map은 lifespan startup에서 준비됩니다.
 - `FastAPI(root_path=..., lifespan=...)`를 생성하고 내부 lifespan wrapper의 `finally`에서 `await service_runtime.close()`를 수행합니다.
 - `app.state.config`, `app.state.root_logger`, `app.state.service_runtime`, `app.state.settings`, `app.state.service_clients`를 저장합니다. Keycloak client가 구성되면 `app.state.auth_provider`도 저장합니다.
-- 앱별 readiness/resource registry를 초기화하며, legacy state 키는 내부 호환 표면으로 연결합니다.
+- 앱별 readiness/resource registry를 초기화합니다. readiness 확장은 typed registry API만 사용합니다.
 - `resources=[ManagedResource(...)]`로 서비스 고유 자원을 startup/readiness/shutdown 흐름에 연결합니다.
-- per-service/overall readiness timeout을 state와 startup runtime check에 동일하게 적용합니다.
+- per-service/overall readiness timeout을 `AppConfig`와 startup runtime check에 동일하게 적용합니다.
 - `service_alternatives`가 있으면 각 그룹에서 최소 한 서비스가 구성됐는지 `one_of` 정책으로 검증합니다.
 - `set_oauth2_token_url(config.token_url)`로 OpenAPI password flow token URL을 반영합니다.
 - CORS middleware를 등록합니다.
@@ -138,7 +138,7 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 
 ### 헬스체크
 - `/health/liveness`는 `{"status": "ok", "details": null}`를 반환합니다.
-- `/health/readiness`는 `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services`, `app.state.readiness_parallel`을 사용합니다.
+- `/health/readiness`는 `app.state.readiness_registry`와 `app.state.config`를 사용합니다.
 - 기본 `create_app()` 경로에서는 `enabled_services`를 기준으로 service client 기반 readiness check를 자동 구성합니다.
 - sync/async readiness check는 `async_check_all_services(...)`로 집계되며 필수 실패 시에도 전체 서비스 details를 보존합니다.
 - per-service timeout은 해당 서비스 실패로 변환되고, overall timeout은 `503 + status="error"`로 반환됩니다.
@@ -210,4 +210,4 @@ uv run pytest -q
 ```
 
 최근 실행 결과:
-- `90 passed, 2 third-party deprecation warnings`
+- `101 passed, 2 third-party deprecation warnings`

@@ -9,25 +9,12 @@ from docmesh_py_core import HealthCheckError
 from fastapi import Depends
 from fastapi.testclient import TestClient
 
-from fastapi_core import ManagedResource, create_app, register_readiness_check
-from fastapi_core.config import AppConfig
+from fastapi_core import ManagedResource, register_readiness_check
 from fastapi_core.dependencies import get_resource
 
 
-def _empty_config(**overrides) -> AppConfig:
-    return AppConfig(
-        enabled_services=[],
-        required_services=[],
-        **overrides,
-    )
-
-
-def test_register_readiness_check_applies_optional_policy_and_redacts_error(settings):
-    app = create_app(
-        config=_empty_config(),
-        settings=settings,
-        include_auth_router=False,
-    )
+def test_register_readiness_check_applies_optional_policy_and_redacts_error(empty_app_factory):
+    app = empty_app_factory()
 
     def fail():
         raise RuntimeError("backend unavailable token=secret-token")
@@ -42,12 +29,8 @@ def test_register_readiness_check_applies_optional_policy_and_redacts_error(sett
     assert response.json()["details"]["search"]["error"] == "readiness check failed"
 
 
-def test_register_readiness_check_uses_app_timeout_as_fallback(settings):
-    app = create_app(
-        config=_empty_config(readiness_timeout_seconds=0.001),
-        settings=settings,
-        include_auth_router=False,
-    )
+def test_register_readiness_check_uses_app_timeout_as_fallback(empty_app_factory):
+    app = empty_app_factory(readiness_timeout_seconds=0.001)
 
     async def slow_check():
         await asyncio.sleep(0.05)
@@ -62,13 +45,9 @@ def test_register_readiness_check_uses_app_timeout_as_fallback(settings):
 
 
 def test_register_readiness_check_reports_explicit_timeout_when_not_redacted(
-    settings,
+    empty_app_factory,
 ):
-    app = create_app(
-        config=_empty_config(),
-        settings=settings,
-        include_auth_router=False,
-    )
+    app = empty_app_factory()
 
     async def slow_check():
         await asyncio.sleep(0.05)
@@ -91,19 +70,15 @@ def test_register_readiness_check_reports_explicit_timeout_when_not_redacted(
     )
 
 
-def test_register_readiness_check_rejects_duplicate_name(settings):
-    app = create_app(
-        config=_empty_config(),
-        settings=settings,
-        include_auth_router=False,
-    )
+def test_register_readiness_check_rejects_duplicate_name(empty_app_factory):
+    app = empty_app_factory()
     register_readiness_check(app, "search", lambda: None)
 
     with pytest.raises(ValueError, match="already registered"):
         register_readiness_check(app, "search", lambda: None)
 
 
-def test_managed_resources_follow_lifecycle_order(settings):
+def test_managed_resources_follow_lifecycle_order(empty_app_factory):
     events: list[str] = []
 
     class Resource:
@@ -126,11 +101,8 @@ def test_managed_resources_follow_lifecycle_order(settings):
         yield
         events.append("custom:stop")
 
-    app = create_app(
-        config=_empty_config(),
-        settings=settings,
+    app = empty_app_factory(
         lifespan=lifespan,
-        include_auth_router=False,
         resources=[
             ManagedResource("first", factory=build("first"), close=close),
             ManagedResource("second", factory=build("second"), close=close),
@@ -150,14 +122,11 @@ def test_managed_resources_follow_lifecycle_order(settings):
     ]
 
 
-def test_get_resource_returns_lifecycle_managed_instance(settings):
+def test_get_resource_returns_lifecycle_managed_instance(empty_app_factory):
     class Resource:
         value = "ready"
 
-    app = create_app(
-        config=_empty_config(),
-        settings=settings,
-        include_auth_router=False,
+    app = empty_app_factory(
         resources=[ManagedResource("sdk", factory=lambda _app: Resource())],
     )
 
@@ -172,12 +141,8 @@ def test_get_resource_returns_lifecycle_managed_instance(settings):
     assert response.json() == {"value": "ready"}
 
 
-def test_get_resource_returns_503_when_resource_is_not_registered(settings):
-    app = create_app(
-        config=_empty_config(),
-        settings=settings,
-        include_auth_router=False,
-    )
+def test_get_resource_returns_503_when_resource_is_not_registered(empty_app_factory):
+    app = empty_app_factory()
 
     @app.get("/resource")
     async def resource_endpoint(resource=Depends(get_resource("sdk"))):
@@ -190,7 +155,7 @@ def test_get_resource_returns_503_when_resource_is_not_registered(settings):
     assert response.json()["detail"] == "Managed resource 'sdk' is not available"
 
 
-def test_managed_resource_healthcheck_is_registered_for_readiness(settings):
+def test_managed_resource_healthcheck_is_registered_for_readiness(empty_app_factory):
     checks: list[str] = []
 
     class Resource:
@@ -199,10 +164,7 @@ def test_managed_resource_healthcheck_is_registered_for_readiness(settings):
     async def healthcheck(_resource: Resource):
         checks.append("checked")
 
-    app = create_app(
-        config=_empty_config(),
-        settings=settings,
-        include_auth_router=False,
+    app = empty_app_factory(
         resources=[
             ManagedResource(
                 "sdk",
@@ -221,14 +183,11 @@ def test_managed_resource_healthcheck_is_registered_for_readiness(settings):
     assert checks == ["checked"]
 
 
-def test_managed_resource_sync_healthcheck_respects_timeout(settings):
+def test_managed_resource_sync_healthcheck_respects_timeout(empty_app_factory):
     def slow_healthcheck(_resource: object):
         time.sleep(0.05)
 
-    app = create_app(
-        config=_empty_config(),
-        settings=settings,
-        include_auth_router=False,
+    app = empty_app_factory(
         resources=[
             ManagedResource(
                 "sdk",
@@ -246,7 +205,7 @@ def test_managed_resource_sync_healthcheck_respects_timeout(settings):
     assert response.status_code == 503
 
 
-def test_managed_resource_rolls_back_when_later_factory_fails(settings):
+def test_managed_resource_rolls_back_when_later_factory_fails(empty_app_factory):
     events: list[str] = []
 
     class Resource:
@@ -261,10 +220,7 @@ def test_managed_resource_rolls_back_when_later_factory_fails(settings):
         events.append("create:second")
         raise RuntimeError("second failed")
 
-    app = create_app(
-        config=_empty_config(),
-        settings=settings,
-        include_auth_router=False,
+    app = empty_app_factory(
         resources=[
             ManagedResource("first", factory=first_factory),
             ManagedResource("second", factory=failing_factory),
@@ -278,7 +234,7 @@ def test_managed_resource_rolls_back_when_later_factory_fails(settings):
     assert events == ["create:first", "create:second", "close:first"]
 
 
-def test_required_managed_resource_startup_check_failure_rolls_back(settings):
+def test_required_managed_resource_startup_check_failure_rolls_back(empty_app_factory):
     events: list[str] = []
 
     class Resource:
@@ -293,10 +249,8 @@ def test_required_managed_resource_startup_check_failure_rolls_back(settings):
         events.append("checked")
         raise RuntimeError("not ready")
 
-    app = create_app(
-        config=_empty_config(startup_healthcheck=True),
-        settings=settings,
-        include_auth_router=False,
+    app = empty_app_factory(
+        startup_healthcheck=True,
         resources=[
             ManagedResource(
                 "sdk",
@@ -314,12 +268,9 @@ def test_required_managed_resource_startup_check_failure_rolls_back(settings):
     assert events == ["created", "checked", "closed"]
 
 
-@pytest.mark.parametrize("name", ["", "config", "readiness_checks"])
-def test_managed_resource_rejects_invalid_or_reserved_name(settings, name):
+@pytest.mark.parametrize("name", ["", "config", "readiness_registry"])
+def test_managed_resource_rejects_invalid_or_reserved_name(empty_app_factory, name):
     with pytest.raises(ValueError, match="resource name"):
-        create_app(
-            config=_empty_config(),
-            settings=settings,
-            include_auth_router=False,
+        empty_app_factory(
             resources=[ManagedResource(name, factory=lambda _app: object())],
         )

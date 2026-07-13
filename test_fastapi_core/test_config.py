@@ -134,6 +134,12 @@ def test_app_config_rejects_required_service_that_is_not_enabled():
         )
 
 
+def test_app_config_prefers_field_name_over_environment_alias():
+    config = AppConfig(log_level="INFO", DOCMESH_LOG_LEVEL="DEBUG")
+
+    assert config.log_level == "INFO"
+
+
 
 def test_build_docmesh_env_overlay_applies_defaults_without_overwriting(monkeypatch):
     monkeypatch.setenv("KEYCLOAK_URL", "http://override.test")

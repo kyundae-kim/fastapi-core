@@ -31,7 +31,7 @@
 
 - [ ] `create_app()`의 인자, `app.state` 키, lifespan 종료 동작이 README/API/config/examples와 일치한다.
 - [ ] managed resource의 startup/rollback/shutdown 순서와 `get_resource()` 공개 계약이 API/SRS/examples/test와 일치한다.
-- [ ] typed readiness의 required/timeout/redaction 정책과 legacy state 호환 경계가 API/config/test와 일치한다.
+- [ ] typed readiness의 required/timeout/redaction 정책과 제거된 legacy state 경계가 API/config/test와 일치한다.
 - [ ] 앱별 OAuth2 scheme, role/scope/permission 정책, problem-details 및 correlation ID 계약이 API/SRS/examples/test와 일치한다.
 - [ ] route, response schema, auth/readiness 상태 코드가 API/examples/SRS와 일치한다.
 - [ ] 환경변수 이름, alias, 기본값, CSV 파싱 규칙이 config 문서와 `.env.example`에 일치한다.

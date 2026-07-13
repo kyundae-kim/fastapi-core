@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import logging
 
+import pytest
 from fastapi.testclient import TestClient
 from docmesh_py_core import (
     KeycloakTokenAuthenticationError,
     KeycloakTokenConfigurationError,
+    KeycloakTokenError,
     KeycloakTokenTemporaryError,
 )
 
-from fastapi_core.factory import create_app
+import fastapi_core.routers.auth as auth_module
+
 
 
 class FakeAccessTokenResult:
@@ -51,11 +54,18 @@ class FailingAuthProvider(FakeAuthProvider):
         raise self.exc
 
 
+def test_token_issue_errors_are_table_driven():
+    assert {error_type for error_type, _ in auth_module._TOKEN_ISSUE_ERRORS} == {
+        KeycloakTokenAuthenticationError,
+        KeycloakTokenConfigurationError,
+        KeycloakTokenTemporaryError,
+        KeycloakTokenError,
+    }
 
-def test_token_endpoint_returns_token_response(settings):
-    app = create_app(settings=settings)
+
+def test_token_endpoint_returns_token_response(auth_app_factory):
     provider = FakeAuthProvider()
-    app.state.auth_provider = provider
+    app = auth_app_factory(provider)
 
     with TestClient(app) as client:
         response = client.post(
@@ -75,82 +85,72 @@ def test_token_endpoint_returns_token_response(settings):
 
 
 
-def test_token_endpoint_returns_401_for_authentication_failures(settings, caplog):
-    app = create_app(settings=settings)
-    app.state.auth_provider = FailingAuthProvider(
-        KeycloakTokenAuthenticationError("invalid credentials token=secret"),
-    )
+@pytest.mark.parametrize(
+    ("exc", "status_code", "detail", "outcome"),
+    [
+        pytest.param(
+            KeycloakTokenAuthenticationError("invalid credentials token=secret"),
+            401, "Authentication failed", "authentication_failed", id="authentication",
+        ),
+        pytest.param(
+            KeycloakTokenConfigurationError("missing config token=secret"),
+            500, "Authentication service misconfigured", "configuration_error", id="configuration",
+        ),
+        pytest.param(
+            KeycloakTokenTemporaryError("timeout token=secret"),
+            503, "Authentication service unavailable", "temporary_error", id="temporary",
+        ),
+        pytest.param(
+            KeycloakTokenError("upstream error token=secret"),
+            502, "Authentication service error", "upstream_error", id="upstream",
+        ),
+    ],
+)
+def test_token_endpoint_maps_keycloak_failures(
+    auth_app_factory,
+    caplog,
+    exc,
+    status_code,
+    detail,
+    outcome,
+):
+    app = auth_app_factory(FailingAuthProvider(exc))
 
-    with caplog.at_level(logging.WARNING):
-        with TestClient(app) as client:
-            response = client.post(
-                "/token",
-                data={"username": "alice", "password": "secret", "scope": "openid profile"},
-            )
+    with caplog.at_level(logging.WARNING), TestClient(app) as client:
+        response = client.post(
+            "/token",
+            data={"username": "alice", "password": "secret", "scope": "openid profile"},
+        )
 
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Authentication failed"
+    assert response.status_code == status_code
+    assert response.json()["detail"] == detail
     assert response.headers["WWW-Authenticate"] == "Bearer"
     records = [record for record in caplog.records if record.getMessage() == "token_issue_failed"]
     assert len(records) == 1
-    record = records[0]
-    assert record.event["service"] == "keycloak"
-    assert record.event["operation"] == "issue_token"
-    assert record.event["outcome"] == "authentication_failed"
-    assert record.event["status_code"] == 401
-    assert record.event["scope"] == "openid profile"
-    assert "secret" not in record.event["error"]
+    event = records[0].event
+    assert event["service"] == "keycloak"
+    assert event["operation"] == "issue_token"
+    assert event["outcome"] == outcome
+    assert event["status_code"] == status_code
+    assert event["scope"] == "openid profile"
+    assert "secret" not in event["error"]
 
 
+def test_token_endpoint_maps_unexpected_failure(auth_app_factory, caplog):
+    app = auth_app_factory(FailingAuthProvider(RuntimeError("boom token=secret")))
 
-def test_token_endpoint_returns_500_for_configuration_failures(settings, caplog):
-    app = create_app(settings=settings)
-    app.state.auth_provider = FailingAuthProvider(
-        KeycloakTokenConfigurationError("missing password grant config"),
-    )
-
-    with caplog.at_level(logging.WARNING):
-        with TestClient(app) as client:
-            response = client.post(
-                "/token",
-                data={"username": "alice", "password": "secret"},
-            )
+    with caplog.at_level(logging.WARNING), TestClient(app) as client:
+        response = client.post("/token", data={"username": "alice", "password": "secret"})
 
     assert response.status_code == 500
-    assert response.json()["detail"] == "Authentication service misconfigured"
-    records = [record for record in caplog.records if record.getMessage() == "token_issue_failed"]
-    assert len(records) == 1
-    assert records[0].event["outcome"] == "configuration_error"
-    assert records[0].event["status_code"] == 500
+    assert response.json()["detail"] == "Authentication service error"
+    assert caplog.records[-1].event["outcome"] == "unexpected_error"
+    assert "secret" not in caplog.records[-1].event["error"]
 
 
 
-def test_token_endpoint_returns_503_for_temporary_failures(settings, caplog):
-    app = create_app(settings=settings)
-    app.state.auth_provider = FailingAuthProvider(
-        KeycloakTokenTemporaryError("keycloak timeout token=temporary-secret"),
-    )
-
-    with caplog.at_level(logging.WARNING):
-        with TestClient(app) as client:
-            response = client.post(
-                "/token",
-                data={"username": "alice", "password": "secret"},
-            )
-
-    assert response.status_code == 503
-    assert response.json()["detail"] == "Authentication service unavailable"
-    records = [record for record in caplog.records if record.getMessage() == "token_issue_failed"]
-    assert len(records) == 1
-    assert records[0].event["outcome"] == "temporary_error"
-    assert records[0].event["status_code"] == 503
-    assert "temporary-secret" not in records[0].event["error"]
-
-
-
-def test_user_endpoint_returns_current_user(settings):
-    app = create_app(settings=settings)
-    app.state.auth_provider = FakeAuthProvider()
+def test_user_endpoint_returns_current_user(auth_app_factory):
+    app = auth_app_factory(FakeAuthProvider())
 
     with TestClient(app) as client:
         response = client.get("/user", headers={"Authorization": "Bearer demo-token"})

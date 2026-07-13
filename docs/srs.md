@@ -134,6 +134,20 @@ def require_permissions(*permissions: str) -> Callable[..., UserInfo]: ...
 
 `create_app(..., resources=())`는 `ManagedResource` 목록을 받아 공통 lifecycle과 readiness registry에 연결한다. 반환 객체는 plain `FastAPI` 계약을 유지하므로, 런타임에 동적으로 `app.register_readiness_check` 메서드를 추가하는 방식은 v0.3 공개 계약으로 사용하지 않는다.
 
+### 3.4 리팩토링 보호 계약
+
+코드 크기 축소 리팩토링은 다음 공개 표면을 보호해야 한다.
+
+- package root `fastapi_core`: `ErrorMapping`, `ManagedResource`, `ReadinessCheckSpec`, `create_app`, `register_error_mapper`, `register_readiness_check`
+- `fastapi_core.dependencies`: 3.2에 열거한 config/auth/resource/service/authorization dependency
+- `fastapi_core.schemas`: `HealthResponse`, `HealthServiceDetail`, `ProblemDetail`, `TokenResponse`, `UserInfo`
+- endpoint: `POST /token`, `GET /user`, `GET /health/liveness`, `GET /health/readiness`
+- `create_app(...)` 및 3.3 runtime extension 함수·dataclass의 parameter/field/default 계약
+
+공개 표면의 추가·삭제·시그니처 변경은 단순 내부 리팩토링으로 처리하지 않는다. SRS와 API 문서, 공개 API 회귀 테스트를 같은 변경에서 명시적으로 갱신해야 한다.
+
+readiness 확장은 `app.state.readiness_registry`를 단일 source of truth로 사용한다. 제거된 `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services` compatibility alias는 제공하지 않는다. 애플리케이션 코드는 `register_readiness_check(...)`, `ReadinessCheckSpec`, `ManagedResource`를 사용해야 한다.
+
 ---
 
 ## 4. 아키텍처 요구사항
@@ -193,7 +207,7 @@ def require_permissions(*permissions: str) -> Callable[..., UserInfo]: ...
 - SR-042. readiness 실패 시 503을 반환할 수 있어야 한다.
 - SR-043. readiness 응답은 `HealthResponse`를 사용해야 한다.
 - SR-044. readiness는 서비스 기본 check와 애플리케이션 사용자 정의 check를 동일한 registry에서 집계할 수 있어야 한다.
-- SR-045. v0.3부터 사용자 정의 readiness 확장의 공개 계약은 `register_readiness_check(...)` 및 `ReadinessCheckSpec`이어야 하며, 기존 `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services`는 호환을 위한 내부 구현 세부로 취급해야 한다.
+- SR-045. 사용자 정의 readiness 확장의 공개 계약은 `register_readiness_check(...)` 및 `ReadinessCheckSpec`이어야 하며, 제거된 legacy readiness state alias는 제공하지 않아야 한다.
 - SR-046. 사용자 정의 readiness check는 sync/async callable을 모두 허용해야 한다.
 - SR-047. check별 `required`, `timeout_seconds`, `redact_errors` 정책을 표현할 수 있어야 한다.
 - SR-048. check별 timeout이 생략되면 `AppConfig.readiness_timeout_seconds`를 사용해야 한다.
