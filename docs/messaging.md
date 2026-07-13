@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`에서 메시징을 **현재 구현된 FastAPI lifecycle / service_clients / readiness 구조에 맞춰** 설명한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`, `docs/config.md`
-> 문서 상태: 구현 반영본(v0.7)
+> 문서 상태: 구현 반영본(fastapi-core v0.3)
 
 ---
 
@@ -12,7 +12,8 @@
 
 - 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 버전: `v0.7`
+- 문서 리비전: `v0.8`
+- 대상 릴리스: `v0.3`
 - 상태: `implemented-surface`
 
 핵심 질문은 다음과 같다.
@@ -47,6 +48,7 @@
 현재 문서 세트에서 1차 공개 표면으로 보는 항목:
 - `create_app(...)`
 - auth / health router
+- runtime extension (`ManagedResource`, `register_readiness_check`, `get_resource`)
 - dependency (`get_config`, `get_settings`, `get_auth_provider`, `get_service_client`, `get_nats_connection_builder`, `get_current_user`, `require_permissions`)
 - schema (`TokenResponse`, `UserInfo`, `HealthResponse`, `HealthServiceDetail`)
 
@@ -61,9 +63,8 @@
 - `load_docmesh_settings(...)`
 - `app.state.service_runtime`
 - `app.state.service_clients`
-- `app.state.readiness_checks`
-- `app.state.readiness_services`
-- `app.state.required_services`
+- typed readiness registry
+- `ManagedResource`와 `get_resource(name)`
 - custom lifespan
 
 ### 3.3 아직 직접 제공하지 않는 것
@@ -106,12 +107,12 @@ app = create_app(config=config)
 ## 5. 현재 readiness 계약에서 메시징
 
 `/health/readiness`는 메시징 상태를 직접 환경변수에서 읽지 않는다.
-대신 app assembly에서 준비된 아래 state를 사용한다.
+대신 app assembly에서 준비된 typed readiness registry를 사용한다. legacy state 키는 기존 override 호환을 위한 내부 표면이다.
 
-- `app.state.readiness_checks`
-- `app.state.readiness_services`
-- `app.state.required_services`
-- `app.state.readiness_parallel`
+- service client 기반 기본 check
+- `register_readiness_check(...)`로 등록한 custom check
+- `ManagedResource.healthcheck`
+- `AppConfig.readiness_parallel` 및 timeout 정책
 
 기본 `create_app()` 경로에서는:
 - `enabled_services`를 기준으로 service client 기반 check를 자동 생성한다.
@@ -125,7 +126,7 @@ app = create_app(config=config)
 - 선택 서비스만 실패 → `200`, `status="degraded"`
 - 필수 서비스 실패 → `503`, `status="error"`
 
-즉, 현재 메시징 문서에서 중요한 점은 **NATS가 readiness에 포함되는지 여부는 환경변수 이름 그 자체보다 `enabled_services` / `required_services`와 app.state 구성에 의해 결정된다**는 점이다.
+즉, 현재 메시징 문서에서 중요한 점은 **NATS가 readiness에 포함되는지 여부는 환경변수 이름 그 자체보다 `enabled_services` / `required_services`와 typed registry 구성에 의해 결정된다**는 점이다.
 
 ---
 
@@ -147,26 +148,32 @@ app = create_app(config=config)
 
 ### 6.2 사용자가 확장해야 하는 것
 
-아래 패턴은 여전히 사용자 custom lifespan이 맡는다.
+아래 패턴은 managed resource가 맡는다.
 - 특정 메시징 연결 객체를 startup에서 생성
-- `app.state.nats` 같은 이름으로 저장
-- route/service layer에서 참조
+- typed resource registry에 저장
+- `get_resource(name)`로 route/service layer에서 참조
 - shutdown에서 세밀한 정리 로직 수행
 
 권장 예시:
 
 ```python
-from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi_core import create_app
+from fastapi import Depends, FastAPI
+from fastapi_core import ManagedResource, create_app
+from fastapi_core.dependencies import get_resource
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # 필요 시 메시징 연결/래퍼를 생성해 app.state에 저장
-    yield
-    # 필요 시 custom 정리
 
-app = create_app(lifespan=lifespan)
+async def create_connection(_app: FastAPI):
+    return object()  # 실제 연결/래퍼로 교체
+
+
+app = create_app(
+    resources=[ManagedResource("nats-connection", factory=create_connection)]
+)
+
+
+@app.get("/internal/nats-status")
+async def nats_status(conn=Depends(get_resource("nats-connection"))):
+    return {"configured": conn is not None}
 ```
 
 ---
@@ -180,45 +187,14 @@ app = create_app(lifespan=lifespan)
 - readiness는 service client 기반 check를 사용
 - 현재 기본 구현이 이 방식에 가깝다
 
-### 방식 B. app.state 또는 custom dependency 확장
-- startup/custom lifespan에서 `app.state.nats` 같은 객체 저장
-- 필요 시 `get_nats_connection_builder()` 위에 프로젝트별 `get_nats_connection(request)` dependency를 별도로 정의
+### 방식 B. managed resource 확장
+- `ManagedResource` factory에서 연결 객체 생성
+- `get_resource(name)`으로 lifecycle 소유 객체 주입
 - endpoint/service layer가 이를 사용
 
 현재 `fastapi-core`는 A를 기본 제공하고, B는 서비스별 확장 지점으로 남겨둔다.
 
-개발 시 바로 참고할 수 있는 최소 패턴 예시:
-
-```python
-from contextlib import asynccontextmanager
-
-from fastapi import Depends, FastAPI, Request
-from fastapi_core import create_app
-
-
-def get_nats_connection(request: Request):
-    return request.app.state.nats
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    app.state.nats = object()  # 실제 NATS client/wrapper로 교체
-    try:
-        yield
-    finally:
-        app.state.nats = None
-
-
-app = create_app(lifespan=lifespan)
-
-
-@app.get("/internal/nats-status")
-async def nats_status(conn=Depends(get_nats_connection)):
-    return {"configured": conn is not None}
-```
-
-이 예시는 현재 `fastapi-core`가 NATS builder 접근용 `get_nats_connection_builder()`는 제공하지만, 연결 상태 객체를 `app.state.nats`로 저장/관리하는 dependency는 기본 제공하지 않는다는 점을 전제로,
-서비스 레이어에서 어떤 방식으로 `app.state` 확장을 붙여야 하는지 보여준다.
+managed resource의 최소 코드는 6.2 예시를 따른다. NATS builder 자체는 `get_nats_connection_builder()`로 접근하고, builder 위에서 만든 연결 상태 객체는 별도 managed resource로 등록할 수 있다.
 
 `get_nats_connection_builder()`의 현재 실패 계약:
 - NATS가 활성화되지 않았거나 `app.state.service_clients`에 없으면 `503 Service Unavailable`과 `Service client 'nats' is not enabled`를 반환한다.
@@ -282,7 +258,7 @@ custom lifespan이나 route/service layer에서 별도 메시징 호출을 추�
 - `enabled_services=["nats"]`, `required_services=["nats"]` 구성에서 readiness `ok` 경로
 
 아직 없는 테스트:
-- custom `app.state.nats` dependency 패턴 테스트
+- 실제 NATS 연결 객체를 managed resource와 `get_resource()`로 주입하는 live 테스트
 
 ---
 
@@ -293,8 +269,8 @@ custom lifespan이나 route/service layer에서 별도 메시징 호출을 추�
 1. `AppConfig.enabled_services`에 필요한 서비스를 선언한다.
 2. readiness 필수 여부를 `required_services`로 결정한다.
 3. 기본 service_clients/readiness 구성을 우선 활용한다.
-4. 실제 연결 객체 주입이 필요하면 custom lifespan에서 `app.state`를 확장한다.
-5. 메시징 전용 dependency/helper는 서비스 레이어에서 추가한다.
+4. 실제 연결 객체 주입이 필요하면 `ManagedResource`로 lifecycle을 선언한다.
+5. route/service layer에서는 `get_resource(name)`로 객체를 주입한다.
 
 이 패턴은 현재 `fastapi-core`가 제공하는 public API와 확장 지점 경계를 가장 잘 보존한다.
 

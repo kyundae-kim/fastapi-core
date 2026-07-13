@@ -13,6 +13,7 @@ from sqlalchemy.engine import Engine
 
 
 ServiceClientDependency = Callable[[Request], Any]
+ResourceDependency = Callable[[Request], Any]
 
 
 def _service_not_enabled(service_name: str) -> HTTPException:
@@ -46,6 +47,25 @@ def _resolve_wrapped_service_client(request: Request, service_name: str) -> Serv
 def get_service_client(service_name: str) -> ServiceClientDependency:
     def dependency(request: Request) -> ServiceClientWrapper | NatsConnectionBuilder:
         return _resolve_service_client(request, service_name)
+
+    return dependency
+
+
+def get_resource(name: str) -> ResourceDependency:
+    def dependency(request: Request) -> Any:
+        registry = getattr(request.app.state, "resource_registry", None)
+        if registry is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Managed resource '{name}' is not available",
+            )
+        try:
+            return registry.require(name)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Managed resource '{name}' is not available",
+            ) from exc
 
     return dependency
 

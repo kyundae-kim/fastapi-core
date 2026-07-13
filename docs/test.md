@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`의 **현재 구현된 FastAPI 앱 계층**을 어떤 수준으로 검증하는지 정리한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`, `docs/config.md`
-> 문서 상태: 구현 반영본(v0.6)
+> 문서 상태: 구현 반영본(fastapi-core v0.4)
 
 ---
 
@@ -18,11 +18,14 @@
 - schema (`TokenResponse`, `UserInfo`, `HealthResponse`, `HealthServiceDetail`)
 - config / settings loader
 - custom lifespan 연계
+- typed readiness 및 managed resource lifecycle
+- 앱별 OAuth2, 선언적 authorization, correlation ID 및 problem-details 오류 처리
 - 구조화 로깅
 
 - 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 버전: `v0.6`
+- 문서 리비전: `v0.8`
+- 대상 릴리스: `v0.4`
 - 상태: `implemented-surface`
 
 ---
@@ -43,7 +46,9 @@ test_fastapi_core/
   test_factory.py
   test_auth_router.py
   test_health_router.py
+  test_http.py
   test_dependencies.py
+  test_extensions.py
   test_schemas.py
 ```
 
@@ -67,9 +72,9 @@ uv run pytest -q -m integration
 ```
 
 최근 실제 실행 결과:
-- `uv run pytest -q -m 'not integration'` → `46 passed, 11 deselected, 2 warnings`
-- `uv run pytest -q` → `57 passed, 2 warnings`
-- `uv run pytest -q -m integration` → `11 passed, 46 deselected, 2 warnings`
+- `uv run pytest -q -m 'not integration'` → `79 passed, 11 deselected, 2 warnings`
+- `uv run pytest -q` → `90 passed, 2 warnings`
+- `uv run pytest -q -m integration` → `11 passed, 79 deselected, 2 warnings`
 
 테스트 러너/환경 특성:
 - `pytest` 사용
@@ -258,6 +263,38 @@ PostgreSQL 통합 테스트 env:
 - `load_docmesh_settings(("sqlite",))`가 선택 서비스만 로딩한다.
 - `load_docmesh_settings(("postgres",))`가 fallback `POSTGRES_DSN`으로 PostgreSQL 설정을 로딩한다.
 
+## 5.5A runtime extension 테스트
+
+정의 위치: `test_fastapi_core/test_extensions.py`
+
+현재 검증하는 항목:
+- public readiness 등록의 optional/required 상태 정책
+- check별 timeout과 앱 공통 timeout fallback
+- 오류 redaction 및 비-redacted timeout 메시지
+- readiness 이름 중복 거부
+- managed resource 선언 순서 startup과 역순 shutdown
+- custom lifespan과 managed resource의 실행 순서
+- `get_resource(name)`의 동일 lifecycle 객체 주입
+- resource healthcheck의 readiness 자동 등록
+- 후속 factory 실패 시 startup rollback
+- required startup healthcheck 실패 시 async close rollback
+- 빈 이름과 framework 예약 이름 거부
+- legacy readiness state의 재할당 및 in-place override 호환
+
+## 5.5B HTTP contract 테스트
+
+정의 위치: `test_fastapi_core/test_http.py`, `test_fastapi_core/test_factory.py`, `test_fastapi_core/test_dependencies.py`
+
+현재 검증하는 항목:
+- 서로 다른 `token_url`을 가진 두 앱의 OpenAPI OAuth2 scheme 격리
+- role, scope, 통합 permission dependency와 scope OpenAPI declaration
+- 유효한 correlation ID의 request state/response header 전파
+- 유효하지 않은 correlation ID의 UUID 교체
+- HTTP/validation/unhandled 예외의 problem-details 변환
+- 민감한 오류 detail 마스킹과 미처리 예외 원문 비노출
+- 비표준 HTTP status의 안정된 title
+- custom domain error mapper와 package-root export
+
 ## 5.6 schema 테스트
 
 정의 위치: `test_fastapi_core/test_schemas.py`
@@ -302,7 +339,7 @@ PostgreSQL 통합 테스트 env:
 
 문서 계획이 아니라 현재 구현된 계약을 검증한다.
 예를 들어:
-- readiness는 `app.state.readiness_checks`와 `readiness_services` 조합을 기준으로 검증한다.
+- readiness는 typed registry를 기본 경로로 검증하고 legacy state override 호환도 별도로 검증한다.
 - auth는 빠른 회귀에서는 fake provider 주입으로 계약을 고정하고, live integration에서는 실제 Keycloak 서버 경로를 검증한다.
 - config는 실제 `AppConfig` 및 `docmesh_settings` 로더를 직접 통과시킨다.
 
@@ -332,7 +369,7 @@ PostgreSQL 통합 테스트 env:
 3. `/token`의 `502` 및 unexpected `500` 분기 테스트
 4. CORS middleware 응답 헤더 테스트
 5. `root_path` 반영 테스트
-6. custom `app.state.nats` dependency 패턴 테스트
+6. 실제 NATS 연결 객체를 managed resource로 등록하는 live 테스트
 7. `READINESS_PARALLEL`의 실제 병렬성 효과 검증
 
 이 항목들은 향후 추가 대상이지, 현재 완료된 테스트 범위는 아니다.
@@ -409,6 +446,12 @@ PostgreSQL 통합 테스트 env:
 - [x] config 로더 직접 테스트가 있다.
 - [x] schema 기본값이 검증되었다.
 - [x] `pytest-asyncio` 기반 native async check 테스트가 있다.
+- [x] typed readiness 등록, check별 timeout과 오류 redaction 테스트가 있다.
+- [x] managed resource startup/shutdown/rollback 및 dependency 주입 테스트가 있다.
+- [x] required/enabled 교차 검증과 빈 CSV 환경변수 의미 테스트가 있다.
+- [x] multi-app OAuth2 OpenAPI 격리 테스트가 있다.
+- [x] role/scope/permission authorization dependency 테스트가 있다.
+- [x] correlation ID 및 problem-details 오류 처리 테스트가 있다.
 
 미완료 체크:
 - [ ] `/token`의 502/unexpected 500 테스트

@@ -31,7 +31,7 @@ confidence: high
   - `async ServiceRuntime.check(...)` / `async ServiceRuntime.close()`
 - Verification commands:
   - installed API signature/source inspection with `uv run python`
-  - `uv run pytest -q` → `57 passed, 2 third-party deprecation warnings in 20.75s`
+  - `uv run pytest -q` → `78 passed, 2 third-party deprecation warnings`
   - NATS unawaited-close runtime warning is no longer present
 
 ## Implemented / aligned
@@ -46,6 +46,7 @@ confidence: high
 - 기본 `create_app()` 경로는 lifespan startup에서 `assemble_service_runtime(...)`을 사용하고 runtime/configs/clients를 `app.state`에 설치한다.
 - `load_docmesh_settings()`는 overlay mapping을 `load_service_configs(env, ...)`에 직접 전달하며 프로세스 환경을 변경하지 않는다.
 - `DOCMESH_HEALTHCHECK_ENABLED`는 기본값 `False`인 `AppConfig.startup_healthcheck`로 연결된다.
+- fastapi-core v0.3의 managed resource와 typed readiness registry는 Py Core runtime 위에 애플리케이션 고유 자원을 합성하며, 기존 `ServiceRuntime` 소유권을 중복하지 않는다.
 
 ## Resolved in P0
 
@@ -86,4 +87,4 @@ confidence: high
 
 ## Verdict
 
-P0의 async cleanup/readiness, P1의 assembly/config 정책, P2의 timeout/`one_of`/rollback/close-failure 운영 정책이 모두 반영됐다. 현재 기준선은 `57 passed, 2 third-party deprecation warnings`다. Py Core v0.2.0 반영 관점의 P0~P2 격차는 해소됐다.
+P0의 async cleanup/readiness, P1의 assembly/config 정책, P2의 timeout/`one_of`/rollback/close-failure 운영 정책이 모두 반영됐다. fastapi-core v0.3은 그 위에 managed resource와 typed readiness 확장을 제공하며 현재 기준선은 `78 passed, 2 third-party deprecation warnings`다. Py Core v0.2.0 반영 관점의 P0~P2 격차는 해소됐다.

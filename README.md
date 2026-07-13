@@ -4,12 +4,14 @@ DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사
 `fastapi-core`는 단순 인프라 클라이언트 모음이 아니라, **공통 FastAPI 앱 표면**을 제공하는 데 초점을 둡니다.
 
 현재 구현된 핵심 범위:
-- package root export: `fastapi_core.create_app`
+- package root export: `create_app`, `ManagedResource`, `ReadinessCheckSpec`, `register_readiness_check`, `ErrorMapping`, `register_error_mapper`
 - auth router: `POST /token`, `GET /user`
 - health router: `GET /health/liveness`, `GET /health/readiness`
-- dependency: `get_config`, `get_settings`, `get_auth_provider`, `get_current_user`, `require_permissions`
-- schema: `TokenResponse`, `UserInfo`, `HealthResponse`, `HealthServiceDetail`
-- app state integration: `config`, `root_logger`, `settings`, `service_clients`, `auth_provider`(Keycloak 활성 시), `readiness_parallel`, `readiness_checks`, `readiness_services`, `required_services`
+- dependency: `get_config`, `get_settings`, `get_auth_provider`, `get_resource`, `get_current_user`, `require_roles`, `require_scopes`, `require_permissions`
+- schema: `TokenResponse`, `UserInfo`, `HealthResponse`, `HealthServiceDetail`, `ProblemDetail`
+- runtime extension: managed resource 생성·조회·readiness 등록·역순 종료
+- HTTP contract: 앱별 OAuth2 scheme, `X-Correlation-ID`, RFC 7807 problem details, domain error mapper
+- app state integration: `config`, `root_logger`, `settings`, `service_clients`, `auth_provider`(Keycloak 활성 시), 내부 readiness/resource registry
 
 외부 연동은 `docmesh_py_core`를 통해 이어집니다.
 - 인증/인가: Keycloak
@@ -27,7 +29,7 @@ DocMesh 프로젝트의 FastAPI 기반 마이크로서비스가 공통으로 사
 entrypoint = "fastapi_core.factory:create_app"
 ```
 
-패키지 루트 공개 re-export는 현재 `create_app`만 보장합니다.
+패키지 루트에서는 `create_app`, `ManagedResource`, `ReadinessCheckSpec`, `register_readiness_check`를 공개합니다.
 
 ## 설치
 
@@ -118,7 +120,8 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 - 기본 경로의 service client map은 lifespan startup에서 준비됩니다.
 - `FastAPI(root_path=..., lifespan=...)`를 생성하고 내부 lifespan wrapper의 `finally`에서 `await service_runtime.close()`를 수행합니다.
 - `app.state.config`, `app.state.root_logger`, `app.state.service_runtime`, `app.state.settings`, `app.state.service_clients`를 저장합니다. Keycloak client가 구성되면 `app.state.auth_provider`도 저장합니다.
-- `app.state.readiness_parallel`, `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services`를 초기화합니다.
+- 앱별 readiness/resource registry를 초기화하며, legacy state 키는 내부 호환 표면으로 연결합니다.
+- `resources=[ManagedResource(...)]`로 서비스 고유 자원을 startup/readiness/shutdown 흐름에 연결합니다.
 - per-service/overall readiness timeout을 state와 startup runtime check에 동일하게 적용합니다.
 - `service_alternatives`가 있으면 각 그룹에서 최소 한 서비스가 구성됐는지 `one_of` 정책으로 검증합니다.
 - `set_oauth2_token_url(config.token_url)`로 OpenAPI password flow token URL을 반영합니다.
@@ -130,7 +133,8 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 - 현재 구현은 `scope`, `username`, `password`를 provider의 `fetch_access_token(...)`에 직접 전달합니다.
 - provider 예외는 유형에 따라 `401`, `500`, `503`, `502/500`으로 매핑되며, 실패 응답에는 `WWW-Authenticate: Bearer` 헤더가 포함됩니다.
 - `/user`와 `get_current_user()`는 bearer token을 읽고 provider의 `extract_user_info(...)` 결과를 `UserInfo`로 변환합니다.
-- 권한 검사는 `require_permissions(*roles)`로 수행합니다.
+- role은 `require_roles(...)`, scope는 `require_scopes(...)`, role/scope 통합 permission은 `require_permissions(...)`로 검사합니다.
+- 각 앱은 자신의 OAuth2 scheme과 token URL을 유지하므로 multi-app OpenAPI 구성이 서로 영향을 주지 않습니다.
 
 ### 헬스체크
 - `/health/liveness`는 `{"status": "ok", "details": null}`를 반환합니다.
@@ -140,6 +144,7 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 - per-service timeout은 해당 서비스 실패로 변환되고, overall timeout은 `503 + status="error"`로 반환됩니다.
 - 필수 서비스 실패 시 `503`, 선택 서비스만 실패 시 `200 + degraded`, 모두 성공 시 `200 + ok`를 반환합니다.
 - readiness 로그는 구조화된 이벤트로 남기며, 오류 문자열은 상위 `docmesh_py_core` 마스킹 정책 영향을 받습니다.
+- 사용자 정의 check는 `register_readiness_check(...)`로 등록하며 check별 required/timeout/error redaction을 적용할 수 있습니다.
 
 ## App config
 
@@ -180,7 +185,7 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 ## 현재 제한 사항
 
 현재 구현 기준으로 아직 문서상 주의가 필요한 항목:
-- auth 전용 exception handler를 별도 등록하는 구조는 없습니다. 대신 route/dependency에서 HTTP 예외 정책을 직접 적용합니다.
+- HTTP, validation, auth/permission, 미처리 오류는 correlation ID가 포함된 `ProblemDetail` 응답으로 정규화됩니다. 서비스별 domain 오류는 `register_error_mapper(...)`로 같은 형식에 연결합니다.
 - `get_current_user()`의 secure/insecure decode 분기나 introspection 모드는 `fastapi-core`가 직접 노출하지 않습니다.
 - `get_nats_connection` 같은 메시징 전용 FastAPI dependency는 아직 없습니다.
 - 외부 서비스 통합 테스트는 `pytest.mark.integration`으로 표시되지만 기본 `uv run pytest -q` 실행에서도 수집됩니다. 필요한 환경변수 또는 대상 서비스가 없으면 해당 테스트는 skip됩니다.
@@ -205,4 +210,4 @@ uv run pytest -q
 ```
 
 최근 실행 결과:
-- `57 passed, 2 third-party deprecation warnings`
+- `90 passed, 2 third-party deprecation warnings`

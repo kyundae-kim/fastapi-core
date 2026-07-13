@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
 from docmesh_py_core import (
     NatsConnectionBuilder,
     ServiceClientWrapper,
@@ -29,8 +30,15 @@ from docmesh_py_core import (
 )
 
 from fastapi_core.config import AppConfig, load_app_config
-from fastapi_core.dependencies.auth import set_oauth2_token_url
+from fastapi_core.dependencies.auth import oauth2_scheme
 from fastapi_core.docmesh_settings import build_docmesh_env_overlay
+from fastapi_core.extensions import (
+    ManagedResource,
+    ReadinessCheckSpec,
+    ReadinessRegistry,
+    ResourceRegistry,
+)
+from fastapi_core.http import CorrelationIdMiddleware, install_problem_handlers
 from fastapi_core.routers.auth import router as auth_router
 from fastapi_core.routers.health import router as health_router
 
@@ -146,20 +154,6 @@ def _build_readiness_checks(
     return checks
 
 
-def _build_readiness_metadata(
-    enabled_services: list[str],
-    required_services: list[str],
-) -> dict[str, dict[str, bool]]:
-    required = set(required_services)
-    return {
-        service_name: {
-            "enabled": True,
-            "required": service_name in required,
-        }
-        for service_name in enabled_services
-    }
-
-
 def _build_injected_service_runtime(
     settings: ServiceConfigs,
     config: AppConfig,
@@ -178,11 +172,38 @@ def _build_injected_service_runtime(
     )
 
 
+def _configure_oauth2_scheme(app: FastAPI, token_url: str) -> None:
+    app_scheme = OAuth2PasswordBearer(tokenUrl=token_url, auto_error=False)
+    app.state.oauth2_scheme = app_scheme
+    app.dependency_overrides[oauth2_scheme] = app_scheme
+    default_openapi = app.openapi
+
+    def app_openapi() -> dict[str, Any]:
+        schema = default_openapi()
+        security_schemes = schema.get("components", {}).get("securitySchemes", {})
+        scheme = security_schemes.get("OAuth2PasswordBearer")
+        if scheme is not None:
+            scheme["flows"]["password"]["tokenUrl"] = token_url
+        return schema
+
+    app.openapi = app_openapi
+
+
 def _configure_service_runtime(app: FastAPI, runtime: ServiceRuntime) -> None:
     app.state.service_runtime = runtime
     app.state.settings = runtime.configs
     app.state.service_clients = runtime.clients
-    app.state.readiness_checks = _build_readiness_checks(runtime.clients)
+    readiness_registry: ReadinessRegistry = app.state.readiness_registry
+    required_services = set(app.state.config.required_services)
+    for service_name, check in _build_readiness_checks(runtime.clients).items():
+        readiness_registry.register(
+            ReadinessCheckSpec(
+                name=service_name,
+                check=check,
+                required=service_name in required_services,
+                redact_errors=False,
+            )
+        )
     keycloak_client = runtime.clients.get("keycloak")
     if keycloak_client is not None:
         _configure_keycloak_provider(keycloak_client)
@@ -194,31 +215,38 @@ def _build_lifespan(
     lifespan: Callable | None,
     config: AppConfig,
     runtime: ServiceRuntime | None,
+    resources: ResourceRegistry,
 ) -> Callable:
     @asynccontextmanager
     async def managed_lifespan(app: FastAPI):
         app_runtime = runtime
-        if app_runtime is None:
-            app_runtime = await assemble_service_runtime(
-                build_docmesh_env_overlay(),
-                services=set(config.enabled_services),
-                required=set(config.required_services),
-                one_of=tuple(set(group) for group in config.service_alternatives),
-                check_on_startup=config.startup_healthcheck,
-                parallel_healthchecks=config.readiness_parallel,
-                healthcheck_timeout_seconds=config.readiness_timeout_seconds,
-                overall_healthcheck_timeout_seconds=(
-                    config.readiness_overall_timeout_seconds
-                ),
-            )
-            _configure_service_runtime(app, app_runtime)
-        elif config.startup_healthcheck:
-            await app_runtime.check(
-                parallel=config.readiness_parallel,
-                timeout_seconds=config.readiness_timeout_seconds,
-                overall_timeout_seconds=config.readiness_overall_timeout_seconds,
-            )
         try:
+            if app_runtime is None:
+                app_runtime = await assemble_service_runtime(
+                    build_docmesh_env_overlay(),
+                    services=set(config.enabled_services),
+                    required=set(config.required_services),
+                    one_of=tuple(set(group) for group in config.service_alternatives),
+                    check_on_startup=config.startup_healthcheck,
+                    parallel_healthchecks=config.readiness_parallel,
+                    healthcheck_timeout_seconds=config.readiness_timeout_seconds,
+                    overall_healthcheck_timeout_seconds=(
+                        config.readiness_overall_timeout_seconds
+                    ),
+                )
+                _configure_service_runtime(app, app_runtime)
+            elif config.startup_healthcheck:
+                await app_runtime.check(
+                    parallel=config.readiness_parallel,
+                    timeout_seconds=config.readiness_timeout_seconds,
+                    overall_timeout_seconds=config.readiness_overall_timeout_seconds,
+                )
+            await resources.start(app)
+            if config.startup_healthcheck:
+                await resources.check_startup(
+                    parallel=config.readiness_parallel,
+                    overall_timeout_seconds=config.readiness_overall_timeout_seconds,
+                )
             if lifespan is None:
                 yield
             else:
@@ -226,19 +254,23 @@ def _build_lifespan(
                     yield
         finally:
             try:
-                await app_runtime.close()
-            except ServiceCloseError as exc:
-                logger.error(
-                    "service_runtime_close_failed",
-                    extra={
-                        "event": {
-                            "operation": "service_runtime_close",
-                            "outcome": "error",
-                            "failure_count": len(exc.failures),
-                        }
-                    },
-                )
-                raise
+                await resources.close()
+            finally:
+                if app_runtime is not None:
+                    try:
+                        await app_runtime.close()
+                    except ServiceCloseError as exc:
+                        logger.error(
+                            "service_runtime_close_failed",
+                            extra={
+                                "event": {
+                                    "operation": "service_runtime_close",
+                                    "outcome": "error",
+                                    "failure_count": len(exc.failures),
+                                }
+                            },
+                        )
+                        raise
 
     return managed_lifespan
 
@@ -248,6 +280,7 @@ def create_app(
     settings: ServiceConfigs | None = None,
     lifespan: Callable | None = None,
     include_auth_router: bool = True,
+    resources: Sequence[ManagedResource[Any]] = (),
 ) -> FastAPI:
     app_config = config or load_app_config()
     root_logger = _configure_application_logging(app_config)
@@ -257,29 +290,44 @@ def create_app(
         else None
     )
 
+    readiness_registry = ReadinessRegistry(
+        default_timeout_seconds=app_config.readiness_timeout_seconds
+    )
+    required_services = set(app_config.required_services)
+    for service_name in app_config.enabled_services:
+        readiness_registry.declare(
+            service_name,
+            required=service_name in required_services,
+        )
+    resource_registry = ResourceRegistry(resources, readiness_registry)
     app = FastAPI(
         root_path=app_config.root_path,
-        lifespan=_build_lifespan(lifespan, app_config, service_runtime),
+        lifespan=_build_lifespan(
+            lifespan,
+            app_config,
+            service_runtime,
+            resource_registry,
+        ),
     )
     app.state.config = app_config
     app.state.root_logger = root_logger
     app.state.service_runtime = service_runtime
     app.state.settings = settings
     app.state.service_clients = {}
+    app.state.readiness_registry = readiness_registry
+    app.state.resource_registry = resource_registry
     app.state.readiness_parallel = app_config.readiness_parallel
     app.state.readiness_timeout_seconds = app_config.readiness_timeout_seconds
     app.state.readiness_overall_timeout_seconds = (
         app_config.readiness_overall_timeout_seconds
     )
-    app.state.readiness_checks = {}
-    app.state.readiness_services = _build_readiness_metadata(
-        app_config.enabled_services,
-        app_config.required_services,
-    )
-    app.state.required_services = set(app_config.required_services)
+    app.state.readiness_checks = readiness_registry.checks
+    app.state.readiness_services = readiness_registry.services
+    app.state.required_services = readiness_registry.required_services
     if service_runtime is not None:
         _configure_service_runtime(app, service_runtime)
-    set_oauth2_token_url(app_config.token_url)
+    _configure_oauth2_scheme(app, app_config.token_url)
+    install_problem_handlers(app)
 
     app.add_middleware(
         CORSMiddleware,
@@ -288,6 +336,7 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(CorrelationIdMiddleware)
 
     app.include_router(health_router)
     if include_auth_router:

@@ -10,6 +10,7 @@ from docmesh_py_core import (
     build_service_log_event,
 )
 
+from fastapi_core.extensions import ReadinessRegistry
 from fastapi_core.schemas.health import HealthResponse, HealthServiceDetail, HealthStatus
 
 router = APIRouter(prefix="/health", tags=["health"])
@@ -32,6 +33,29 @@ def _build_service_detail(
         required=metadata.get("required", False),
         enabled=metadata.get("enabled", True),
     )
+
+
+def _readiness_error(
+    service_name: str,
+    *,
+    ok: bool,
+    error: str | None,
+    timeout_seconds: float | None,
+    registry: ReadinessRegistry | None,
+    use_registry: bool,
+) -> str | None:
+    if ok:
+        return error
+    if use_registry and registry is not None:
+        spec = registry.specs[service_name]
+        if spec.redact_errors:
+            return "readiness check failed"
+        timeout_seconds = spec.timeout_seconds or registry.default_timeout_seconds
+    if error:
+        return error
+    if timeout_seconds is not None:
+        return "health check timed out"
+    return None
 
 
 def _log_readiness_failure(
@@ -79,18 +103,37 @@ async def readiness(request: Request) -> HealthResponse | JSONResponse:
         "readiness_overall_timeout_seconds",
         None,
     )
+    registry: ReadinessRegistry | None = getattr(
+        request.app.state,
+        "readiness_registry",
+        None,
+    )
+    use_registry = (
+        registry is not None
+        and registry.owns_legacy_state(
+            checks,
+            service_metadata,
+            required_services,
+        )
+    )
 
     if not checks:
         return HealthResponse(status="ok")
 
     try:
-        result = await async_check_all_services(
-            checks,
-            required_services=required_services,
-            parallel=parallel,
-            timeout_seconds=timeout_seconds,
-            overall_timeout_seconds=overall_timeout_seconds,
-        )
+        if use_registry:
+            result = await registry.check(
+                parallel=parallel,
+                overall_timeout_seconds=overall_timeout_seconds,
+            )
+        else:
+            result = await async_check_all_services(
+                checks,
+                required_services=required_services,
+                parallel=parallel,
+                timeout_seconds=timeout_seconds,
+                overall_timeout_seconds=overall_timeout_seconds,
+            )
     except HealthCheckError as exc:
         result = exc.result
     except TimeoutError:
@@ -116,13 +159,13 @@ async def readiness(request: Request) -> HealthResponse | JSONResponse:
             service_metadata.get(service.service, {}),
             ok=service.ok,
             latency_ms=service.latency_ms,
-            error=(
-                service.error
-                or (
-                    "health check timed out"
-                    if not service.ok and timeout_seconds is not None
-                    else None
-                )
+            error=_readiness_error(
+                service.service,
+                ok=service.ok,
+                error=service.error,
+                timeout_seconds=timeout_seconds,
+                registry=registry,
+                use_registry=use_registry,
             ),
         )
         for service in result.services

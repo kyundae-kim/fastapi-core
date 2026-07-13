@@ -57,6 +57,24 @@ def test_create_app_applies_configured_token_url_to_openapi(settings):
     assert security_scheme["flows"]["password"]["tokenUrl"] == "/api/v1/auth/token"
 
 
+def test_create_app_keeps_oauth2_scheme_isolated_per_app(settings):
+    first_app = create_app(
+        config=AppConfig(token_url="/first/token"),
+        settings=settings,
+    )
+    second_app = create_app(
+        config=AppConfig(token_url="/second/token"),
+        settings=settings,
+    )
+
+    first_scheme = first_app.openapi()["components"]["securitySchemes"]["OAuth2PasswordBearer"]
+    second_scheme = second_app.openapi()["components"]["securitySchemes"]["OAuth2PasswordBearer"]
+
+    assert first_scheme["flows"]["password"]["tokenUrl"] == "/first/token"
+    assert second_scheme["flows"]["password"]["tokenUrl"] == "/second/token"
+    assert first_app.state.oauth2_scheme is not second_app.state.oauth2_scheme
+
+
 def test_create_app_can_exclude_auth_router(settings):
     app = create_app(settings=settings, include_auth_router=False)
 
@@ -68,6 +86,20 @@ def test_create_app_can_exclude_auth_router(settings):
     assert liveness_response.status_code == 200
     assert user_response.status_code == 404
     assert token_response.status_code == 404
+
+
+def test_create_app_supports_explicitly_empty_service_selection():
+    app = create_app(
+        config=AppConfig(enabled_services=[], required_services=[]),
+        include_auth_router=False,
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/health/readiness")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "details": None}
+    assert app.state.service_clients == {}
 
 
 def test_create_app_runs_custom_lifespan(settings):

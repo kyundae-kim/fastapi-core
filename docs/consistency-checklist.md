@@ -8,6 +8,8 @@
 | 변경 영역 | 기준 코드 | 함께 확인할 문서 |
 | --- | --- | --- |
 | 앱 조립, lifespan, `app.state`, CORS | `fastapi_core/factory.py` | `README.md`, `docs/api.md`, `docs/config.md`, `docs/examples.md` |
+| managed resource와 typed readiness registry | `fastapi_core/extensions.py` | `README.md`, `docs/api.md`, `docs/examples.md`, `docs/srs.md`, `docs/test.md` |
+| 앱별 OAuth2, authorization, correlation/error contract | `fastapi_core/dependencies/auth.py`, `fastapi_core/http.py`, `fastapi_core/factory.py` | `README.md`, `docs/api.md`, `docs/config.md`, `docs/examples.md`, `docs/srs.md`, `docs/test.md` |
 | 앱 설정과 환경변수 | `fastapi_core/config.py` | `README.md`, `docs/config.md`, `docs/api.md`, `.env.example` |
 | DocMesh 설정 fallback 및 서비스 선택 | `fastapi_core/docmesh_settings.py` | `docs/config.md`, `docs/api.md`, `docs/examples.md`, `.env.example` |
 | 인증 dependency와 권한 검사 | `fastapi_core/dependencies/auth.py` | `README.md`, `docs/api.md`, `docs/examples.md`, `docs/srs.md` |
@@ -28,6 +30,9 @@
 ## 3. 변경 후 점검
 
 - [ ] `create_app()`의 인자, `app.state` 키, lifespan 종료 동작이 README/API/config/examples와 일치한다.
+- [ ] managed resource의 startup/rollback/shutdown 순서와 `get_resource()` 공개 계약이 API/SRS/examples/test와 일치한다.
+- [ ] typed readiness의 required/timeout/redaction 정책과 legacy state 호환 경계가 API/config/test와 일치한다.
+- [ ] 앱별 OAuth2 scheme, role/scope/permission 정책, problem-details 및 correlation ID 계약이 API/SRS/examples/test와 일치한다.
 - [ ] route, response schema, auth/readiness 상태 코드가 API/examples/SRS와 일치한다.
 - [ ] 환경변수 이름, alias, 기본값, CSV 파싱 규칙이 config 문서와 `.env.example`에 일치한다.
 - [ ] 패키지 루트 export와 dependency package export를 구분해 문서화한다.

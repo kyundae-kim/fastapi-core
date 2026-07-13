@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import get_type_hints
 
+import fastapi_core.dependencies as dependencies_module
 import fastapi_core.dependencies.config as config_module
 import fastapi_core.dependencies.services as services_module
 from docmesh_py_core import KeycloakAuthService, NatsConnectionBuilder
@@ -16,7 +17,12 @@ from fastapi_core.dependencies import (
     get_service_client,
     get_sqlite_engine,
 )
-from fastapi_core.dependencies.auth import get_current_user, require_permissions
+from fastapi_core.dependencies.auth import (
+    get_current_user,
+    require_permissions,
+    require_roles,
+    require_scopes,
+)
 from fastapi_core.dependencies.config import get_settings
 from fastapi_core.docmesh_settings import load_docmesh_settings
 from fastapi_core.factory import create_app
@@ -47,6 +53,14 @@ class FakeServiceClient:
 class FakeServiceClients(dict[str, FakeServiceClient]):
     def __init__(self, provider: FakeAuthProvider):
         super().__init__({"keycloak": FakeServiceClient(provider)})
+
+
+def test_dependency_package_exports_declarative_authorization_helpers():
+    assert {
+        "require_permissions",
+        "require_roles",
+        "require_scopes",
+    }.issubset(set(dir(dependencies_module)))
 
 
 def test_get_settings_falls_back_before_default_runtime_startup(monkeypatch):
@@ -114,6 +128,46 @@ def test_require_permissions_returns_403_when_role_missing(settings):
 
     assert response.status_code == 403
     assert response.json()["detail"] == "Forbidden"
+
+
+def test_require_permissions_accepts_scope_permissions(settings):
+    app = create_app(settings=settings, include_auth_router=False)
+    app.state.auth_provider = FakeAuthProvider()
+
+    @app.get("/profile")
+    async def profile(_user: UserInfo = Depends(require_permissions("openid"))):
+        return {"ok": True}
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/profile",
+            headers={"Authorization": "Bearer demo-token"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+
+def test_require_roles_and_scopes_are_declarative_dependencies(settings):
+    app = create_app(settings=settings, include_auth_router=False)
+    app.state.auth_provider = FakeAuthProvider()
+
+    @app.get("/secured")
+    async def secured(
+        _role_user: UserInfo = Depends(require_roles("user")),
+        _scope_user: UserInfo = Depends(require_scopes("openid")),
+    ):
+        return {"ok": True}
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/secured",
+            headers={"Authorization": "Bearer demo-token"},
+        )
+
+    assert response.status_code == 200
+    security = app.openapi()["paths"]["/secured"]["get"]["security"]
+    assert {"OAuth2PasswordBearer": ["openid"]} in security
 
 
 def test_get_current_user_uses_service_client_backed_auth_provider(settings):

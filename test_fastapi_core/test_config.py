@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import os
 
+import pytest
+from pydantic import ValidationError
+
 import fastapi_core.docmesh_settings as docmesh_settings_module
 from fastapi_core.config import AppConfig, load_app_config
 from fastapi_core.docmesh_settings import build_docmesh_env_overlay, load_docmesh_settings
@@ -93,6 +96,42 @@ def test_app_config_defaults_match_existing_behavior(monkeypatch):
     assert config.enabled_services == ["keycloak"]
     assert config.required_services == ["keycloak"]
     load_app_config.cache_clear()
+
+
+def test_app_config_treats_explicitly_empty_csv_environment_as_empty_lists(
+    monkeypatch,
+):
+    monkeypatch.setenv("CORS_ORIGINS", "")
+    monkeypatch.setenv("DOCMESH_SERVICES", "")
+    monkeypatch.setenv("READINESS_REQUIRED_SERVICES", "")
+    load_app_config.cache_clear()
+
+    config = load_app_config()
+
+    assert config.cors_origins == []
+    assert config.enabled_services == []
+    assert config.required_services == []
+    load_app_config.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["cors_origins", "enabled_services", "required_services"],
+)
+def test_app_config_rejects_empty_csv_string_in_direct_constructor(field_name):
+    with pytest.raises(ValidationError, match=field_name):
+        AppConfig(**{field_name: ""})
+
+
+def test_app_config_rejects_required_service_that_is_not_enabled():
+    with pytest.raises(
+        ValidationError,
+        match="required_services must be included in enabled_services",
+    ):
+        AppConfig(
+            enabled_services=["sqlite"],
+            required_services=["keycloak"],
+        )
 
 
 

@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`의 **현재 구현된 공개 표면을 바로 사용할 수 있는 예제**로 정리한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`, `docs/config.md`, `docs/messaging.md`, `docs/test.md`
-> 문서 상태: 구현 반영본(v0.2)
+> 문서 상태: 구현 반영본(v0.4)
 
 ---
 
@@ -13,7 +13,7 @@
 
 - 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 버전: `v0.2`
+- 버전: `v0.4`
 - 상태: `implemented-surface`
 
 다루는 범위:
@@ -43,8 +43,9 @@ app = create_app()
 - `/token`, `/user` 포함
 - `app.state.config`, `app.state.settings`, `app.state.service_clients` 저장
 - keycloak이 활성화되면 `app.state.auth_provider` 저장
-- `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services` 초기화
+- 앱별 typed readiness/resource registry 초기화
 - CORS middleware 등록
+- `X-Correlation-ID` 전파와 problem-details 오류 handler 등록
 
 ---
 
@@ -96,21 +97,22 @@ app.include_router(router)
 
 ---
 
-## 5. 역할 기반 권한 검사
+## 5. 선언적 role/scope/permission 검사
 
-`require_permissions(*roles)`는 role 검사용 dependency factory다.
+`require_roles`, `require_scopes`, `require_permissions`는 각각 role, scope, 두 집합을 합친 permission을 검사한다.
 
 ```python
 from fastapi import APIRouter, Depends
 from fastapi_core import create_app
-from fastapi_core.dependencies.auth import require_permissions
+from fastapi_core.dependencies import require_roles, require_scopes
 from fastapi_core.schemas.user import UserInfo
 
 router = APIRouter()
 
-@router.get("/admin")
-async def admin_only(
-    user: UserInfo = Depends(require_permissions("admin")),
+@router.get("/documents")
+async def documents(
+    role_user: UserInfo = Depends(require_roles("editor")),
+    scope_user: UserInfo = Depends(require_scopes("document:read")),
 ) -> dict[str, bool]:
     return {"ok": True}
 
@@ -120,9 +122,11 @@ app.include_router(router)
 ```
 
 현재 구현 기준 동작:
-- 현재 사용자 `roles`에 요구 role이 모두 있으면 통과
+- `require_roles`는 현재 사용자 `roles`, `require_scopes`는 `scopes`를 검사한다.
+- `require_permissions`는 role과 scope의 합집합을 검사한다.
 - 하나라도 없으면 `403 Forbidden`
 - 통과 시 현재 `UserInfo`를 그대로 재사용 가능
+- `require_scopes`의 요구 scope는 OpenAPI security requirement에 노출됨
 
 ---
 
@@ -301,23 +305,22 @@ app.state.required_services == {"keycloak"}
 
 ---
 
-## 10. readiness 체크를 직접 주입하는 예시
+## 10. typed readiness 체크 등록 예시
 
-서비스별 정책을 더 세밀하게 제어하려면 `app.state`를 직접 구성할 수 있다.
+서비스별 정책을 더 세밀하게 제어하려면 public registration API를 사용한다.
 
 ```python
-from fastapi_core import create_app
+from fastapi_core import create_app, register_readiness_check
 
 app = create_app(include_auth_router=False)
-app.state.readiness_checks = {
-    "keycloak": lambda: None,
-    "nats": lambda: None,
-}
-app.state.readiness_services = {
-    "keycloak": {"required": True, "enabled": True},
-    "nats": {"required": False, "enabled": True},
-}
-app.state.required_services = {"keycloak"}
+register_readiness_check(
+    app,
+    "domain-sdk",
+    lambda: None,
+    required=False,
+    timeout_seconds=5,
+    redact_errors=True,
+)
 ```
 
 현재 응답 정책:
@@ -331,14 +334,7 @@ app.state.required_services = {"keycloak"}
 {
   "status": "ok",
   "details": {
-    "keycloak": {
-      "ok": true,
-      "latency_ms": 1,
-      "error": null,
-      "required": true,
-      "enabled": true
-    },
-    "nats": {
+    "domain-sdk": {
       "ok": true,
       "latency_ms": 1,
       "error": null,
@@ -350,37 +346,59 @@ app.state.required_services = {"keycloak"}
 ```
 
 선택 서비스 실패 예시 개념:
-- `nats` 실패, `keycloak` 성공
+- `domain-sdk` 실패
 - HTTP 상태 코드는 `200`
 - 본문 `status`는 `degraded`
 
 필수 서비스 실패 예시 개념:
-- `keycloak` 실패
+- 같은 check를 `required=True`로 등록한 상태에서 실패
 - HTTP 상태 코드는 `503`
 - 본문 `status`는 `error`
 
 ---
 
-## 11. custom lifespan 연계 예시
+## 11. managed resource 연계 예시
 
-외부 연결 수명주기를 직접 관리하려면 custom lifespan을 전달한다.
+서비스 고유 SDK나 연결 객체는 managed resource로 등록한다.
 
 ```python
-from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi_core import create_app
+from fastapi import Depends, FastAPI
+from fastapi_core import ManagedResource, create_app
+from fastapi_core.dependencies import get_resource
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    app.state.started_by_lifespan = True
-    # startup 작업
-    yield
-    # shutdown 작업
 
-app = create_app(lifespan=lifespan)
+class DomainSDK:
+    async def check(self) -> None: ...
+    async def aclose(self) -> None: ...
+
+
+async def create_sdk(_app: FastAPI) -> DomainSDK:
+    return DomainSDK()
+
+
+app = create_app(
+    resources=[
+        ManagedResource(
+            "domain-sdk",
+            factory=create_sdk,
+            healthcheck=lambda sdk: sdk.check(),
+            required=True,
+        )
+    ]
+)
+
+
+@app.get("/sdk-status")
+async def sdk_status(sdk=Depends(get_resource("domain-sdk"))):
+    return {"ready": sdk is not None}
 ```
 
 현재 구현 기준 보장되는 점:
+- resource는 선언 순서로 생성되고 역순으로 종료된다.
+- 일부 factory 또는 startup healthcheck가 실패하면 이미 생성된 resource를 rollback한다.
+- healthcheck가 있으면 readiness registry에 자동 등록된다.
+- 명시적 close callback이 없으면 `aclose()`, `close()` 순서로 자동 정리한다.
+- `get_resource(name)`은 lifecycle에서 생성된 동일 객체를 route에 주입한다.
 - `settings`를 생략한 기본 경로는 custom lifespan보다 먼저 `assemble_service_runtime(...)`으로 외부 서비스 runtime을 준비한다.
 - 준비된 runtime은 `app.state.service_runtime`에 저장되고 clients/settings도 기존 state 키로 노출된다.
 - custom lifespan startup/shutdown이 호출된다.
@@ -390,7 +408,7 @@ app = create_app(lifespan=lifespan)
 - startup healthcheck 실패 시 custom lifespan 진입 전에 생성된 client를 rollback한다.
 - runtime close 실패 시 `service_runtime_close_failed` 이벤트를 남기고 `ServiceCloseError`를 전파한다.
 
-메시징/NATS 같은 외부 자원은 이 지점에서 초기화/정리하는 패턴이 권장된다.
+- custom lifespan은 managed resource startup 뒤 진입하고, custom shutdown 뒤 managed resource가 정리된다.
 
 ---
 
@@ -451,21 +469,47 @@ app = create_app(config=config, include_auth_router=False)
 
 ---
 
-## 14. 예제 선택 가이드
+## 14. domain 오류와 correlation ID 연계
+
+```python
+from fastapi_core import ErrorMapping, create_app, register_error_mapper
+
+
+class DomainSDKError(Exception):
+    pass
+
+
+app = create_app()
+register_error_mapper(
+    app,
+    DomainSDKError,
+    lambda _request, exc: ErrorMapping(
+        status_code=502,
+        title="Domain service error",
+        detail=str(exc),
+        type_uri="https://errors.example/domain-service",
+    ),
+)
+```
+
+모든 정상/오류 응답에는 `X-Correlation-ID`가 설정된다. 유효한 입력 ID는 `request.state.correlation_id`와 응답에 그대로 전파되고, 유효하지 않은 값은 새 UUID로 교체된다. HTTP/validation/unhandled 오류와 위 custom mapper 오류는 `application/problem+json` 응답을 사용한다.
+
+## 15. 예제 선택 가이드
 
 원하는 사용 패턴별로 다음 예제를 먼저 보면 된다.
 
 - 가장 빨리 시작: [2. 가장 작은 시작 예제](#2-가장-작은-시작-예제)
 - 인증 없는 내부 서비스: [3. auth router를 제외한 앱 생성](#3-auth-router를-제외한-앱-생성)
 - 보호된 API 작성: [4. 보호된 endpoint 추가](#4-보호된-endpoint-추가)
-- role 기반 접근 제어: [5. 역할 기반 권한 검사](#5-역할-기반-권한-검사)
+- role/scope 기반 접근 제어: [5. 선언적 role/scope/permission 검사](#5-선언적-rolescopepermission-검사)
 - 배포 설정 반영: [7. AppConfig를 코드로 직접 주입](#7-appconfig를-코드로-직접-주입), [8. 환경변수 기반 설정 예시](#8-환경변수-기반-설정-예시)
 - readiness 정책 커스터마이징: [10. readiness 체크를 직접 주입하는 예시](#10-readiness-체크를-직접-주입하는-예시)
 - 외부 자원 lifecycle 연계: [11. custom lifespan 연계 예시](#11-custom-lifespan-연계-예시)
+- 표준 domain 오류 매핑: [14. domain 오류와 correlation ID 연계](#14-domain-오류와-correlation-id-연계)
 
 ---
 
-## 15. 참고 문서
+## 16. 참고 문서
 
 - `docs/prd.md`
 - `docs/srs.md`

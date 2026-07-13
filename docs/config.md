@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`의 설정을 **현재 구현된 FastAPI 앱 조립 / dependency / readiness 관점**에서 설명한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`
-> 문서 상태: 구현 반영본(v0.7)
+> 문서 상태: 구현 반영본(fastapi-core v0.4)
 
 ---
 
@@ -13,7 +13,8 @@
 
 - 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 버전: `v0.7`
+- 문서 리비전: `v0.9`
+- 대상 릴리스: `v0.4`
 - 상태: `implemented-surface`
 
 핵심 관점:
@@ -73,7 +74,7 @@ class AppConfig(BaseSettings):
 | 필드 | 적용 위치 | 현재 동작 |
 | --- | --- | --- |
 | `root_path` | `FastAPI(root_path=...)` | reverse proxy 하위 경로 배포 시 사용 |
-| `token_url` | `set_oauth2_token_url(...)` | 모듈 전역 OAuth2 password flow의 token URL 반영 |
+| `token_url` | 앱별 `OAuth2PasswordBearer`와 OpenAPI schema | 앱 인스턴스별 password flow token URL 반영 |
 | `cors_origins` | `CORSMiddleware` | 허용 origin 목록 |
 | `cors_credentials` | `CORSMiddleware` | credential 허용 여부 |
 | `readiness_parallel` | `app.state.readiness_parallel` | readiness check 병렬 실행 여부 |
@@ -119,7 +120,10 @@ class AppConfig(BaseSettings):
 - `CORS_ORIGINS`, `DOCMESH_SERVICES`, `READINESS_REQUIRED_SERVICES`는 쉼표 구분 문자열을 list로 읽는다.
 - `DOCMESH_SERVICE_ALTERNATIVES`는 세미콜론으로 그룹을, 쉼표로 그룹 내 서비스를 구분한다. 예: `postgres,sqlite;minio,milvus`.
 - readiness timeout 두 필드는 양수만 허용하며 미설정 시 제한을 적용하지 않는다.
-- 위 CSV 환경변수에 빈 문자열을 지정하면 validator가 `None`으로 변환한다. 세 필드는 non-optional `list[str]`이므로 기본값으로 복원되지 않고 validation error가 발생한다. 기본값을 사용하려면 변수를 설정하지 않는다.
+- 위 CSV 환경변수가 미설정이면 문서화된 기본값을 사용한다.
+- 위 CSV 환경변수를 명시적으로 빈 문자열로 설정하면 빈 목록 `[]`으로 해석한다. 따라서 서비스 없음, required 서비스 없음, CORS origin 없음을 표현할 수 있으며 기본값을 복원하지 않는다.
+- 코드에서 `AppConfig(cors_origins="")`처럼 list 필드에 빈 문자열을 직접 전달하면 환경변수 정규화와 구분해 validation error를 반환한다.
+- `required_services`는 `enabled_services`의 부분집합이어야 하며, 위반 시 설정 validation error를 반환한다.
 - bool 계열은 Pydantic settings 파싱을 따른다.
 - `load_app_config()`는 `lru_cache(maxsize=1)`로 캐시된다.
 
@@ -147,7 +151,7 @@ READINESS_REQUIRED_SERVICES=keycloak
 
 ## 4. `create_app(...)`와 설정 연결
 
-현재 구현의 `create_app(config=None, settings=None, lifespan=None, include_auth_router=True)`는 다음 순서로 설정을 사용한다.
+현재 구현의 `create_app(config=None, settings=None, lifespan=None, include_auth_router=True, resources=())`는 다음 순서로 설정을 사용한다.
 
 1. `config`가 없으면 `load_app_config()` 사용
 2. `_configure_application_logging(config)`로 로깅 초기화
@@ -162,14 +166,15 @@ READINESS_REQUIRED_SERVICES=keycloak
 11. keycloak client가 있으면 `app.state.auth_provider = service_clients["keycloak"].client`
 12. `app.state.readiness_parallel = config.readiness_parallel`
 13. per-service/overall timeout을 `app.state`에 저장
-14. `app.state.readiness_checks = _build_readiness_checks(service_clients)`
-15. `app.state.readiness_services = _build_readiness_metadata(config.enabled_services, config.required_services)`
-16. `app.state.required_services = set(config.required_services)`
-17. `set_oauth2_token_url(config.token_url)` 적용
-18. CORS middleware 등록 및 router 포함
-19. lifespan 종료 시 `await service_runtime.close()` 실행; 실패 시 구조화 로그 후 `ServiceCloseError` 전파
+14. 앱별 `ReadinessRegistry`에 service client check와 required 메타데이터 등록
+15. legacy readiness state 키를 registry의 내부 컨테이너와 연결
+16. `ResourceRegistry`에서 managed resource를 생성하고 healthcheck를 readiness에 자동 등록
+17. 앱별 OAuth2 scheme과 OpenAPI security metadata 구성
+18. CORS, correlation ID middleware 및 표준 exception handler 등록
+19. router 포함
+20. custom lifespan 종료 후 managed resource를 역순 정리하고 service runtime 종료
 
-즉, 설정은 현재 코드에서 **앱 조립**, **로깅 초기화**, **service_clients/readiness 기본 구성**, **auth 문서 표면(OpenAPI) 조정**에 직접 사용된다. `token_url`은 앱 인스턴스별 값이 아니라 module-global `oauth2_scheme`을 변경하므로, 한 프로세스에서 서로 다른 `token_url`로 여러 앱을 만들면 마지막 `create_app()` 호출 값이 OpenAPI password flow에 반영된다.
+즉, 설정은 현재 코드에서 **앱 조립**, **로깅 초기화**, **service_clients/readiness 기본 구성**, **auth 문서 표면(OpenAPI) 조정**에 직접 사용된다. `token_url`은 앱마다 별도 `OAuth2PasswordBearer`에 저장되므로, 한 프로세스에서 서로 다른 값을 사용하는 여러 앱을 생성해도 기존 앱의 OpenAPI password flow가 변경되지 않는다.
 
 ---
 
@@ -259,7 +264,7 @@ password grant에서는 함수 인자의 `username` / `password`가 우선하고
 
 ## 7. readiness / health 관련 설정
 
-현재 readiness는 `AppConfig`와 `app.state`가 함께 결정한다.
+현재 readiness는 `AppConfig`와 앱별 `ReadinessRegistry`가 함께 결정한다. legacy `app.state` readiness 키는 기존 직접 override 호환을 위한 내부 표면이다.
 
 실제 동작:
 - `/health/liveness`는 설정 의존성이 거의 없다.
@@ -275,9 +280,8 @@ password grant에서는 함수 인자의 `username` / `password`가 우선하고
 
 | 항목 | 공급 방식 | 설명 |
 | --- | --- | --- |
-| `readiness_checks` | 기본 create_app 자동 구성 또는 사용자/lifespan override | 서비스명 → callable 매핑 |
-| `readiness_services` | 기본 create_app 자동 구성 또는 사용자 override | 서비스별 `{required, enabled}` 메타데이터 |
-| `required_services` | `AppConfig` 또는 직접 state 설정 | 실패 시 503을 유발하는 필수 서비스 집합 |
+| typed readiness registry | 기본 service check, `register_readiness_check(...)`, managed resource | check와 required/timeout/redaction 정책 |
+| legacy readiness state | 기존 직접 override 호환 | 신규 애플리케이션의 public 등록 경로가 아님 |
 | `readiness_parallel` | `AppConfig` 또는 직접 state 설정 | 병렬 실행 여부 |
 | `readiness_timeout_seconds` | `AppConfig` 또는 직접 state 설정 | 서비스별 제한 시간 |
 | `readiness_overall_timeout_seconds` | `AppConfig` 또는 직접 state 설정 | 전체 제한 시간 |
@@ -307,18 +311,18 @@ app.state.readiness_services == {
 app.state.required_services == {"keycloak"}
 ```
 
-수동 override 예시:
+사용자 정의 readiness 등록 예시:
 
 ```python
-app.state.readiness_checks = {
-    "keycloak": lambda: None,
-    "nats": lambda: None,
-}
-app.state.readiness_services = {
-    "keycloak": {"required": True, "enabled": True},
-    "nats": {"required": False, "enabled": True},
-}
-app.state.required_services = {"keycloak"}
+from fastapi_core import register_readiness_check
+
+register_readiness_check(
+    app,
+    "domain-sdk",
+    lambda: None,
+    required=False,
+    timeout_seconds=5,
+)
 ```
 
 ### 7.3 상태 판정 규칙

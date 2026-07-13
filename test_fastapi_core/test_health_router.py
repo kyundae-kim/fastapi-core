@@ -79,6 +79,29 @@ def test_readiness_returns_degraded_when_optional_check_fails(settings, caplog):
     assert "secret-token" not in record.event["error"]
 
 
+def test_readiness_preserves_legacy_in_place_state_override(settings):
+    app = create_app(settings=settings, include_auth_router=False)
+
+    def fail_optional():
+        raise RuntimeError("nats unavailable")
+
+    app.state.readiness_checks.clear()
+    app.state.readiness_checks["nats"] = fail_optional
+    app.state.readiness_services.clear()
+    app.state.readiness_services["nats"] = {
+        "required": False,
+        "enabled": True,
+    }
+    app.state.required_services.clear()
+
+    with TestClient(app) as client:
+        response = client.get("/health/readiness")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "degraded"
+    assert response.json()["details"]["nats"]["ok"] is False
+
+
 def test_readiness_returns_503_when_required_check_fails(settings, caplog):
     app = create_app(settings=settings, include_auth_router=False)
 

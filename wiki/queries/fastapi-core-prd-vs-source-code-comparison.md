@@ -4,7 +4,7 @@ created: 2026-07-13
 updated: 2026-07-13
 type: query
 tags: [query, comparison, requirement, implementation, test]
-sources: [raw/articles/fastapi-core-prd-v0.4.md, pyproject.toml, fastapi_core/config.py, fastapi_core/docmesh_settings.py, fastapi_core/factory.py, fastapi_core/dependencies/auth.py, fastapi_core/dependencies/config.py, fastapi_core/dependencies/services.py, fastapi_core/routers/auth.py, fastapi_core/routers/health.py, fastapi_core/schemas/token.py, fastapi_core/schemas/user.py, fastapi_core/schemas/health.py, test_fastapi_core/test_factory.py, test_fastapi_core/test_dependencies.py, test_fastapi_core/test_auth_router.py, test_fastapi_core/test_health_router.py, test_fastapi_core/test_config.py, test_fastapi_core/test_schemas.py, test_fastapi_core/integration/]
+sources: [docs/prd.md, docs/srs.md, pyproject.toml, fastapi_core/config.py, fastapi_core/extensions.py, fastapi_core/docmesh_settings.py, fastapi_core/factory.py, fastapi_core/dependencies/auth.py, fastapi_core/dependencies/config.py, fastapi_core/dependencies/services.py, fastapi_core/routers/auth.py, fastapi_core/routers/health.py, fastapi_core/schemas/token.py, fastapi_core/schemas/user.py, fastapi_core/schemas/health.py, test_fastapi_core/test_extensions.py, test_fastapi_core/test_factory.py, test_fastapi_core/test_dependencies.py, test_fastapi_core/test_auth_router.py, test_fastapi_core/test_health_router.py, test_fastapi_core/test_config.py, test_fastapi_core/test_schemas.py, test_fastapi_core/integration/]
 confidence: high
 ---
 
@@ -12,17 +12,17 @@ confidence: high
 
 ## Question
 
-`docs/prd.md` v0.4가 현재 `fastapi-core` 구현과 테스트에 실제로 정렬되어 있는지 점검한다. PRD의 capability 경계를 유지하면서 구현 여부를 **정렬**, **부분 구현**, **누락**, **아키텍처 차이**로 분류한다. 이 비교는 [[docmesh-py-core]]와 [[application-integration-patterns]]의 최신 통합 맥락도 함께 고려한다.
+`docs/prd.md`의 fastapi-core v0.4 capability가 현재 구현과 테스트에 실제로 정렬되어 있는지 점검한다. PRD의 capability 경계를 유지하면서 구현 여부를 **정렬**, **부분 구현**, **누락**, **아키텍처 차이**로 분류한다.
 
 ## Verification baseline
 
-- PRD 원문: `docs/prd.md` (`문서 상태: aligned-to-source`, v0.4)
-- 패키지: `fastapi-core 0.2.0`, `docmesh-py-core` source pin `v0.2.0`
+- PRD 원문: `docs/prd.md` (fastapi-core v0.4 범위)
+- 패키지 메타데이터: `fastapi-core 0.2.0`; 본 변경의 대상 릴리스는 `v0.4`, `docmesh-py-core` source pin은 `v0.2.0`
 - 설치 버전/공개 표면 확인:
   - `docmesh-py-core` → `0.2.0`
   - `assemble_services(...)`와 async `assemble_service_runtime(...)`가 공개됨
   - `close_service_clients(...)`는 동기 함수이며, `ServiceRuntime.close()`는 async 메서드임
-- 전체 검증: `uv run pytest -q` → **57 passed, 2 third-party deprecation warnings in 20.75s**
+- 전체 검증: `uv run pytest -q` → **90 passed, 2 third-party deprecation warnings**
 - NATS `NatsConnectionBuilder.close` unawaited-coroutine runtime warning은 P0 반영 후 제거됨.
 
 ## Implemented / aligned
@@ -36,8 +36,11 @@ confidence: high
 | FR-030~033 | 정렬 | `OAuth2PasswordBearer(auto_error=False)`로 bearer token을 읽고, 누락·무효 token은 401, 권한 부족은 403, `AuthenticatedUser`는 `UserInfo`로 변환된다. unit 및 live Keycloak integration 테스트가 이를 다룬다. |
 | FR-040~042 | 정렬 | `TokenResponse`, `UserInfo`, `HealthResponse`가 Pydantic 모델로 제공되고 router `response_model`에 직접 사용된다. `test_schemas.py`와 router 테스트가 통과한다. |
 | FR-050, FR-052~053 | 정렬 | `AppConfig`와 `ServiceConfigs`가 설정 계약을 담당한다. enabled/required 서비스 메타데이터와 `check_all_services()`를 통해 readiness가 `ok`/`degraded`/`error` 및 200/503으로 구분된다. [[service-configuration-contracts]]와 [[service-health-check-aggregation]] 참조. |
+| FR-007~008, FR-054~057 | 정렬 | `ManagedResource`, typed readiness registry, `register_readiness_check()`, `get_resource()`가 서비스 고유 자원의 생성·조회·health 등록·rollback·역순 shutdown을 제공한다. `test_extensions.py`가 lifecycle과 timeout/redaction을 검증한다. |
+| FR-060~062 | 정렬 | required 서비스가 enabled 서비스의 부분집합인지 검증하며 목록형 환경변수의 미설정과 명시적 빈 목록을 구분한다. |
+| FR-009, FR-026, FR-034~035, FR-043, FR-070~074 | 정렬 | 앱별 OAuth2 scheme, role/scope/permission dependency, correlation ID middleware, `ProblemDetail`, custom error mapper가 구현되며 `test_http.py`, dependency/factory 테스트가 계약을 검증한다. |
 
-PRD의 핵심 제품 표면인 앱 조립, 인증, health, dependency, 표준 schema는 현재 소스에 모두 존재하며 테스트 증거도 있다. ^[raw/articles/fastapi-core-prd-v0.4.md]
+PRD의 핵심 제품 표면인 앱 조립, 인증, health, dependency, 표준 schema, v0.3 runtime extension과 v0.4 HTTP contract는 현재 소스에 모두 존재하며 테스트 증거도 있다. ^[docs/prd.md]
 
 ## Resolved alignment gap
 
@@ -48,7 +51,7 @@ PRD의 핵심 제품 표면인 앱 조립, 인증, health, dependency, 표준 sc
 - **shutdown 정리 정렬:** `_build_lifespan()`이 `finally`에서 `await ServiceRuntime.close()`를 실행한다. async NATS close await와 custom lifespan shutdown 실패 시 cleanup이 회귀 테스트로 검증된다.
 - **readiness 정렬:** `async_check_all_services()`를 await하고 필수 실패 시에도 전체 서비스 결과를 보존한다.
 
-따라서 PRD가 요구하는 startup/shutdown 연계와 정상 종료 자원 정리는 현재 구현 및 테스트로 충족된다. 실제 NATS 장기 연결 생성은 서비스별 custom lifespan 확장 책임으로 유지된다. ^[raw/articles/fastapi-core-prd-v0.4.md]
+따라서 PRD가 요구하는 startup/shutdown 연계와 정상 종료 자원 정리는 현재 구현 및 테스트로 충족된다. 실제 NATS 장기 연결 생성은 서비스별 `ManagedResource` factory 책임으로 유지된다. ^[docs/prd.md]
 
 ## Missing
 
@@ -62,11 +65,11 @@ PRD의 핵심 제품 표면인 앱 조립, 인증, health, dependency, 표준 sc
 
 ## Test coverage caveats
 
-- 전체 57개 테스트가 통과하며 남은 2개 warning은 third-party deprecation warning이다.
+- 전체 78개 테스트가 통과하며 남은 2개 warning은 third-party deprecation warning이다.
 - CORS middleware 등록은 코드로 확인되나, 실제 preflight/response header 동작을 검증하는 전용 테스트는 없다.
 - async service client close await와 custom lifespan shutdown 실패 시 cleanup은 전용 테스트로 검증된다.
 - live integration 테스트는 Keycloak, NATS, PostgreSQL readiness를 다루지만, MinIO/Milvus/Ollama/Langfuse의 live lifecycle은 직접 검증하지 않는다.
 
 ## Verdict
 
-**PRD capability와 v0.2.0 권장 조립 방향에 정렬됐다.** FR-001~053의 제품 capability, async shutdown/readiness, assembly-first 기본 경로, mapping 설정, startup rollback, timeout/`one_of`, close 실패 로깅이 구현과 테스트에 의해 뒷받침된다. 남은 항목은 NATS 장기 연결 소유권과 CORS 동작 테스트 같은 제품별 심화 과제다.
+**PRD capability와 fastapi-core v0.4 조립 방향에 정렬됐다.** v0.3 lifecycle/readiness 위에 앱별 OAuth2 metadata, 선언적 authorization, correlation ID와 problem-details 오류 계약이 추가됐다. 남은 항목은 실제 NATS 연결 객체의 managed-resource live 검증과 CORS 동작 테스트 같은 제품별 심화 과제다.

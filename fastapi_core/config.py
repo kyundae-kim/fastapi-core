@@ -3,8 +3,36 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any
 
-from pydantic import AliasChoices, Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic_settings import (
+    BaseSettings,
+    EnvSettingsSource,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
+
+
+_CSV_LIST_FIELDS = frozenset(
+    {"cors_origins", "enabled_services", "required_services"}
+)
+
+
+class _AppEnvSettingsSource(EnvSettingsSource):
+    def prepare_field_value(
+        self,
+        field_name: str,
+        field: Any,
+        value: Any,
+        value_is_complex: bool,
+    ) -> Any:
+        if field_name in _CSV_LIST_FIELDS and value == "":
+            return []
+        return super().prepare_field_value(
+            field_name,
+            field,
+            value,
+            value_is_complex,
+        )
 
 
 def _parse_csv_env(raw: str) -> list[str]:
@@ -78,14 +106,44 @@ class AppConfig(BaseSettings):
         validation_alias=AliasChoices("required_services", "READINESS_REQUIRED_SERVICES"),
     )
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        del env_settings
+        return (
+            init_settings,
+            _AppEnvSettingsSource(settings_cls),
+            dotenv_settings,
+            file_secret_settings,
+        )
+
     @field_validator("cors_origins", "enabled_services", "required_services", mode="before")
     @classmethod
     def _parse_csv_or_sequence(cls, value: Any) -> Any:
-        if value in (None, ""):
-            return None
         if isinstance(value, str):
+            if not value.strip():
+                raise ValueError(
+                    "empty strings are only supported through environment variables"
+                )
             return _parse_csv_env(value)
         return value
+
+    @model_validator(mode="after")
+    def _validate_required_services_are_enabled(self) -> AppConfig:
+        missing = set(self.required_services) - set(self.enabled_services)
+        if missing:
+            names = ", ".join(sorted(missing))
+            raise ValueError(
+                "required_services must be included in enabled_services: "
+                f"{names}"
+            )
+        return self
 
     @field_validator("service_alternatives", mode="before")
     @classmethod

@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`의 **현재 구현된 FastAPI 공개 표면**을 문서화한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`
-> 문서 상태: 구현 반영본(v0.5)
+> 문서 상태: 구현 반영본(fastapi-core v0.4)
 
 ---
 
@@ -13,7 +13,8 @@
 
 - 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 버전: `v0.5`
+- 문서 리비전: `v0.7`
+- 대상 릴리스: `v0.4`
 - 상태: `implemented-surface`
 
 핵심 범주:
@@ -35,17 +36,24 @@
 entrypoint = "fastapi_core.factory:create_app"
 ```
 
-패키지 루트에서 보장하는 공개 re-export는 현재 `create_app` 하나다.
+패키지 루트에서 보장하는 공개 re-export는 다음과 같다.
 
 ```python
-from fastapi_core import create_app
+from fastapi_core import (
+    ErrorMapping,
+    ManagedResource,
+    ReadinessCheckSpec,
+    create_app,
+    register_error_mapper,
+    register_readiness_check,
+)
 ```
 
 ---
 
 ## 3. App factory API
 
-### 3.1 `create_app(config=None, settings=None, lifespan=None, include_auth_router=True) -> FastAPI`
+### 3.1 `create_app(config=None, settings=None, lifespan=None, include_auth_router=True, resources=()) -> FastAPI`
 
 공통 FastAPI 애플리케이션을 생성한다.
 
@@ -54,6 +62,7 @@ from fastapi_core import create_app
 - `settings: docmesh_py_core.ServiceConfigs | None`
 - `lifespan: Callable | None`
 - `include_auth_router: bool = True`
+- `resources: Sequence[ManagedResource[Any]] = ()`
 
 #### 현재 구현 동작
 - `config is None`이면 `load_app_config()`를 사용한다.
@@ -68,16 +77,22 @@ from fastapi_core import create_app
   - `settings`
   - `service_clients`
   - `auth_provider` (keycloak client가 구성된 경우)
+  - `oauth2_scheme`
   - `readiness_parallel`
   - `readiness_timeout_seconds`
   - `readiness_overall_timeout_seconds`
   - `readiness_checks`
   - `readiness_services`
   - `required_services`
-- `set_oauth2_token_url(config.token_url)`을 호출해 OpenAPI password flow의 token URL을 반영한다.
+  - `readiness_registry`
+  - `resource_registry`
+- `config.token_url`로 앱 전용 OAuth2 scheme을 만들고 dependency override와 OpenAPI password flow에 반영한다. module-global scheme model은 변경하지 않는다.
 - CORS middleware를 등록한다.
+- correlation ID middleware와 표준 problem-details exception handler를 등록한다.
 - health router를 기본 포함한다.
 - `include_auth_router=True`일 때 auth router를 포함한다.
+- managed resource를 선언 순서로 생성하고 생성의 역순으로 정리한다.
+- resource startup 실패 시 이미 생성한 resource를 역순 rollback한다.
 
 #### readiness 기본 구성
 기본 `create_app()` 경로는 `config.enabled_services`를 기준으로 `service_clients` 기반 readiness check를 자동 생성한다.
@@ -91,7 +106,7 @@ from fastapi_core import create_app
 #### lifespan 동작
 기본 경로에서는 lifespan startup이 `assemble_service_runtime(...)`을 await한 뒤 `app.state.service_runtime/settings/service_clients/readiness_checks`를 설치한다. enabled/required와 함께 `one_of`, 병렬 실행, per-service/overall timeout을 전달한다. `startup_healthcheck=True`이면 assembly 단계에서 동일한 timeout 정책으로 startup healthcheck를 수행하고, 명시적 `settings` 주입 경로에서는 생성된 runtime의 `check()`를 호출한다.
 
-사용자가 전달한 custom lifespan은 runtime 준비 뒤 실행된다. startup check 실패 시 assembly API가 생성된 client를 rollback한다. 종료 시 `finally`에서 항상 `await service_runtime.close()`를 호출하므로 sync/async client close를 모두 처리하며 custom lifespan shutdown이 실패해도 공통 client cleanup을 시도한다. 종료 실패는 `service_runtime_close_failed` 구조화 로그를 남긴 뒤 `ServiceCloseError`로 전파한다.
+사용자가 전달한 custom lifespan은 service runtime과 managed resource 준비 뒤 실행된다. startup check 실패 시 생성된 client/resource를 rollback한다. custom lifespan shutdown 뒤 managed resource를 역순으로 정리하고, 마지막으로 service runtime을 닫는다. service runtime 종료 실패는 `service_runtime_close_failed` 구조화 로그를 남긴 뒤 `ServiceCloseError`로 전파한다.
 
 #### 반환값
 - `FastAPI`
@@ -108,7 +123,65 @@ app = create_app()
 app = create_app(include_auth_router=False)
 ```
 
+### 3.2 Runtime extension API
+
+#### `ManagedResource`
+
+서비스 SDK나 연결 객체의 생성, readiness, 종료 정책을 하나로 선언한다.
+
+주요 필드:
+- `name`
+- `factory(app)` — sync/async 반환 지원
+- `healthcheck(resource)` — 선택, sync/async 지원
+- `close(resource)` — 선택, sync/async 지원
+- `required=True`
+- `readiness_timeout_seconds=None`
+- `redact_errors=True`
+
+명시적 `close`가 없으면 `aclose()`, `close()` 순서로 자동 정리 프로토콜을 찾는다. 여러 resource는 선언 순서로 생성되고 역순으로 정리된다.
+
+#### `register_readiness_check(app, name, check, *, required=True, timeout_seconds=None, redact_errors=True)`
+
+사용자 정의 sync/async readiness check를 앱별 registry에 등록한다. 중복 이름과 빈 이름은 `ValueError`다. check별 timeout이 없으면 앱의 `readiness_timeout_seconds`를 사용한다. `redact_errors=True`이면 외부 응답 오류를 안정된 일반 메시지로 대체한다.
+
+#### `ReadinessCheckSpec`
+
+registry가 보관하는 typed readiness 선언이다. 현재 public helper는 동일 필드를 개별 인자로 받아 이 spec을 생성한다.
+
+#### `get_resource(name)`
+
+정의 위치: `fastapi_core.dependencies`
+
+managed resource를 route에 주입하는 dependency factory다. lifecycle 안에서는 생성된 동일 객체를 반환하며, 등록되지 않았거나 사용할 수 없으면 `503`을 반환한다.
+
 ---
+
+### 3.3 HTTP contract API
+
+#### Correlation ID
+
+모든 HTTP 요청은 `X-Correlation-ID`를 응답 header와 `request.state.correlation_id`에서 사용할 수 있다. 입력값은 영문자, 숫자, `.`, `_`, `:`, `-`로 구성된 1~128자만 신뢰한다. 값이 없거나 유효하지 않으면 32자리 hexadecimal UUID를 생성한다.
+
+#### `ErrorMapping`
+
+package root에서 import할 수 있는 immutable 오류 매핑 선언이다.
+
+- `status_code: int`
+- `detail: str`
+- `title: str | None = None`
+- `type_uri: str = "about:blank"`
+- `headers: dict[str, str] | None = None`
+
+#### `register_error_mapper(app, exception_type, mapper)`
+
+서비스별 domain 예외를 공통 problem-details 응답으로 변환한다. mapper는 `(Request, Exception)`을 받고 `ErrorMapping` 또는 awaitable을 반환한다. detail은 응답 전에 공통 민감정보 마스킹을 거친다.
+
+#### 기본 오류 변환
+
+- `HTTPException`: 기존 status/detail/header를 유지하고 problem-details envelope로 변환
+- `RequestValidationError`: `422`, `Request validation failed`
+- 미처리 `Exception`: `500`, `Internal Server Error`; 원문 예외는 응답에 포함하지 않음
+- media type: `application/problem+json`
 
 ## 4. Router API
 
@@ -199,6 +272,8 @@ app = create_app(include_auth_router=False)
 - `HealthResponse`
 
 ##### 현재 구현 동작
+- 기본 경로는 앱별 `ReadinessRegistry`에 등록된 typed check를 실행한다.
+- legacy state 객체가 교체된 경우 기존 테스트/호환 경로로 아래 state 구조를 집계한다.
 - `app.state.readiness_checks`에서 서비스명 → check callable 매핑을 읽는다.
 - `app.state.readiness_services`에서 서비스별 메타데이터(`required`, `enabled`)를 읽는다.
 - `app.state.required_services`에서 필수 서비스 집합을 읽는다.
@@ -208,6 +283,8 @@ app = create_app(include_auth_router=False)
 - readiness check가 비어 있으면 `{"status": "ok", "details": null}`을 반환한다.
 - readiness check가 있으면 `docmesh_py_core.async_check_all_services(...)`로 집계한다.
 - 서비스별 timeout은 해당 서비스 실패로 집계하며 빈 timeout 오류 문자열은 `health check timed out`으로 정규화한다.
+- typed check별 timeout이 있으면 앱 공통 timeout보다 우선하며, 생략하면 앱 공통 timeout을 fallback으로 사용한다.
+- `redact_errors=True`인 typed check의 외부 오류는 `readiness check failed`로 정규화한다.
 - overall timeout은 `503 + status="error" + details=null`로 반환하고 `readiness_check_timeout` 경고 로그를 남긴다.
 - 필수 서비스 실패 시 `503 + status="error"`를 반환한다.
 - 선택 서비스만 실패 시 `200 + status="degraded"`를 반환한다.
@@ -352,7 +429,7 @@ async def diagnostics(
 정의 위치: `fastapi_core.dependencies.auth`
 
 #### 동작
-- `OAuth2PasswordBearer(tokenUrl="/token", auto_error=False)`를 사용한다.
+- module-global OAuth2 dependency key를 사용하되, 각 앱은 자신의 `token_url`로 생성한 `app.state.oauth2_scheme`을 dependency override로 사용한다.
 - bearer token이 없으면 401과 `WWW-Authenticate: Bearer`를 반환한다.
 - provider의 `extract_user_info(token)`을 호출한다.
 - `docmesh_py_core.TokenValidationError`를 401 `Invalid token`으로 매핑한다.
@@ -367,14 +444,24 @@ async def diagnostics(
 - secure/insecure decode 분기 설정
 - introspection 모드 분기
 
-### 5.6 `require_permissions(*roles) -> dependency`
+### 5.6 Authorization dependency factories
 
 정의 위치: `fastapi_core.dependencies.auth`
 
-역할 검사용 dependency factory.
+#### `require_roles(*roles)`
+
+`UserInfo.roles`에 요구 role이 모두 있는지 검사한다.
+
+#### `require_scopes(*scopes)`
+
+`UserInfo.scopes`에 요구 scope가 모두 있는지 검사하며 요구 scope를 OpenAPI operation security에 반영한다.
+
+#### `require_permissions(*permissions)`
+
+role과 scope의 합집합을 permission 집합으로 보고 요구 값이 모두 있는지 검사한다. 기존 role 기반 호출도 호환된다.
 
 #### 동작
-- `get_current_user()` 결과의 `roles`에 요구 role이 모두 있어야 한다.
+- 각 factory는 `get_current_user()` 결과를 사용한다.
 - 하나라도 없으면 403 `Forbidden`
 - 통과 시 현재 `UserInfo` 반환
 
@@ -382,13 +469,13 @@ async def diagnostics(
 
 ```python
 from fastapi import APIRouter, Depends
-from fastapi_core.dependencies.auth import require_permissions
+from fastapi_core.dependencies import require_scopes
 from fastapi_core.schemas.user import UserInfo
 
 router = APIRouter()
 
-@router.get("/admin")
-async def admin_only(user: UserInfo = Depends(require_permissions("admin"))):
+@router.get("/documents")
+async def documents(user: UserInfo = Depends(require_scopes("document:read"))):
     return {"ok": True}
 ```
 
@@ -452,6 +539,20 @@ class HealthResponse(BaseModel):
     details: dict[str, HealthServiceDetail] | None = None
 ```
 
+### 6.6 `ProblemDetail`
+
+정의 위치: `fastapi_core.schemas.error`; `fastapi_core.schemas`에서 re-export한다.
+
+```python
+class ProblemDetail(BaseModel):
+    type: str = "about:blank"
+    title: str
+    status: int
+    detail: str
+    instance: str
+    correlation_id: str
+```
+
 ---
 
 ## 7. Config / settings API
@@ -502,7 +603,9 @@ class AppConfig(BaseSettings):
 
 #### 파싱 규칙
 - `cors_origins`, `enabled_services`, `required_services`는 CSV 문자열을 list로 파싱한다.
-- 빈 문자열은 기본값 처리로 넘긴다.
+- 해당 환경변수의 빈 문자열은 빈 목록으로 해석하며, 미설정일 때만 기본값을 사용한다.
+- 코드 생성자에서 list 필드에 빈 문자열을 직접 전달하면 validation error다.
+- `required_services`는 `enabled_services`의 부분집합이어야 한다.
 - 함수는 `lru_cache(maxsize=1)`로 캐시된다.
 
 ### 7.3 `build_docmesh_env_overlay() -> dict[str, str]`
@@ -550,9 +653,10 @@ class AppConfig(BaseSettings):
 - 필수 서비스 실패 시 `HealthCheckError.result`의 전체 서비스 상태를 응답 details에 보존한다.
 
 권장 통합 지점:
-- startup에서 추가 연결 객체를 `app.state`에 저장
-- 필요 시 `app.state.readiness_checks`, `app.state.readiness_services`, `app.state.required_services`를 덮어써 서비스 정책을 세밀화
-- shutdown에서 custom 자원 정리
+- `ManagedResource` factory에서 추가 연결 객체 생성
+- `healthcheck`로 typed readiness registry에 자동 연결
+- `get_resource(name)`로 request dependency 주입
+- managed resource의 명시적 close 또는 `aclose()`/`close()` 자동 정리 사용
 
 ---
 
@@ -587,7 +691,6 @@ app = create_app(config=config)
 ## 10. 현재 구현 기준 주의점
 
 아직 `fastapi-core`가 직접 제공하지 않는 항목:
-- auth 전용 exception handler 등록 API
 - secure/insecure decode 분기나 introspection 모드 선택 API
 - `get_nats_connection` 같은 메시징 전용 FastAPI dependency
 - NATS 연결 상태 객체를 바로 주입하는 기본 dependency/route 세트
