@@ -91,7 +91,7 @@
 
 ## 5. 권장 실행 순서
 
-1. **P3 upstream runtime API 추가**: `docmesh_py_core` 변경과 릴리스를 먼저 완료한다.
+1. **P3 upstream runtime API 추가**: `docmesh_py_core` 변경을 먼저 완료한다.
 2. `fastapi_core`에서 로컬 service factory 분기를 제거한다.
 3. **P5 작은 축소**를 적용하되, 각 변경이 실제 순감소인지 diff로 확인한다.
 
@@ -112,4 +112,3 @@
 - readiness 상태/HTTP status/error redaction/lifecycle rollback 회귀 없음
 - `pygount` 기준 Code LOC가 단계별로 순감소
 - 새 helper/fixture의 LOC를 포함한 **저장소 전체 순감소** 확인
-- upstream 위임 시 `docmesh_py_core` 최소 지원 버전 또는 git revision 갱신

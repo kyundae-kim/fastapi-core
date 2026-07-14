@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`의 **현재 구현된 FastAPI 앱 계층**을 어떤 수준으로 검증하는지 정리한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`, `docs/config.md`
-> 문서 상태: 구현 반영본(fastapi-core v0.4)
+> 문서 상태: 구현 반영본
 
 ---
 
@@ -25,8 +25,6 @@
 
 - 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 문서 리비전: `v0.8`
-- 대상 릴리스: `v0.4`
 - 상태: `implemented-surface`
 
 ---

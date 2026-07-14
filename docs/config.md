@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`의 설정을 **현재 구현된 FastAPI 앱 조립 / dependency / readiness 관점**에서 설명한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`
-> 문서 상태: 구현 반영본(fastapi-core v0.4)
+> 문서 상태: 구현 반영본
 
 ---
 
@@ -13,8 +13,6 @@
 
 - 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 문서 리비전: `v0.9`
-- 대상 릴리스: `v0.4`
 - 상태: `implemented-surface`
 
 핵심 관점:
@@ -131,7 +129,7 @@ class AppConfig(BaseSettings):
 
 ```env
 ROOT_PATH=/api
-TOKEN_URL=/api/v1/auth/token
+TOKEN_URL=/api/auth/token
 CORS_ORIGINS=https://app.example.com,https://admin.example.com
 CORS_CREDENTIALS=true
 READINESS_PARALLEL=true
@@ -226,7 +224,7 @@ mapping loader를 통해 다음 `docmesh-py-core` 공통 설정도 실제 검증
 | `DOCMESH_PRODUCTION_ALIASES` | `prod,production` | `DOCMESH_ENV`를 운영으로 판정할 alias 목록 |
 | `DOCMESH_HEALTHCHECK_ENABLED` | `true` (Py Core config) | Py Core 공통 값; FastAPI startup 정책은 `AppConfig.startup_healthcheck` 기본값 `False`로 별도 연결 |
 
-production 판정 시 `validate_runtime_security()`가 TLS 등 추가 보안 제약을 검사한다. FastAPI Core가 이 검증을 재구현하지 않고 v0.2.0 loader/assembly 결과를 그대로 사용한다.
+production 판정 시 `validate_runtime_security()`가 TLS 등 추가 보안 제약을 검사한다. FastAPI Core가 이 검증을 재구현하지 않고 Py Core loader/assembly 결과를 그대로 사용한다.
 
 ---
 
@@ -433,7 +431,7 @@ register_readiness_check(
 
 ```env
 ROOT_PATH=/api
-TOKEN_URL=/api/v1/auth/token
+TOKEN_URL=/api/auth/token
 CORS_ORIGINS=https://app.example.com
 CORS_CREDENTIALS=true
 READINESS_PARALLEL=false

@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`의 **현재 구현된 공개 표면을 바로 사용할 수 있는 예제**로 정리한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`, `docs/config.md`, `docs/messaging.md`, `docs/test.md`
-> 문서 상태: 구현 반영본(v0.4)
+> 문서 상태: 구현 반영본
 
 ---
 
@@ -13,7 +13,6 @@
 
 - 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 버전: `v0.4`
 - 상태: `implemented-surface`
 
 다루는 범위:
@@ -206,7 +205,7 @@ from fastapi_core.factory import create_app
 
 config = AppConfig(
     root_path="/api",
-    token_url="/api/v1/auth/token",
+    token_url="/api/auth/token",
     cors_origins=["https://app.example.com"],
     cors_credentials=True,
     readiness_parallel=True,
@@ -222,7 +221,7 @@ app = create_app(config=config)
 ```
 
 이 예제의 현재 의미:
-- OpenAPI password flow의 `tokenUrl`이 `/api/v1/auth/token`으로 반영됨
+- OpenAPI password flow의 `tokenUrl`이 `/api/auth/token`으로 반영됨
 - readiness 기본 체크 대상은 `keycloak`, `postgres`, `sqlite`, `nats`
 - `keycloak`만 필수 서비스로 간주
 - PostgreSQL 또는 SQLite 중 적어도 하나의 설정이 필요
@@ -237,7 +236,7 @@ app = create_app(config=config)
 
 ```env
 ROOT_PATH=/api
-TOKEN_URL=/api/v1/auth/token
+TOKEN_URL=/api/auth/token
 CORS_ORIGINS=https://app.example.com,https://admin.example.com
 CORS_CREDENTIALS=true
 READINESS_PARALLEL=true

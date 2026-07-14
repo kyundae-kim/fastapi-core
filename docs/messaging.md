@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`에서 메시징을 **현재 구현된 FastAPI lifecycle / service_clients / readiness 구조에 맞춰** 설명한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`, `docs/config.md`
-> 문서 상태: 구현 반영본(fastapi-core v0.3)
+> 문서 상태: 구현 반영본
 
 ---
 
@@ -12,8 +12,6 @@
 
 - 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 문서 리비전: `v0.8`
-- 대상 릴리스: `v0.3`
 - 상태: `implemented-surface`
 
 핵심 질문은 다음과 같다.
@@ -295,6 +293,3 @@ custom lifespan이나 route/service layer에서 별도 메시징 호출을 추�
 
 이 문서는 기존의 NATS 일반론 중심 초안을, **현재 저장소 코드가 실제로 제공하는 service_clients/readiness/lifecycle 구조** 중심으로 다시 정렬한 것이다.
 특히 메시징을 1차 공개 FastAPI API로 과장하지 않고, `enabled_services`, `required_services`, `app.state`, custom lifespan을 통한 확장 지점으로 명확히 구분했다.
-v0.5에서는 native async readiness 집계, 전체 실패 결과 보존, async-aware shutdown cleanup과 예외 안전성을 반영했다.
-v0.6에서는 기본 앱 경로의 assembly-first `ServiceRuntime`, required 검증, mapping 기반 설정, startup healthcheck 정책을 반영했다.
-v0.7에서는 서비스 대안(`one_of`), per-service/overall timeout, startup rollback, runtime close 실패 로깅을 반영했다.

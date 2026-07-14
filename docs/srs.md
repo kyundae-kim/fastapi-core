@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`를 **DocMesh Py Core 기반 서비스를 FastAPI 환경에서 동작시키기 위한 기능을 제공하는 FastAPI 컴포넌트**로 구현하기 위한 요구사항과 공개 인터페이스 계약으로 구체화한다.
 > 기준 문서: `docs/prd.md`
-> 문서 상태: v0.4 구현 계약 반영본
+> 문서 상태: 구현 계약 반영본
 
 ---
 
@@ -11,8 +11,6 @@
 - 문서명: `fastapi-core 소프트웨어 요구사항 정의서`
 - 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 문서 리비전: `v0.6`
-- 대상 릴리스: `fastapi-core v0.4`
 - 상태: `aligned-to-source`
 
 ### 1.1 목적
@@ -72,9 +70,9 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 - 이 목록은 **패키지 루트 re-export 목록**이 아니라, SRS가 계약 대상으로 다루는 공개 FastAPI 표면을 뜻한다.
 - package-root import 보장 범위는 구현 시점의 API 문서(`docs/api.md`)를 따른다.
 
-### 3.3 v0.3/v0.4 공개 시그니처
+### 3.3 공개 시그니처
 
-아래 시그니처는 v0.3 lifecycle/readiness와 v0.4 오류 확장의 공개 계약이다. 실제 import 경로는 `docs/api.md`에 반영한다.
+아래 시그니처는 lifecycle/readiness와 오류 확장의 공개 계약이다. 실제 import 경로는 `docs/api.md`에 반영한다.
 
 ```python
 @dataclass(frozen=True)
@@ -132,7 +130,7 @@ def require_scopes(*scopes: str) -> Callable[..., UserInfo]: ...
 def require_permissions(*permissions: str) -> Callable[..., UserInfo]: ...
 ```
 
-`create_app(..., resources=())`는 `ManagedResource` 목록을 받아 공통 lifecycle과 readiness registry에 연결한다. 반환 객체는 plain `FastAPI` 계약을 유지하므로, 런타임에 동적으로 `app.register_readiness_check` 메서드를 추가하는 방식은 v0.3 공개 계약으로 사용하지 않는다.
+`create_app(..., resources=())`는 `ManagedResource` 목록을 받아 공통 lifecycle과 readiness registry에 연결한다. 반환 객체는 plain `FastAPI` 계약을 유지하므로, 런타임에 동적으로 `app.register_readiness_check` 메서드를 추가하는 방식은 공개 계약으로 사용하지 않는다.
 
 ### 3.4 리팩토링 보호 계약
 
@@ -347,7 +345,7 @@ readiness 확장은 `app.state.readiness_registry`를 단일 source of truth로 
 - SR-162A. `AppConfig.startup_healthcheck=True`이면 required managed resource의 healthcheck도 custom lifespan 진입 전에 실행해야 한다.
 - SR-163. 동일한 resource 이름, 빈 이름 또는 framework 예약 이름은 startup 전에 명시적 설정 오류로 거부해야 한다.
 
-### 10.2 v0.3 설정 검증
+### 10.2 설정 검증
 
 - SR-164. `AppConfig.required_services`는 `AppConfig.enabled_services`의 부분집합이어야 한다.
 - SR-165. SR-164 위반은 readiness check에서 조용히 누락하지 않고 앱 생성 또는 startup 전에 명시적 설정 오류로 처리해야 한다.

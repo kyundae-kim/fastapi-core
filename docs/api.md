@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`의 **현재 구현된 FastAPI 공개 표면**을 문서화한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`
-> 문서 상태: 구현 반영본(fastapi-core v0.4)
+> 문서 상태: 구현 반영본
 
 ---
 
@@ -13,8 +13,6 @@
 
 - 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 문서 리비전: `v0.7`
-- 대상 릴리스: `v0.4`
 - 상태: `implemented-surface`
 
 핵심 범주:
@@ -676,7 +674,7 @@ from fastapi_core.config import AppConfig
 from fastapi_core.factory import create_app
 
 config = AppConfig(
-    token_url="/api/v1/auth/token",
+    token_url="/api/auth/token",
     enabled_services=["keycloak", "nats"],
     required_services=["keycloak"],
 )

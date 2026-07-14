@@ -1,7 +1,7 @@
 # fastapi-core 제품 요구사항 정의서 (PRD)
 
 > 문서 목적: `fastapi-core`를 **DocMesh Py Core 기반 서비스를 FastAPI 환경에서 동작시키기 위한 기능을 제공하는 FastAPI 컴포넌트**로 정의한다.
-> 문서 상태: v0.4 구현 반영본
+> 문서 상태: 구현 반영본
 > 문서 원칙: 이 문서는 capability 중심 PRD이며, 구체 함수명·endpoint 경로·schema 클래스명·호출 시그니처는 `docs/srs.md`와 `docs/api.md`에서 관리한다.
 
 ---
@@ -11,8 +11,6 @@
 - 문서명: `fastapi-core 제품 요구사항 정의서`
 - 작성일: `2026-06-25`
 - 작성자: `Hermes Agent`
-- 문서 리비전: `v0.6`
-- 대상 릴리스: `fastapi-core v0.4`
 - 상태: `aligned-to-source`
 
 ### 1.1 배경
