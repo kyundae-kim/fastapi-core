@@ -34,148 +34,15 @@
 | `test_fastapi_core/test_config.py` | 131 |
 | `test_fastapi_core/test_health_router.py` | 120 |
 
-P4 완료 후 기준 동작은 `uv run pytest -q` 실행에서 `101 passed`다.
+현재 기준 동작은 `uv run pytest -q` 실행에서 `101 passed`다.
 
-## 3. 핵심 판단
+## 3. 남은 핵심 판단
 
-가장 큰 축소 지점은 작은 함수의 문법 단축이 아니라 다음 두 개의 **중복 계약 제거**다.
+가장 큰 남은 축소 지점은 `docmesh_py_core`와 `fastapi_core`가 각각 보유한 서비스 클라이언트 조립 분기다.
 
-1. readiness의 typed registry 계약과 legacy `app.state` dict/set 계약이 동시에 유지되는 구조
-2. `docmesh_py_core`와 `fastapi_core`가 각각 보유한 서비스 클라이언트 조립 분기
-
-테스트에서는 동일한 앱 생성, provider 실패, readiness 상태 조립을 테스트마다 반복하는 것이 가장 큰 축소 지점이다.
+테스트에서는 동일한 앱 생성, provider 실패, readiness 상태 조립을 테스트마다 반복하는 부분을 검토하되, 이미 공통 fixture로 추상화한 계약을 다시 일반화하지 않는다.
 
 ## 4. 권장 리팩토링
-
-### P0. 축소 기준과 보호 계약 고정
-
-**상태: 완료**
-
-**대상**
-- `docs/srs.md`
-- `docs/api.md`
-- 전체 테스트
-
-**방안**
-- 공개 보호 대상은 `create_app`, router endpoint, 공개 dependency, schema, `ManagedResource`, `ReadinessCheckSpec`, `register_readiness_check`, `ErrorMapping`, `register_error_mapper`로 고정한다.
-- 내부 `app.state.readiness_checks`, `readiness_services`, `required_services` 직접 수정은 제거 가능한 호환 경로로 분류한다. 이는 이미 `docs/srs.md:196`에서 내부 구현 세부로 정의돼 있다.
-- 변경 전후에 `pygount`와 전체 pytest 결과를 기록한다.
-
-**예상 효과**
-- 직접 LOC 절감 없음.
-- 이후 단계가 공개 API 제거가 아닌 내부 중복 제거임을 보장한다.
-
-**수행 결과**
-- `docs/srs.md`와 `docs/api.md`에 보호할 package export, endpoint, signature/default 계약을 명시했다.
-- `test_fastapi_core/test_public_api.py`를 추가해 curated export, `create_app(...)`, runtime extension dataclass/function, legacy readiness compatibility alias를 고정했다.
-- P0 전 기준은 프로덕션 1,272 Code LOC, 테스트 1,581 Code LOC, `90 passed`다.
-- P0 후 기준은 프로덕션 1,272 Code LOC, 테스트 1,660 Code LOC, `95 passed`다. 테스트 증가는 향후 축소 단계에서 공개 계약의 우발적 변경을 막기 위한 characterization 비용이다.
-
----
-
-### P1. 공개·legacy 계약을 유지한 즉시 축소
-
-**상태: 완료**
-
-이 단계는 breaking change 없이 먼저 적용할 수 있는 묶음이다.
-
-#### P1-1. health 응답 조립 단일 순회
-
-**근거**
-- `fastapi_core/routers/health.py:20-35`의 `_build_service_detail()`은 `service_name`을 받지만 바로 버린다.
-- `fastapi_core/routers/health.py:92-110`은 `request.app.state`를 반복 조회한다.
-- `fastapi_core/routers/health.py:156-195`는 details 생성 후 필수 실패, 선택 실패, 로그 대상을 각각 다시 순회한다.
-
-**방안**
-- `state = request.app.state`로 기준 객체를 한 번만 잡는다.
-- 사용하지 않는 `service_name` 인자를 제거한다.
-- 실패 detail 목록을 한 번 만들고 상태 결정과 로그에 함께 사용한다.
-- `HealthResponse`를 한 번 생성하고 `503`일 때만 `JSONResponse`로 감싼다.
-
-**예상 절감:** 프로덕션 25~35 LOC
-
-#### P1-2. readiness adapter와 중간 dict 제거
-
-**근거**
-- `fastapi_core/factory.py:130-154`는 Keycloak 인자 고정 closure와 client→check 중간 dict를 만든다.
-- `fastapi_core/factory.py:198-206`은 이 dict를 다시 registry spec으로 변환한다.
-- runtime client를 직접 순회하면 중간 dict 없이 기존 missing-check fail-fast 의미를 유지할 수 있다.
-
-**방안**
-- 일반 서비스는 `runtime.clients`의 `client.check`를 registry에 바로 등록한다.
-- Keycloak credential은 callable `repr`에 secret이 노출되지 않는 inline closure에 snapshot한다.
-- `FASTAPI_CORE_TEST_SCOPE`의 앱 구성 시점 snapshot, async callable, `redact_errors=False`는 그대로 유지한다.
-
-**예상 절감:** 프로덕션 15~25 LOC
-
-#### P1-3. managed resource healthcheck 바인딩 축소
-
-**근거**
-- `fastapi_core/extensions.py:215-233`은 sync/async healthcheck별 closure를 따로 만든다.
-- `_invoke_check()`가 이미 coroutine function과 반환된 awaitable을 모두 처리한다.
-
-**방안**
-- `_bind_healthcheck()`는 `functools.partial(healthcheck, value)`를 반환한다.
-- async check가 thread로 넘어가지 않고 sync check는 계속 `asyncio.to_thread()`에서 실행되는지 회귀 테스트한다.
-
-**예상 절감:** 프로덕션 12~18 LOC
-
-#### P1-4. 작은 선언 반복 축소
-
-- `factory.py`: settings 주입 경로의 서비스 factory 분기를 호출 시점의 명시적 mapping으로 바꿨다. 개별 factory monkeypatch, Keycloak, Langfuse `None`, NATS 타입의 기존 의미를 유지한다.
-- `config.py`: 문자열 `validation_alias`와 `populate_by_name=True` 조합은 field name과 alias가 동시에 입력될 때 기존 우선순위를 바꾸므로 적용하지 않았다. 해당 계약을 회귀 테스트로 추가하고 기존 `AliasChoices`를 유지했다.
-- 동적 함수 생성이나 숨은 registration은 사용하지 않는다.
-
-**P1 수행 결과**
-- 프로덕션 Code LOC: 1,272 → 1,208, **64 LOC 감소(5.0%)**
-- 프로덕션 physical LOC: 1,719 → 1,636, **83 LOC 감소(4.8%)**
-- 테스트 Code LOC: 1,660 → 1,713. 제거된 private helper 대신 runtime 통합 경로, missing-check fail-fast, secret-safe repr, factory 교체 가능성, config alias 우선순위를 검증하기 위한 증가다.
-- 독립 리뷰에서 발견한 Keycloak secret repr 노출과 missing-check fail-open 회귀를 수정했다.
-- 수정 후 독립 재리뷰는 보안·로직 차단 이슈 없이 `PASS`했다.
-- 전체 테스트: `99 passed`
-
----
-
-### P2. breaking release에서 readiness를 `ReadinessRegistry` 단일 경로로 통합
-
-**상태: 완료**
-
-**근거**
-- `fastapi_core/extensions.py:68-154`는 `specs` 외에도 `checks`, `services`, `required_services`를 중복 저장한다.
-- `fastapi_core/extensions.py:100-118`의 `owns_legacy_state()`는 이 중복 자료구조의 동일성을 판별하기 위한 코드다.
-- `fastapi_core/routers/health.py:91-136`은 registry 경로와 legacy state 경로를 선택해 같은 집계를 두 방식으로 실행한다.
-- `fastapi_core/factory.py:324-326`은 registry 내부 자료구조를 legacy state 이름으로 다시 노출한다.
-- `docs/srs.md:196`은 v0.3부터 공개 확장 계약을 `register_readiness_check(...)`와 `ReadinessCheckSpec`으로 규정한다.
-
-**방안**
-1. `ReadinessRegistry`를 단일 source of truth로 만든다.
-2. `checks`, `services`, `required_services`, `owns_legacy_state()`를 제거하고 `specs`에서 필요한 check/metadata/required 집합을 계산한다.
-3. health router는 `request.app.state.readiness_registry`만 읽고 `registry.check(...)`를 호출한다.
-4. 공통 timeout/parallel 설정은 별도 state 복제 대신 `AppConfig` 또는 registry 설정에서 읽는다.
-5. `test_health_router.py`의 직접 state 교체 테스트는 제거하거나 `register_readiness_check(...)` 기반 계약 테스트로 이동한다.
-6. 문서에서 legacy state 직접 수정 예제를 제거한다.
-
-**예상 절감**
-- 프로덕션: 약 60~85 LOC
-- 테스트: 약 60~100 LOC
-
-**위험**
-- `app.state.readiness_*`를 직접 수정하는 외부 소비자가 있다면 호환성이 깨진다.
-- 따라서 minor release에서는 deprecation warning을 먼저 추가하고, 다음 breaking release에서 제거하거나, 현재 SRS의 내부 계약 판정을 근거로 즉시 제거할지 결정해야 한다.
-
-**검증**
-- 필수 실패 `503`, 선택 실패 `200/degraded`, 전체 timeout `503`, per-check timeout, error redaction, sync/async check 테스트를 유지한다.
-- managed resource가 등록한 check도 동일 registry에서 동작하는지 검증한다.
-
-**P2 수행 결과**
-- 프로덕션 Code LOC: 1,208 → 1,138, **70 LOC 감소**
-- 프로덕션 physical LOC: 1,636 → 1,552, **84 LOC 감소**
-- 테스트 Code LOC: 1,713 → 1,697, **16 LOC 감소**
-- legacy readiness state와 실행 옵션 mirror를 제거하고 `app.state.readiness_registry` 및 `app.state.config`만 사용한다.
-- 독립 리뷰에서 발견한 readiness lifespan 예제의 조기 registry 조회를 수정하고 실제 startup 경로로 검증했다.
-- 전체 테스트: `98 passed`
-
----
 
 ### P3. 서비스 runtime 조립을 `docmesh_py_core`에 위임
 
@@ -207,72 +74,6 @@ P4 완료 후 기준 동작은 `uv run pytest -q` 실행에서 `101 passed`다.
 
 ---
 
-### P4. 반복 테스트를 fixture와 parametrize로 통합
-
-**상태: 완료**
-
-#### P4-1. auth 실패 매핑 table-driven 테스트
-
-**근거**
-- `test_fastapi_core/test_auth_router.py:78-147`은 인증/설정/일시 장애가 동일한 준비·요청·로그 검증 구조를 반복한다.
-- `fastapi_core/routers/auth.py:47-67`도 예외 타입별 status/detail/outcome을 if/elif로 반복한다.
-
-**방안**
-- `(exception, status_code, detail, outcome)`을 테스트 parameter로 만든다.
-- 구현은 typed mapping tuple 또는 작은 immutable mapping으로 표현하되, unknown 예외 fallback은 별도로 유지한다.
-
-**예상 절감**
-- 프로덕션: 약 5~10 LOC
-- 테스트: 약 30~45 LOC
-
-#### P4-2. 공통 앱 fixture 제공
-
-**근거**
-- `create_app(settings=settings, include_auth_router=False)`와 empty service `AppConfig`가 여러 테스트 파일에서 반복된다.
-- readiness 테스트는 check dict와 service metadata dict를 매번 함께 조립한다.
-
-**방안**
-- `test_fastapi_core/conftest.py`에 다음처럼 의미가 명확한 fixture/factory만 둔다.
-  - `empty_app_factory(...)`
-  - `auth_app_factory(provider=...)`
-  - `readiness_app_factory(checks, required=..., ...)`
-- endpoint별 결과 assertion은 각 테스트에 남겨 과도한 test DSL을 피한다.
-- 비동기 단위 테스트는 기존 선호대로 `pytest.mark.asyncio` 함수와 `await`를 유지한다.
-- `test_health_router.py`의 상태 설정 및 timeout 사례는 helper/parametrize로 47~60 LOC를 줄일 수 있다.
-- `integration/test_readiness_with_live_services.py`는 서비스별 app fixture와 필수 서비스 사례를 factory/parametrize로 묶어 50~65 LOC를 줄일 수 있다. 복수 서비스 및 unreachable NATS 시나리오는 별도로 유지한다.
-- `test_extensions.py`의 empty app 생성은 20~28 LOC, `test_dependencies.py`의 auth app 준비는 15~22 LOC 절감 후보다.
-
-**예상 절감**
-- 테스트: 겹치는 fixture 도입 비용을 포함해 약 120~160 LOC
-
-#### P4-3. factory lifecycle 테스트 준비 코드 축소
-
-**근거**
-- `test_factory.py`에서 `events`를 기록하는 fake client/runtime/lifespan 클래스가 반복된다.
-
-**방안**
-- `_build_service_clients` monkeypatch 설치만 파일 로컬 helper로 묶는다.
-- sync/async `check()`·`close()`가 각 테스트의 검증 대상이므로 작은 Client 클래스와 이벤트 assertion은 유지한다.
-- startup 실패, custom shutdown 실패, async close를 configurable fake 하나로 합치지 않는다. 예외 우선순위와 rollback 의미가 흐려질 수 있다.
-
-**예상 절감**
-- 테스트: 약 8~12 LOC
-
-**P4 수행 결과**
-- auth 오류 분기를 immutable tuple mapping으로 바꾸고 known 오류를 table-driven 테스트로 통합했다. generic Keycloak 오류와 unknown fallback 검증은 추가했다.
-- `empty_app_factory`, `auth_app_factory`, `readiness_app_factory`로 readiness, managed resource, auth dependency 준비 코드를 통합했다.
-- live readiness의 Keycloak/NATS/Postgres 필수 서비스 사례를 parameterize하고 optional/unreachable NATS 시나리오는 독립 테스트로 유지했다.
-- factory lifecycle은 client 주입 monkeypatch만 파일 로컬 helper로 묶고 각 fake의 check/close/rollback assertion은 유지했다.
-- 프로덕션 Code LOC: 1,138 → 1,127, **11 LOC 감소**
-- 프로덕션 physical LOC: 1,552 → 1,544, **8 LOC 감소**
-- 테스트 Code LOC: 1,697 → 1,617, **80 LOC 감소**
-- 합계 Code LOC: 2,835 → 2,744, **91 LOC 감소**
-- P2에서 legacy readiness 테스트 준비가 이미 제거됐고 generic/unknown auth coverage를 추가했기 때문에 최초 예상치보다 절감 폭이 작다.
-- 독립 리뷰는 보안 concern, 로직 오류, assertion coverage 약화 없이 `PASS`했다.
-- 전체 테스트: `101 passed`
-
----
-
 ### P5. 작은 축소는 동작 경계를 유지하는 범위에서만 수행
 
 #### 유지 권장
@@ -290,25 +91,19 @@ P4 완료 후 기준 동작은 `uv run pytest -q` 실행에서 `101 passed`다.
 
 ## 5. 권장 실행 순서
 
-1. **P0 완료**: 공개 계약과 기준선을 고정했다.
-2. **P1 완료**: health 조립, readiness adapter, resource binding을 호환 상태로 단순화했다.
-3. **P2 완료**: breaking 범위에서 legacy readiness state를 제거하고 typed registry로 통합했다.
-4. **P4 테스트 중복 축소**: 동작 변경 없이 보호망을 간결하게 만든다.
-5. **P3 upstream runtime API 추가**: `docmesh_py_core` 변경과 릴리스를 먼저 완료한다.
-6. `fastapi_core`에서 로컬 service factory 분기를 제거한다.
-7. **P5 작은 축소**를 적용하되, 각 변경이 실제 순감소인지 diff로 확인한다.
+1. **P3 upstream runtime API 추가**: `docmesh_py_core` 변경과 릴리스를 먼저 완료한다.
+2. `fastapi_core`에서 로컬 service factory 분기를 제거한다.
+3. **P5 작은 축소**를 적용하되, 각 변경이 실제 순감소인지 diff로 확인한다.
 
 ## 6. 목표치
 
-공개 기능을 유지하는 현실적인 1차 목표:
+현재 기준선에서 현실적인 다음 목표:
 
 | 구분 | 현재 | 목표 | 예상 감소 |
 |---|---:|---:|---:|
-| 프로덕션 Code LOC | 1,272 | 1,122~1,162 | 110~150 (8.6~11.8%) |
-| 테스트 Code LOC | 1,660 | 1,440~1,480 | 180~220 (10.8~13.3%) |
-| 합계 | 2,932 | 2,562~2,642 | 290~370 (9.9~12.6%) |
-
-P2까지 프로덕션 Code LOC는 1,272 → 1,138로 134 LOC(10.5%) 감소했다. 테스트 보호망 증가를 포함한 전체 Code LOC는 2,932 → 2,835로 97 LOC(3.3%) 감소했다.
+| 프로덕션 Code LOC | 1,127 | 1,077~1,092 | 35~50 (3.1~4.4%) |
+| 테스트 Code LOC | 1,617 | 1,582~1,597 | 20~35 (1.2~2.2%) |
+| 합계 | 2,744 | 2,659~2,689 | 55~85 (2.0~3.1%) |
 
 ## 7. 완료 조건
 
@@ -317,5 +112,4 @@ P2까지 프로덕션 Code LOC는 1,272 → 1,138로 134 LOC(10.5%) 감소했다
 - readiness 상태/HTTP status/error redaction/lifecycle rollback 회귀 없음
 - `pygount` 기준 Code LOC가 단계별로 순감소
 - 새 helper/fixture의 LOC를 포함한 **저장소 전체 순감소** 확인
-- legacy readiness state를 제거할 경우 SRS/API/config/examples/test 문서 동기화
 - upstream 위임 시 `docmesh_py_core` 최소 지원 버전 또는 git revision 갱신
