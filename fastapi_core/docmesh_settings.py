@@ -3,9 +3,11 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 
+from docmesh_py_core.function_logging import log_function_boundary
 from docmesh_py_core import ServiceConfigs, load_service_configs
 
 
+@log_function_boundary()
 def _docmesh_default_env() -> dict[str, str]:
     return {
         "KEYCLOAK_URL": "http://keycloak.local",
@@ -29,6 +31,7 @@ def _docmesh_default_env() -> dict[str, str]:
     }
 
 
+@log_function_boundary()
 def build_docmesh_env_overlay() -> dict[str, str]:
     env = dict(os.environ)
     for key, value in _docmesh_default_env().items():
@@ -37,6 +40,7 @@ def build_docmesh_env_overlay() -> dict[str, str]:
 
 
 @lru_cache(maxsize=1)
+@log_function_boundary()
 def load_docmesh_settings(
     enabled_services: tuple[str, ...] | None = None,
 ) -> ServiceConfigs:

@@ -4,6 +4,7 @@ import logging
 
 from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse
+from docmesh_py_core.function_logging import log_function_boundary
 from docmesh_py_core import HealthCheckError, build_service_log_event
 
 from fastapi_core.extensions import ReadinessRegistry
@@ -13,6 +14,7 @@ router = APIRouter(prefix="/health", tags=["health"])
 logger = logging.getLogger(__name__)
 
 
+@log_function_boundary()
 def _readiness_error(
     service_name: str,
     *,
@@ -33,6 +35,7 @@ def _readiness_error(
     return None
 
 
+@log_function_boundary()
 def _log_readiness_failure(
     service_name: str,
     detail: HealthServiceDetail,
@@ -58,11 +61,13 @@ def _log_readiness_failure(
 
 
 @router.get("/liveness", response_model=HealthResponse)
+@log_function_boundary()
 async def liveness() -> HealthResponse:
     return HealthResponse(status="ok")
 
 
 @router.get("/readiness", response_model=HealthResponse)
+@log_function_boundary()
 async def readiness(request: Request) -> HealthResponse | JSONResponse:
     state = request.app.state
     registry: ReadinessRegistry = state.readiness_registry

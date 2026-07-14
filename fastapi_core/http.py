@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from uuid import uuid4
 
+from docmesh_py_core.function_logging import log_function_boundary
 from docmesh_py_core import mask_sensitive_value
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -35,6 +36,7 @@ class ErrorMapping:
 ErrorMapper = Callable[[Request, Exception], ErrorMapping | Awaitable[ErrorMapping]]
 
 
+@log_function_boundary()
 def _status_title(status_code: int) -> str:
     try:
         return HTTPStatus(status_code).phrase
@@ -42,6 +44,7 @@ def _status_title(status_code: int) -> str:
         return "HTTP Error"
 
 
+@log_function_boundary()
 def _mask_problem_detail(detail: str) -> str:
     if detail in _SAFE_ERROR_DETAILS:
         return detail
@@ -49,10 +52,12 @@ def _mask_problem_detail(detail: str) -> str:
 
 
 class CorrelationIdMiddleware:
+    @log_function_boundary()
     def __init__(self, app: ASGIApp, header_name: str = "X-Correlation-ID") -> None:
         self.app = app
         self.header_name = header_name
 
+    @log_function_boundary()
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
@@ -66,6 +71,7 @@ class CorrelationIdMiddleware:
         )
         scope.setdefault("state", {})["correlation_id"] = correlation_id
 
+        @log_function_boundary()
         async def send_with_correlation_id(message: Message) -> None:
             if message["type"] == "http.response.start":
                 MutableHeaders(scope=message)[self.header_name] = correlation_id
@@ -74,6 +80,7 @@ class CorrelationIdMiddleware:
         await self.app(scope, receive, send_with_correlation_id)
 
 
+@log_function_boundary()
 def _problem_response(
     request: Request,
     *,
@@ -100,6 +107,7 @@ def _problem_response(
     )
 
 
+@log_function_boundary()
 async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
     return _problem_response(
@@ -110,6 +118,7 @@ async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONR
     )
 
 
+@log_function_boundary()
 async def _validation_exception_handler(
     request: Request,
     _exc: RequestValidationError,
@@ -121,6 +130,7 @@ async def _validation_exception_handler(
     )
 
 
+@log_function_boundary()
 async def _unhandled_exception_handler(
     request: Request,
     _exc: Exception,
@@ -143,17 +153,20 @@ async def _unhandled_exception_handler(
     )
 
 
+@log_function_boundary()
 def install_problem_handlers(app: FastAPI) -> None:
     app.add_exception_handler(HTTPException, _http_exception_handler)
     app.add_exception_handler(RequestValidationError, _validation_exception_handler)
     app.add_exception_handler(Exception, _unhandled_exception_handler)
 
 
+@log_function_boundary()
 def register_error_mapper(
     app: FastAPI,
     exception_type: type[Exception],
     mapper: ErrorMapper,
 ) -> None:
+    @log_function_boundary()
     async def mapped_exception_handler(
         request: Request,
         exc: Exception,

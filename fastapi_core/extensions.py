@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any, Generic, TypeVar
 
+from docmesh_py_core.function_logging import log_function_boundary
 from docmesh_py_core import HealthCheckResult, async_check_all_services
 from fastapi import FastAPI
 
@@ -48,7 +49,9 @@ class ManagedResource(Generic[T]):
     redact_errors: bool = True
 
 
+@log_function_boundary()
 async def _invoke_check(check: Check, timeout_seconds: float | None) -> None:
+    @log_function_boundary()
     async def invoke() -> None:
         if inspect.iscoroutinefunction(check):
             await check()
@@ -61,10 +64,12 @@ async def _invoke_check(check: Check, timeout_seconds: float | None) -> None:
 
 
 class ReadinessRegistry:
+    @log_function_boundary()
     def __init__(self, *, default_timeout_seconds: float | None = None) -> None:
         self.default_timeout_seconds = default_timeout_seconds
         self.specs: dict[str, ReadinessCheckSpec] = {}
 
+    @log_function_boundary()
     def register(self, spec: ReadinessCheckSpec) -> None:
         if not spec.name.strip():
             raise ValueError("readiness check name must not be empty")
@@ -74,9 +79,11 @@ class ReadinessRegistry:
             raise ValueError("readiness check timeout_seconds must be greater than zero")
         self.specs[spec.name] = spec
 
+    @log_function_boundary()
     def unregister(self, name: str) -> None:
         self.specs.pop(name, None)
 
+    @log_function_boundary()
     async def check(
         self,
         *,
@@ -97,6 +104,7 @@ class ReadinessRegistry:
                 else self.default_timeout_seconds
             )
 
+            @log_function_boundary()
             async def run(
                 check: Check = spec.check,
                 timeout: float | None = timeout_seconds,
@@ -115,6 +123,7 @@ class ReadinessRegistry:
 
 
 class ResourceRegistry:
+    @log_function_boundary()
     def __init__(
         self,
         resources: Sequence[ManagedResource[Any]],
@@ -128,6 +137,7 @@ class ResourceRegistry:
         self._healthcheck_names: set[str] = set()
         self._validate(reserved_names)
 
+    @log_function_boundary()
     def _validate(self, reserved_names: set[str] | frozenset[str]) -> None:
         names: set[str] = set()
         for resource in self.resources:
@@ -146,6 +156,7 @@ class ResourceRegistry:
                 )
             names.add(resource.name)
 
+    @log_function_boundary()
     async def start(self, app: FastAPI) -> None:
         try:
             for resource in self.resources:
@@ -172,6 +183,7 @@ class ResourceRegistry:
                 exc.add_note(f"managed resource rollback failed: {close_exc}")
             raise
 
+    @log_function_boundary()
     async def check_startup(
         self,
         *,
@@ -191,11 +203,13 @@ class ResourceRegistry:
             overall_timeout_seconds=overall_timeout_seconds,
         )
 
+    @log_function_boundary()
     def require(self, name: str) -> Any:
         if name not in self.instances:
             raise KeyError(name)
         return self.instances[name]
 
+    @log_function_boundary()
     async def close(self) -> None:
         failures: list[BaseException] = []
         for resource in reversed(self.resources):
@@ -213,6 +227,7 @@ class ResourceRegistry:
         if failures:
             raise BaseExceptionGroup("managed resource shutdown failed", failures)
 
+    @log_function_boundary()
     async def _close_resource(
         self,
         resource: ManagedResource[Any],
@@ -230,6 +245,7 @@ class ResourceRegistry:
             await result
 
 
+@log_function_boundary()
 def register_readiness_check(
     app: FastAPI,
     name: str,

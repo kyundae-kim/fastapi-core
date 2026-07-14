@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any
 
+from docmesh_py_core.function_logging import log_function_boundary
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
@@ -18,6 +19,7 @@ _CSV_LIST_FIELDS = frozenset(
 
 
 class _AppEnvSettingsSource(EnvSettingsSource):
+    @log_function_boundary()
     def prepare_field_value(
         self,
         field_name: str,
@@ -35,6 +37,7 @@ class _AppEnvSettingsSource(EnvSettingsSource):
         )
 
 
+@log_function_boundary()
 def _parse_csv_env(raw: str) -> list[str]:
     return [value.strip() for value in raw.split(",") if value.strip()]
 
@@ -107,6 +110,7 @@ class AppConfig(BaseSettings):
     )
 
     @classmethod
+    @log_function_boundary()
     def settings_customise_sources(
         cls,
         settings_cls: type[BaseSettings],
@@ -125,6 +129,7 @@ class AppConfig(BaseSettings):
 
     @field_validator("cors_origins", "enabled_services", "required_services", mode="before")
     @classmethod
+    @log_function_boundary()
     def _parse_csv_or_sequence(cls, value: Any) -> Any:
         if isinstance(value, str):
             if not value.strip():
@@ -135,6 +140,7 @@ class AppConfig(BaseSettings):
         return value
 
     @model_validator(mode="after")
+    @log_function_boundary()
     def _validate_required_services_are_enabled(self) -> AppConfig:
         missing = set(self.required_services) - set(self.enabled_services)
         if missing:
@@ -147,6 +153,7 @@ class AppConfig(BaseSettings):
 
     @field_validator("service_alternatives", mode="before")
     @classmethod
+    @log_function_boundary()
     def _parse_service_alternatives(cls, value: Any) -> Any:
         if value in (None, ""):
             return []
@@ -160,5 +167,6 @@ class AppConfig(BaseSettings):
 
 
 @lru_cache(maxsize=1)
+@log_function_boundary()
 def load_app_config() -> AppConfig:
     return AppConfig()

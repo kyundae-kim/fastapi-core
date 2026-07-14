@@ -4,6 +4,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
+from docmesh_py_core.function_logging import log_function_boundary
 from docmesh_py_core import (
     KeycloakTokenAuthenticationError,
     KeycloakTokenConfigurationError,
@@ -28,6 +29,7 @@ _TOKEN_ISSUE_ERRORS = (
 _UNEXPECTED_TOKEN_ISSUE_ERROR = (500, "Authentication service error", "unexpected_error")
 
 
+@log_function_boundary()
 def _log_token_issue_failure(
     *,
     outcome: str,
@@ -52,6 +54,7 @@ def _log_token_issue_failure(
     )
 
 
+@log_function_boundary()
 def _raise_token_issue_error(exc: Exception, scope: str | None) -> None:
     status_code, detail, outcome = next(
         (mapping for error_type, mapping in _TOKEN_ISSUE_ERRORS if isinstance(exc, error_type)),
@@ -72,6 +75,7 @@ def _raise_token_issue_error(exc: Exception, scope: str | None) -> None:
 
 
 @router.post("/token", response_model=TokenResponse)
+@log_function_boundary()
 async def issue_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     provider=Depends(get_auth_provider),
@@ -94,5 +98,6 @@ async def issue_token(
 
 
 @router.get("/user", response_model=UserInfo)
+@log_function_boundary()
 async def read_user(current_user: UserInfo = Depends(get_current_user)) -> UserInfo:
     return current_user

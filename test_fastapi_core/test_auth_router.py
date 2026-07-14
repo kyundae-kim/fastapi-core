@@ -144,8 +144,10 @@ def test_token_endpoint_maps_unexpected_failure(auth_app_factory, caplog):
 
     assert response.status_code == 500
     assert response.json()["detail"] == "Authentication service error"
-    assert caplog.records[-1].event["outcome"] == "unexpected_error"
-    assert "secret" not in caplog.records[-1].event["error"]
+    records = [record for record in caplog.records if record.getMessage() == "token_issue_failed"]
+    assert len(records) == 1
+    assert records[0].event["outcome"] == "unexpected_error"
+    assert "secret" not in records[0].event["error"]
 
 
 

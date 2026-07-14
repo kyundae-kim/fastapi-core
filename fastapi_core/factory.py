@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
+from docmesh_py_core.function_logging import log_function_boundary
 from docmesh_py_core import (
     NatsConnectionBuilder,
     ServiceClientWrapper,
@@ -64,6 +65,7 @@ class JsonLogFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
 
+@log_function_boundary()
 def _configure_application_logging(config: AppConfig) -> logging.Logger:
     root_logger = configure_logging(
         level=config.log_level,
@@ -77,6 +79,7 @@ def _configure_application_logging(config: AppConfig) -> logging.Logger:
     return root_logger
 
 
+@log_function_boundary()
 def _build_service_clients(
     settings: ServiceConfigs,
     services: list[str],
@@ -103,6 +106,7 @@ def _build_service_clients(
     return clients
 
 
+@log_function_boundary()
 def _build_keycloak_check_kwargs() -> dict[str, str]:
     values = {
         "username": os.getenv("KEYCLOAK_TOKEN_USERNAME"),
@@ -112,6 +116,7 @@ def _build_keycloak_check_kwargs() -> dict[str, str]:
     return {name: value for name, value in values.items() if value}
 
 
+@log_function_boundary()
 def _configure_keycloak_provider(client: ServiceClientWrapper) -> None:
     provider = getattr(client, "client", None)
     if provider is None or not hasattr(provider, "allowed_algorithms"):
@@ -119,6 +124,7 @@ def _configure_keycloak_provider(client: ServiceClientWrapper) -> None:
     provider.allowed_algorithms = ["RS256"]
 
 
+@log_function_boundary()
 def _build_injected_service_runtime(
     settings: ServiceConfigs,
     config: AppConfig,
@@ -137,12 +143,14 @@ def _build_injected_service_runtime(
     )
 
 
+@log_function_boundary()
 def _configure_oauth2_scheme(app: FastAPI, token_url: str) -> None:
     app_scheme = OAuth2PasswordBearer(tokenUrl=token_url, auto_error=False)
     app.state.oauth2_scheme = app_scheme
     app.dependency_overrides[oauth2_scheme] = app_scheme
     default_openapi = app.openapi
 
+    @log_function_boundary()
     def app_openapi() -> dict[str, Any]:
         schema = default_openapi()
         security_schemes = schema.get("components", {}).get("securitySchemes", {})
@@ -154,6 +162,7 @@ def _configure_oauth2_scheme(app: FastAPI, token_url: str) -> None:
     app.openapi = app_openapi
 
 
+@log_function_boundary()
 def _configure_service_runtime(app: FastAPI, runtime: ServiceRuntime) -> None:
     app.state.service_runtime = runtime
     app.state.settings = runtime.configs
@@ -166,6 +175,7 @@ def _configure_service_runtime(app: FastAPI, runtime: ServiceRuntime) -> None:
             healthcheck = getattr(client, "healthcheck", check)
             kwargs = _build_keycloak_check_kwargs()
 
+            @log_function_boundary()
             def keycloak_check(healthcheck=healthcheck, kwargs=kwargs) -> object:
                 return healthcheck(**kwargs)
 
@@ -185,6 +195,7 @@ def _configure_service_runtime(app: FastAPI, runtime: ServiceRuntime) -> None:
             app.state.auth_provider = keycloak_client.client
 
 
+@log_function_boundary()
 def _build_lifespan(
     lifespan: Callable | None,
     config: AppConfig,
@@ -192,6 +203,7 @@ def _build_lifespan(
     resources: ResourceRegistry,
 ) -> Callable:
     @asynccontextmanager
+    @log_function_boundary()
     async def managed_lifespan(app: FastAPI):
         app_runtime = runtime
         try:
@@ -249,6 +261,7 @@ def _build_lifespan(
     return managed_lifespan
 
 
+@log_function_boundary()
 def create_app(
     config: AppConfig | None = None,
     settings: ServiceConfigs | None = None,
