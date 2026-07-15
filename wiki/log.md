@@ -119,3 +119,81 @@
 - Reviewed implementation files: fastapi_core/factory.py, fastapi_core/routers/auth.py, fastapi_core/routers/health.py, fastapi_core/dependencies/auth.py, fastapi_core/dependencies/config.py, fastapi_core/config.py, fastapi_core/docmesh_settings.py
 - Verification command: `uv run pytest -q` → `38 passed, 2 warnings in 20.47s`
 - No new wiki page filed: answered from the source document plus direct code re-check
+
+## [2026-07-13] ingest | docmesh-py-core v0.2.0 API reference
+- Captured immutable versioned source: raw/articles/docmesh-py-core-api-reference-v0.2.0.md
+- Updated existing pages: entities/docmesh-py-core.md, concepts/application-integration-patterns.md, concepts/service-configuration-contracts.md, concepts/service-health-check-aggregation.md, concepts/keycloak-authentication-api.md, concepts/operational-logging-and-retry-utilities.md
+- Updated navigation: index.md (last-updated date retained page count at 8)
+- Notes: v0.2.0 documents assembly-first integration (`assemble_services()` / `assemble_service_runtime()`), async health and cleanup helpers, `DOCMESH_SECURITY_MODE` precedence, and password-grant config fallback.
+
+## [2026-07-13] ingest | docmesh-py-core v0.2.0 configuration guide
+- Captured immutable versioned source: raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md
+- Updated existing pages: entities/docmesh-py-core.md, concepts/service-configuration-contracts.md, concepts/application-integration-patterns.md, concepts/keycloak-authentication-api.md
+- Updated navigation: index.md (last-updated date and page count remain current at 8)
+- Notes: configuration guidance confirms assembly-first lifecycle, mapping-only config loading, explicit startup-health policy ownership, and password-grant credential fallback.
+
+## [2026-07-13] ingest | docmesh-py-core v0.2.0 examples
+- Captured immutable versioned source: raw/articles/docmesh-py-core-examples-guide-v0.2.0.md
+- Updated existing pages: entities/docmesh-py-core.md, concepts/application-integration-patterns.md, concepts/service-health-check-aggregation.md, concepts/operational-logging-and-retry-utilities.md
+- Updated navigation: index.md (last-updated date and page count remain current at 8)
+- Notes: examples provide concrete `ServiceBundle`/`ServiceRuntime` FastAPI lifespan usage, current health endpoint handling, password-grant fallback, and logging setup.
+
+## [2026-07-13] ingest | fastapi-core PRD v0.4
+- Source URL: file:///workspaces/fastapi-core/docs/prd.md
+- Raw file created: raw/articles/fastapi-core-prd-v0.4.md
+- Body sha256: `77f9caf8820ec2d803606f2445d2019777a1969a8e976287cda012fee267fab6`
+
+## [2026-07-13] query | fastapi-core PRD vs source-code comparison
+- Re-read orientation files: SCHEMA.md, index.md, log.md
+- Compared document: docs/prd.md v0.4
+- Inspected implementation: pyproject.toml, fastapi_core/config.py, fastapi_core/docmesh_settings.py, fastapi_core/factory.py, fastapi_core/dependencies/, fastapi_core/routers/, fastapi_core/schemas/
+- Inspected tests: test_fastapi_core unit tests and integration tests for Keycloak, NATS, PostgreSQL readiness, and custom lifespan
+- Verification commands:
+  - `uv run pytest -q` → `45 passed, 8 warnings in 21.52s`
+  - installed API inspection → `docmesh-py-core 0.2.0`; `assemble_service_runtime()` and `ServiceRuntime.close()` are async, while `close_service_clients()` is sync
+- Wiki file created: queries/fastapi-core-prd-vs-source-code-comparison.md
+- Navigation updated: index.md (total pages 9)
+- Verdict: capabilities are broadly aligned; FR-051 remains partial because NATS async close is not awaited and cleanup is not exception-safe.
+
+## [2026-07-13] query | docmesh-py-core v0.2.0 reflection points
+- Refreshed existing comparison: queries/docmesh-py-core-vs-fastapi-core-usage-comparison.md
+- Compared installed v0.2.0 signatures/source with fastapi_core/factory.py, docmesh_settings.py, health router, dependencies, docs, and tests.
+- Verification command: `uv run pytest -q` → `45 passed, 8 warnings in 21.52s`
+- Key finding: direct APIs remain compatible, but NATS async close is not awaited; native async runtime/readiness and mapping-based config loading remain to be adopted.
+- Navigation summary updated: index.md (total pages unchanged at 9)
+
+## [2026-07-13] update | docmesh-py-core v0.2.0 P0 lifecycle and readiness alignment
+- Updated implementation: fastapi_core/factory.py, fastapi_core/routers/health.py
+- Added regression coverage: test_fastapi_core/test_factory.py, test_fastapi_core/test_health_router.py
+- Synced docs: README.md, docs/api.md, docs/examples.md, docs/messaging.md, docs/srs.md, docs/test.md
+- Refreshed comparisons: queries/docmesh-py-core-vs-fastapi-core-usage-comparison.md, queries/fastapi-core-prd-vs-source-code-comparison.md
+- Verification commands:
+  - `uv run pytest -q -m 'not integration'` → `37 passed, 11 deselected, 2 warnings in 0.32s`
+  - `uv run pytest -q -m integration` → `11 passed, 37 deselected, 2 warnings in 20.50s`
+  - `uv run pytest -q` → `48 passed, 2 warnings in 20.63s`
+- Outcome: async client close is awaited in a finally block, readiness uses native async aggregation, required failures preserve all service results, and the NATS unawaited-coroutine warning is removed.
+
+## [2026-07-13] update | docmesh-py-core v0.2.0 P1 assembly and config alignment
+- Updated implementation: fastapi_core/config.py, fastapi_core/docmesh_settings.py, fastapi_core/factory.py, fastapi_core/dependencies/config.py
+- Added regression coverage: test_fastapi_core/test_config.py, test_fastapi_core/test_factory.py, test_fastapi_core/test_dependencies.py
+- Default app path now assembles `ServiceRuntime` during lifespan startup and exposes it through `app.state.service_runtime` while preserving settings/service_clients state keys.
+- Mapping-based config loading no longer mutates `os.environ`; enabled/required/startup-health/parallel policies are passed to the v0.2.0 runtime assembly API.
+- Synced docs: README.md, docs/api.md, docs/config.md, docs/examples.md, docs/messaging.md, docs/srs.md, docs/test.md
+- Refreshed comparisons and navigation: queries/docmesh-py-core-vs-fastapi-core-usage-comparison.md, queries/fastapi-core-prd-vs-source-code-comparison.md, index.md
+- Verification commands:
+  - `uv run pytest -q -m 'not integration'` → `41 passed, 11 deselected, 2 warnings in 0.33s`
+  - `uv run pytest -q -m integration` → `11 passed, 41 deselected, 2 warnings in 20.41s`
+  - `uv run pytest -q` → `52 passed, 2 warnings in 20.65s`
+
+## [2026-07-13] update | docmesh-py-core v0.2.0 P2 operational policy alignment
+- Updated implementation: fastapi_core/config.py, fastapi_core/factory.py, fastapi_core/routers/health.py
+- Added regression coverage: test_fastapi_core/test_config.py, test_fastapi_core/test_factory.py, test_fastapi_core/test_health_router.py
+- Added per-service/overall healthcheck timeout policy to startup checks and readiness responses.
+- Added `DOCMESH_SERVICE_ALTERNATIVES` parsing and runtime `one_of` validation for default and explicit-settings paths.
+- Verified startup healthcheck rollback before custom lifespan entry and structured `ServiceCloseError` logging without client/error payloads.
+- Synced docs: README.md, docs/api.md, docs/config.md, docs/examples.md, docs/messaging.md, docs/srs.md, docs/test.md
+- Refreshed comparisons and navigation: queries/docmesh-py-core-vs-fastapi-core-usage-comparison.md, queries/fastapi-core-prd-vs-source-code-comparison.md, index.md
+- Verification commands:
+  - `uv run pytest -q -m 'not integration'` → `46 passed, 11 deselected, 2 warnings in 0.36s`
+  - `uv run pytest -q -m integration` → `11 passed, 46 deselected, 2 warnings in 20.43s`
+  - `uv run pytest -q` → `57 passed, 2 warnings in 20.75s`

@@ -2,7 +2,7 @@
 
 > 문서 목적: `fastapi-core`의 **현재 구현된 FastAPI 앱 계층**을 어떤 수준으로 검증하는지 정리한다.
 > 기준 문서: `docs/prd.md`, `docs/srs.md`, `docs/api.md`, `docs/config.md`
-> 문서 상태: 구현 반영본(v0.6)
+> 문서 상태: 구현 반영본
 
 ---
 
@@ -18,11 +18,13 @@
 - schema (`TokenResponse`, `UserInfo`, `HealthResponse`, `HealthServiceDetail`)
 - config / settings loader
 - custom lifespan 연계
+- typed readiness 및 managed resource lifecycle
+- 앱별 OAuth2, 선언적 authorization, correlation ID 및 problem-details 오류 처리
 - 구조화 로깅
+- curated package export, app factory/runtime extension signature, legacy readiness state 부재 계약
 
 - 작성일: `2026-07-03`
 - 작성자: `Hermes Agent`
-- 버전: `v0.6`
 - 상태: `implemented-surface`
 
 ---
@@ -43,7 +45,10 @@ test_fastapi_core/
   test_factory.py
   test_auth_router.py
   test_health_router.py
+  test_http.py
   test_dependencies.py
+  test_extensions.py
+  test_public_api.py
   test_schemas.py
 ```
 
@@ -67,16 +72,16 @@ uv run pytest -q -m integration
 ```
 
 최근 실제 실행 결과:
-- `uv run pytest -q -m 'not integration'` → `34 passed, 11 deselected, 2 warnings`
-- `uv run pytest -q` → `45 passed, 2 warnings`
-- `uv run pytest -q -m integration` → `11 passed, 34 deselected, 2 warnings`
+- `uv run pytest -q -m 'not integration'` → `90 passed, 11 deselected, 2 warnings`
+- `uv run pytest -q` → `101 passed, 2 warnings`
+- `uv run pytest -q -m integration` → `11 passed, 90 deselected, 2 warnings`
 
 테스트 러너/환경 특성:
 - `pytest` 사용
 - 외부 서비스 통합 테스트는 `pytest.mark.integration`으로 분리
 - FastAPI endpoint 검증은 `fastapi.testclient.TestClient` 사용
-- 현재 테스트 파일들은 모두 동기 테스트 함수(`def`) 기반
-- 비동기 테스트는 아직 없음
+- endpoint/lifespan 검증은 주로 동기 `TestClient` 테스트를 사용한다.
+- native async check 계약은 `pytest-asyncio` 기반 `async def` 테스트에서 직접 await한다.
 - import 안정화를 위해 `test_fastapi_core/conftest.py`에서 저장소 루트를 `sys.path`에 추가함
 
 ### 3.1 통합 테스트 실행/skip 정책
@@ -148,13 +153,22 @@ PostgreSQL 통합 테스트 env:
 - `app.state.settings`가 저장된다.
 - `app.state.config.token_url`이 기본값으로 반영된다.
 - `app.state.service_clients`가 생성된다.
+- 기본 앱 경로가 lifespan startup에서 `assemble_service_runtime(...)`을 호출하고 `app.state.service_runtime`을 설치한다.
+- enabled/required 서비스와 startup healthcheck 정책이 assembly API에 전달된다.
+- `one_of` 서비스 대안과 per-service/overall timeout이 assembly API에 전달된다.
+- 명시적 `settings` 주입 경로도 `ServiceRuntime`으로 감싸고 startup healthcheck를 실행할 수 있다.
+- 명시적 설정에서도 서비스 대안 정책을 검증한다.
+- startup healthcheck 실패 시 생성된 client가 rollback되고 custom lifespan은 진입하지 않는다.
+- runtime close 실패가 구조화 로그와 `ServiceCloseError`로 전파된다.
 - `app.state.root_logger`가 생성된다.
 - 기본 readiness state가 `keycloak` 기준으로 구성된다.
-- async service check를 readiness 경로에서 동기 callable로 감싸 실행한다.
+- async service check가 native async callable로 유지되고 직접 await된다.
 - Keycloak readiness는 healthcheck에 테스트 자격증명 env를 전달한다.
 - custom `token_url`이 OpenAPI security scheme에 반영된다.
 - `include_auth_router=False`일 때 `/token`, `/user`가 404다.
 - custom lifespan startup/shutdown이 호출된다.
+- async service client의 `close()`가 lifespan 종료 시 await된다.
+- custom lifespan shutdown이 실패해도 공통 service client cleanup이 실행된다.
 - 선택 서비스(`sqlite`)만 로딩하는 설정 경로가 동작한다.
 - JSON 파일 로깅이 실제로 기록된다.
 
@@ -194,6 +208,9 @@ PostgreSQL 통합 테스트 env:
 - 선택 서비스 실패 시 `200 + status="degraded"`
 - 필수 서비스 실패 시 `503 + status="error"`
 - 성공/실패 시 `details`에 서비스별 상태 구조가 들어간다.
+- 필수 서비스 실패 시에도 성공한 선택 서비스를 포함한 전체 details가 보존된다.
+- 서비스별 timeout이 해당 서비스 실패 및 503으로 변환된다.
+- overall timeout이 details 없는 503 오류로 변환된다.
 - Keycloak live readiness가 실제 healthcheck 경로를 통해 `200`을 반환한다.
 - NATS live readiness가 async check를 포함해 `ok/degraded/error` 계약을 지킨다.
 - readiness 실패 로그가 `readiness_check_failed` 구조화 이벤트로 남는다.
@@ -202,7 +219,7 @@ PostgreSQL 통합 테스트 env:
 현재 검증하지 않는 항목:
 - `/health/liveness` 단독 파일 수준 재검증(간접적으로 factory 테스트에서 검증)
 - `READINESS_PARALLEL` 플래그의 병렬성 효과 자체
-- timeout/네트워크 오류의 상세 분기
+- 외부 SDK별 네트워크 오류의 세부 분기
 - 실제 외부 서비스 check 함수 연동
 
 ## 5.4 dependency 테스트
@@ -216,6 +233,7 @@ PostgreSQL 통합 테스트 env:
 - service_clients 기반 auth provider 경로에서 `keycloak` client가 요청된다.
 - service_clients에서 받은 provider가 token 해석에 사용된다.
 - `get_service_client("sqlite")`가 wrapper 기반 service client를 반환한다.
+- 기본 runtime startup 전 `app.state.settings is None`이면 `get_settings()`가 loader fallback을 사용한다.
 - 전용 dependency 공개 심볼이 노출된다.
 - `get_keycloak_auth_service() -> KeycloakAuthService` 타입 힌트가 검증된다.
 - `get_sqlite_engine() -> sqlalchemy.engine.Engine` 타입 힌트가 검증된다.
@@ -226,7 +244,6 @@ PostgreSQL 통합 테스트 env:
 
 현재 검증하지 않는 항목:
 - `get_config()` 직접 테스트
-- `get_settings()` 직접 테스트
 - `app.state.auth_provider`가 이미 있을 때의 재사용 경로 직접 테스트
 - invalid token 예외 매핑
 
@@ -237,11 +254,46 @@ PostgreSQL 통합 테스트 env:
 현재 검증하는 항목:
 - `load_app_config()`가 `ROOT_PATH`, `TOKEN_URL`, `CORS_ORIGINS`, `CORS_CREDENTIALS`, `READINESS_PARALLEL`을 읽는다.
 - `DOCMESH_LOG_LEVEL`, `APP_LOG_PATH`, `APP_LOG_JSON`, `APP_LOG_FORCE`를 읽는다.
+- `DOCMESH_HEALTHCHECK_ENABLED`를 `startup_healthcheck`로 읽고 기본값은 `False`다.
+- 두 readiness timeout과 `DOCMESH_SERVICE_ALTERNATIVES`를 파싱한다.
 - `DOCMESH_SERVICES`, `READINESS_REQUIRED_SERVICES`를 읽는다.
 - 기본 `AppConfig` 값이 현재 구현과 일치한다.
 - `build_docmesh_env_overlay()`가 기본값을 채우되 기존 환경변수를 덮어쓰지 않는다.
+- `load_docmesh_settings(...)`가 overlay mapping을 loader에 전달하고 프로세스 `os.environ`을 변경하지 않는다.
 - `load_docmesh_settings(("sqlite",))`가 선택 서비스만 로딩한다.
 - `load_docmesh_settings(("postgres",))`가 fallback `POSTGRES_DSN`으로 PostgreSQL 설정을 로딩한다.
+
+## 5.5A runtime extension 테스트
+
+정의 위치: `test_fastapi_core/test_extensions.py`
+
+현재 검증하는 항목:
+- public readiness 등록의 optional/required 상태 정책
+- check별 timeout과 앱 공통 timeout fallback
+- 오류 redaction 및 비-redacted timeout 메시지
+- readiness 이름 중복 거부
+- managed resource 선언 순서 startup과 역순 shutdown
+- custom lifespan과 managed resource의 실행 순서
+- `get_resource(name)`의 동일 lifecycle 객체 주입
+- resource healthcheck의 readiness 자동 등록
+- 후속 factory 실패 시 startup rollback
+- required startup healthcheck 실패 시 async close rollback
+- 빈 이름과 framework 예약 이름 거부
+- typed registry 단일 경로와 legacy readiness state 부재
+
+## 5.5B HTTP contract 테스트
+
+정의 위치: `test_fastapi_core/test_http.py`, `test_fastapi_core/test_factory.py`, `test_fastapi_core/test_dependencies.py`
+
+현재 검증하는 항목:
+- 서로 다른 `token_url`을 가진 두 앱의 OpenAPI OAuth2 scheme 격리
+- role, scope, 통합 permission dependency와 scope OpenAPI declaration
+- 유효한 correlation ID의 request state/response header 전파
+- 유효하지 않은 correlation ID의 UUID 교체
+- HTTP/validation/unhandled 예외의 problem-details 변환
+- 민감한 오류 detail 마스킹과 미처리 예외 원문 비노출
+- 비표준 HTTP status의 안정된 title
+- custom domain error mapper와 package-root export
 
 ## 5.6 schema 테스트
 
@@ -277,7 +329,7 @@ PostgreSQL 통합 테스트 env:
 설계상 중요한 현재 동작:
 - Keycloak readiness는 `KEYCLOAK_TOKEN_USERNAME` / `KEYCLOAK_TOKEN_PASSWORD`를 사용한 healthcheck로 검증된다.
 - PostgreSQL readiness는 DSN 또는 개별 접속 환경변수의 TCP 도달 가능성을 선행 확인한 뒤 실제 service client check로 검증된다.
-- NATS async check는 readiness 경로에서 동기 wrapper로 실행된다.
+- NATS async check는 readiness의 native async 집계 경로에서 await된다.
 
 ---
 
@@ -287,7 +339,7 @@ PostgreSQL 통합 테스트 env:
 
 문서 계획이 아니라 현재 구현된 계약을 검증한다.
 예를 들어:
-- readiness는 `app.state.readiness_checks`와 `readiness_services` 조합을 기준으로 검증한다.
+- readiness는 typed registry 단일 경로와 공개 registration API를 검증한다.
 - auth는 빠른 회귀에서는 fake provider 주입으로 계약을 고정하고, live integration에서는 실제 Keycloak 서버 경로를 검증한다.
 - config는 실제 `AppConfig` 및 `docmesh_settings` 로더를 직접 통과시킨다.
 
@@ -312,14 +364,13 @@ PostgreSQL 통합 테스트 env:
 
 문서와 비교했을 때 아직 없는 검증:
 
-1. `get_config()` / `get_settings()` 직접 테스트
+1. `get_config()` 직접 테스트
 2. `app.state.auth_provider` 선행 주입 재사용 경로의 직접 테스트
 3. `/token`의 `502` 및 unexpected `500` 분기 테스트
 4. CORS middleware 응답 헤더 테스트
 5. `root_path` 반영 테스트
-6. 비동기 테스트 함수 기반 검증
-7. custom `app.state.nats` dependency 패턴 테스트
-8. `READINESS_PARALLEL`의 실제 병렬성 효과 검증
+6. 실제 NATS 연결 객체를 managed resource로 등록하는 live 테스트
+7. `READINESS_PARALLEL`의 실제 병렬성 효과 검증
 
 이 항목들은 향후 추가 대상이지, 현재 완료된 테스트 범위는 아니다.
 
@@ -331,7 +382,7 @@ PostgreSQL 통합 테스트 env:
 
 ### 우선순위 1
 - dependency 직접 테스트 보강
-  - `get_config()` / `get_settings()`
+  - `get_config()`
   - `app.state.auth_provider` 재사용 경로
 
 ### 우선순위 2
@@ -347,8 +398,8 @@ PostgreSQL 통합 테스트 env:
 
 ### 우선순위 4
 - 비동기/운영성 관점 보강
-  - `pytest-asyncio` 기반 async 테스트
   - 실제 `READINESS_PARALLEL` 효과 검증
+  - timeout과 실제 병렬 실행을 결합한 부하/취소 동작 검증
 
 ---
 
@@ -371,6 +422,14 @@ PostgreSQL 통합 테스트 env:
 - [x] auth route가 기본 포함된다.
 - [x] `include_auth_router=False` 경로가 검증되었다.
 - [x] custom lifespan startup/shutdown이 검증되었다.
+- [x] async service client close await와 shutdown 예외 시 cleanup이 검증되었다.
+- [x] 기본 앱 경로의 `assemble_service_runtime(...)` 조립과 `app.state.service_runtime` 설치가 검증되었다.
+- [x] `DOCMESH_HEALTHCHECK_ENABLED` startup 정책 전달이 검증되었다.
+- [x] mapping 기반 설정 로딩이 `os.environ`을 변경하지 않는다는 검증이 있다.
+- [x] `one_of` 서비스 대안 검증과 timeout 전달이 검증되었다.
+- [x] startup healthcheck rollback이 검증되었다.
+- [x] per-service/overall readiness timeout 응답이 검증되었다.
+- [x] runtime close 실패 구조화 로그와 예외 전파가 검증되었다.
 - [x] OpenAPI `tokenUrl` 반영이 검증되었다.
 - [x] 기본 readiness state 구성이 검증되었다.
 - [x] 선택 서비스 로딩이 검증되었다.
@@ -379,18 +438,28 @@ PostgreSQL 통합 테스트 env:
 - [x] `/token` 실패 경로 일부가 검증되었다.
 - [x] `/user`가 `UserInfo` 구조를 반환한다.
 - [x] readiness `ok/degraded/error`가 검증되었다.
+- [x] 필수 readiness 실패 시 전체 서비스 결과 보존이 검증되었다.
 - [x] 실제 Keycloak/PostgreSQL/NATS integration test가 분리되어 추가되었다.
 - [x] invalid token 401 테스트가 있다.
 - [x] `get_current_user()`의 401 경로가 검증되었다.
 - [x] `require_permissions(...)`의 403 경로가 검증되었다.
 - [x] config 로더 직접 테스트가 있다.
 - [x] schema 기본값이 검증되었다.
+- [x] `pytest-asyncio` 기반 native async check 테스트가 있다.
+- [x] typed readiness 등록, check별 timeout과 오류 redaction 테스트가 있다.
+- [x] managed resource startup/shutdown/rollback 및 dependency 주입 테스트가 있다.
+- [x] required/enabled 교차 검증과 빈 CSV 환경변수 의미 테스트가 있다.
+- [x] multi-app OAuth2 OpenAPI 격리 테스트가 있다.
+- [x] role/scope/permission authorization dependency 테스트가 있다.
+- [x] correlation ID 및 problem-details 오류 처리 테스트가 있다.
+- [x] curated package export와 app factory/runtime extension signature/default가 회귀 테스트로 고정되었다.
+- [x] legacy readiness state가 노출되지 않고 typed registry만 제공된다는 동작이 검증되었다.
 
 미완료 체크:
 - [ ] `/token`의 502/unexpected 500 테스트
 - [ ] CORS 응답 헤더 테스트
 - [ ] `root_path` 반영 테스트
-- [ ] 비동기 테스트 함수 기반 coverage
+
 
 ---
 
@@ -409,6 +478,7 @@ PostgreSQL 통합 테스트 env:
 - `test_fastapi_core/test_auth_router.py`
 - `test_fastapi_core/test_health_router.py`
 - `test_fastapi_core/test_dependencies.py`
+- `test_fastapi_core/test_public_api.py`
 - `test_fastapi_core/test_schemas.py`
 - `test_fastapi_core/integration/conftest.py`
 - `test_fastapi_core/integration/test_keycloak_auth_flow.py`
@@ -420,5 +490,5 @@ PostgreSQL 통합 테스트 env:
 ## 12. 문서 상태 메모
 
 이 문서는 기존의 넓은 테스트 계획 초안을, **현재 저장소에 실제 존재하는 테스트와 이미 검증된 계약** 중심으로 재정렬한 것이다.
-특히 Keycloak/PostgreSQL/NATS live integration 테스트 추가, Keycloak readiness credential 기반 검증, PostgreSQL 실제 연결 readiness 검증, RS256 bearer token 검증, async NATS readiness wrapper, 그리고 본 세션에서 재검증한 pytest 결과를 반영해 최신 코드와 맞췄다.
+특히 Keycloak/PostgreSQL/NATS live integration 테스트, Keycloak readiness credential 기반 검증, PostgreSQL 실제 연결 readiness 검증, RS256 bearer token 검증, native async NATS readiness, async-aware shutdown cleanup, 그리고 본 세션에서 재검증한 pytest 결과를 반영해 최신 코드와 맞췄다.
 이제 dependency 테스트는 공통 lookup용 `get_service_client(service_name)`뿐 아니라 타입이 구체화된 전용 dependency(`get_keycloak_auth_service`, `get_postgres_engine`, `get_sqlite_engine`, `get_minio_client`, `get_milvus_client`, `get_ollama_client`, `get_langfuse_client`, `get_nats_connection_builder`) 공개 계약도 포함한다.

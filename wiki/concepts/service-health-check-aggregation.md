@@ -1,10 +1,10 @@
 ---
 title: Service health check aggregation
 created: 2026-06-25
-updated: 2026-07-12
+updated: 2026-07-13
 type: concept
 tags: [service, api, observability, test, implementation]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-examples-guide-2026.md, fastapi_core/factory.py, fastapi_core/routers/health.py]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.2.0.md, fastapi_core/factory.py, fastapi_core/routers/health.py]
 confidence: medium
 ---
 
@@ -25,7 +25,7 @@ confidence: medium
 
 ## Failure model
 
-필수 서비스가 실패하면 `HealthCheckError`가 발생한다. 따라서 선택 서비스 실패와 필수 의존성 실패를 구분하는 운영 정책을 구현할 수 있다.
+필수 서비스가 실패하면 `HealthCheckError`가 발생한다. 비동기 lifecycle을 위해 `async_check_all_services()`도 동기·awaitable check를 함께 실행하고 per-check/overall timeout을 지원한다. 따라서 선택 서비스 실패와 필수 의존성 실패를 구분하는 운영 정책을 구현할 수 있다.^[raw/articles/docmesh-py-core-api-reference-v0.2.0.md]
 
 - `parallel=False`에서는 입력 순서대로 순차 실행한다.
 - `parallel=True`에서는 `ThreadPoolExecutor`로 병렬 실행하지만 반환 순서는 입력 순서를 유지한다.
@@ -34,7 +34,7 @@ confidence: medium
 
 ## Input shape
 
-입력은 서비스명에서 check callable로 매핑되는 dict다. 최신 examples는 registry를 거치지 않고 `request.app.state.postgres`, `request.app.state.minio`, `request.app.state.ollama`에서 직접 꺼낸 client의 `check` 메서드를 넘기는 패턴을 보여준다. `required_services={"postgres", "minio"}`와 `parallel=True` 조합도 예시로 제시된다.^[raw/articles/docmesh-py-core-examples-guide-2026.md]
+입력은 서비스명에서 check callable로 매핑되는 dict다. v0.2.0 health endpoint 예시는 `request.app.state`에서 client의 `check` 메서드를 모아 `required_services={"postgres", "minio"}`, `parallel=True`로 실행하고, `HealthCheckError.result.to_dict()`를 HTTP 503 본문에 사용한다.^[raw/articles/docmesh-py-core-examples-guide-v0.2.0.md]
 
 FastAPI health endpoint 예시는 반환값을 `{ok, services[]}` 형태로 변환해 readiness/liveness 응답 본문으로 직접 노출하는 패턴을 보여준다. 이때 서비스별 `ok`, `latency_ms`, `error`를 그대로 전달할 수 있다.
 

@@ -2,7 +2,7 @@
 
 > Content catalog. Every wiki page listed under its type with a one-line summary.
 > Read this first to find relevant pages for any query.
-> Last updated: 2026-07-02 | Total pages: 8
+> Last updated: 2026-07-13 | Total pages: 9
 
 ## Entities
 <!-- Alphabetical within section -->
@@ -22,4 +22,5 @@
 
 ## Queries
 
-- [[docmesh-py-core-vs-fastapi-core-usage-comparison]] - docmesh-py-core 엔티티 설명을 실제 fastapi-core 코드와 대조해 채택 범위와 누락된 export 정보를 정리한 비교 메모.
+- [[docmesh-py-core-vs-fastapi-core-usage-comparison]] - docmesh-py-core v0.2.0과 대조해 P0~P2 async lifecycle, assembly, timeout, 대안 서비스, rollback 반영을 정리한 비교.
+- [[fastapi-core-prd-vs-source-code-comparison]] - PRD v0.4 capability를 현재 소스·테스트와 대조하고 P0~P2 정렬 상태와 제품별 잔여 과제를 정리한 비교.

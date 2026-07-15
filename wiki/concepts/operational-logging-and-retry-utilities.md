@@ -1,10 +1,10 @@
 ---
 title: Operational logging and retry utilities
 created: 2026-06-29
-updated: 2026-07-02
+updated: 2026-07-13
 type: concept
 tags: [api, observability, implementation, security]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-2026.md]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.2.0.md]
 confidence: medium
 ---
 
@@ -18,11 +18,11 @@ confidence: medium
 - `configure_logging(...)`: stderr/file handler를 구성하고 `DOCMESH_LOG_LEVEL` 또는 명시 `level` 값으로 로그 레벨을 결정한다.
 - `build_service_log_event(...)`: 서비스명, operation, outcome, host, latency, retry_count, error를 포함하는 구조화 이벤트 dict를 만든다.
 - `retry_call(operation, ..., retry_on, max_attempts, base_delay_seconds=0.5)`: 지수 백오프 기반으로 동기 함수를 재시도한다.
-- `close_service_clients(clients)`: 여러 wrapper/client에 대해 `close()`를 순회 호출하고 `None` 값은 무시한다.^[raw/articles/docmesh-py-core-api-reference-2026.md]
+- `close_service_clients(clients)`: 여러 wrapper/client에 대해 `close()`를 순회 호출하고 `None` 값은 무시한다. 비동기/혼합 cleanup에는 실패를 모아 나머지 종료를 계속하는 `async_close_service_clients()`를 사용한다.^[raw/articles/docmesh-py-core-api-reference-v0.2.0.md]
 
 설정 가이드는 `DOCMESH_LOG_LEVEL`의 기본값을 `INFO`로 두고, `configure_logging(level=...)`를 주지 않으면 이 env를 읽도록 문서화한다. 또한 `DOCMESH_LOG_LEVEL`은 `CommonConfig` 필드가 아니라 로깅 함수가 직접 읽는 환경변수라고 구분한다.^[raw/articles/docmesh-py-core-configuration-guide-2026.md]
 
-예제 문서는 `configure_logging(log_path="logs/app.log", force=True, env=environ)` 호출과 `DOCMESH_LOG_LEVEL=DEBUG|ERROR` 같은 실제 실행 패턴을 제시해, stderr와 파일 로그를 함께 쓰는 초기화 방식을 구체화한다.^[raw/articles/docmesh-py-core-examples-guide-2026.md]
+v0.2.0 예제는 `configure_logging(log_path=Path("./logs/docmesh.log"), force=True)` 호출을 제시하며, `log_path`의 부모 디렉터리가 자동 생성되고 `level`을 생략하면 `DOCMESH_LOG_LEVEL`을 읽는다고 설명한다.^[raw/articles/docmesh-py-core-examples-guide-v0.2.0.md]
 
 ## Guardrails
 

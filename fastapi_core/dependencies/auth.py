@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import OAuth2PasswordBearer
+from docmesh_py_core.function_logging import log_function_boundary
 from docmesh_py_core import AuthenticatedUser, KeycloakAuthService, ServiceConfigs, TokenValidationError
 
 from fastapi_core.dependencies.config import get_settings
@@ -12,10 +13,7 @@ from fastapi_core.schemas.user import UserInfo
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token", auto_error=False)
 
 
-def set_oauth2_token_url(token_url: str) -> None:
-    oauth2_scheme.model.flows.password.tokenUrl = token_url
-
-
+@log_function_boundary()
 def _to_user_info(user: AuthenticatedUser) -> UserInfo:
     roles: list[str] = []
     for role in user.realm_roles:
@@ -41,6 +39,7 @@ def _to_user_info(user: AuthenticatedUser) -> UserInfo:
     )
 
 
+@log_function_boundary()
 def get_auth_provider(
     request: Request,
     settings: ServiceConfigs = Depends(get_settings),
@@ -62,6 +61,7 @@ def get_auth_provider(
     return provider
 
 
+@log_function_boundary()
 async def get_current_user(
     token: str | None = Depends(oauth2_scheme),
     provider: KeycloakAuthService = Depends(get_auth_provider),
@@ -87,13 +87,43 @@ async def get_current_user(
     return _to_user_info(user)
 
 
-def require_permissions(*roles: str) -> Callable[..., UserInfo]:
+@log_function_boundary()
+def _raise_for_missing(required: tuple[str, ...], granted: set[str]) -> None:
+    if not set(required).issubset(granted):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden",
+        )
+
+
+@log_function_boundary()
+def require_roles(*roles: str) -> Callable[..., UserInfo]:
+    @log_function_boundary()
     async def dependency(current_user: UserInfo = Depends(get_current_user)) -> UserInfo:
-        if not set(roles).issubset(set(current_user.roles)):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Forbidden",
-            )
+        _raise_for_missing(roles, set(current_user.roles))
+        return current_user
+
+    return dependency
+
+
+@log_function_boundary()
+def require_scopes(*scopes: str) -> Callable[..., UserInfo]:
+    @log_function_boundary()
+    async def dependency(
+        current_user: UserInfo = Security(get_current_user, scopes=list(scopes)),
+    ) -> UserInfo:
+        _raise_for_missing(scopes, set(current_user.scopes))
+        return current_user
+
+    return dependency
+
+
+@log_function_boundary()
+def require_permissions(*permissions: str) -> Callable[..., UserInfo]:
+    @log_function_boundary()
+    async def dependency(current_user: UserInfo = Depends(get_current_user)) -> UserInfo:
+        granted = set(current_user.roles) | set(current_user.scopes)
+        _raise_for_missing(permissions, granted)
         return current_user
 
     return dependency

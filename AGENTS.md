@@ -10,3 +10,6 @@
 
 ### What to avoid
 - lazy import
+- optional dependency
+- sqlalchemy core style
+- access uv.lock

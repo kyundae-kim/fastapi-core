@@ -1,10 +1,10 @@
 ---
 title: Keycloak authentication API
 created: 2026-06-25
-updated: 2026-07-12
+updated: 2026-07-13
 type: concept
 tags: [service, api, security, integration, implementation]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-2026.md, fastapi_core/factory.py, fastapi_core/dependencies/auth.py, fastapi_core/routers/auth.py]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, fastapi_core/factory.py, fastapi_core/dependencies/auth.py, fastapi_core/routers/auth.py]
 confidence: medium
 ---
 
@@ -23,7 +23,7 @@ confidence: medium
 
 ## Token acquisition
 
-`fetch_access_token(*, scope=None, username=None, password=None) -> AccessTokenResult`는 기본적으로 `client_credentials` grant를 사용하고, 선택적으로 `scope`를 전달할 수 있으며, `config.token_grant_type == "password"`일 때는 설정 객체 필드와 무관하게 함수 인자 `username`, `password`를 반드시 전달해야 한다.^[raw/articles/docmesh-py-core-api-reference-2026.md]
+`fetch_access_token(*, scope=None, username=None, password=None) -> AccessTokenResult`는 기본적으로 `client_credentials` grant를 사용하고, 선택적으로 `scope`를 전달할 수 있다. v0.2.0 문서는 password grant에서 함수 인자를 우선 사용하되, 생략된 값은 `config.token_username`, `config.token_password`에서 가져온다고 설명한다.^[raw/articles/docmesh-py-core-api-reference-v0.2.0.md]
 
 대표 반환 필드는 `access_token`, `token_type`, `expires_in`, `refresh_token`, `scope`다.
 
@@ -31,8 +31,8 @@ confidence: medium
 
 - HTTP `400/401/403`은 인증 오류로 분류된다.
 - HTTP `408/429` 및 `5xx`는 일시적 오류로 분류되어 재시도 대상이 된다.
-- `password` grant인데 `username` 또는 `password` 인자가 빠지면 `KeycloakTokenConfigurationError`가 발생한다.
-- `KEYCLOAK_TOKEN_USERNAME`, `KEYCLOAK_TOKEN_PASSWORD`는 예시/테스트용 보조값일 뿐 자동 주입되지 않는다.
+- `password` grant에서 함수 인자가 빠진 경우 config의 `token_username`, `token_password`를 fallback으로 사용한다.
+- 함수 인자와 config 양쪽을 합쳐도 credential이 완전하지 않으면 `KeycloakTokenConfigurationError`가 발생한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md]
 - 일시적 장애는 `config.max_retries + 1`번까지 재시도되고, 재시도 이벤트는 `build_service_log_event()` 포맷으로 로깅된다.^[raw/articles/docmesh-py-core-api-reference-2026.md]^[raw/articles/docmesh-py-core-configuration-guide-2026.md]
 
 ## User extraction and validation

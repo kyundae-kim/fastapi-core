@@ -5,7 +5,10 @@ from pathlib import Path
 
 import pytest
 
+from fastapi_core import register_readiness_check
+from fastapi_core.config import AppConfig
 from fastapi_core.docmesh_settings import load_docmesh_settings
+from fastapi_core.factory import create_app
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -42,3 +45,44 @@ def build_test_settings(monkeypatch: pytest.MonkeyPatch):
 @pytest.fixture
 def settings(monkeypatch: pytest.MonkeyPatch):
     return build_test_settings(monkeypatch)
+
+
+@pytest.fixture
+def empty_app_factory(settings):
+    def factory(*, resources=(), lifespan=None, **config):
+        return create_app(
+            config=AppConfig(enabled_services=[], required_services=[], **config),
+            settings=settings,
+            lifespan=lifespan,
+            include_auth_router=False,
+            resources=resources,
+        )
+
+    return factory
+
+
+@pytest.fixture
+def auth_app_factory(settings):
+    def factory(provider, *, include_auth_router=True):
+        app = create_app(settings=settings, include_auth_router=include_auth_router)
+        app.state.auth_provider = provider
+        return app
+
+    return factory
+
+
+@pytest.fixture
+def readiness_app_factory(empty_app_factory):
+    def factory(checks, *, required=(), **config):
+        app = empty_app_factory(**config)
+        for name, check in checks.items():
+            register_readiness_check(
+                app,
+                name,
+                check,
+                required=name in required,
+                redact_errors=False,
+            )
+        return app
+
+    return factory
