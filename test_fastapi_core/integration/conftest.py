@@ -25,6 +25,11 @@ KEYCLOAK_REQUIRED_ENV = (
 )
 
 NATS_REQUIRED_ENV = ("NATS_SERVERS",)
+MINIO_REQUIRED_ENV = (
+    "MINIO_ENDPOINT",
+    "MINIO_ACCESS_KEY",
+    "MINIO_SECRET_KEY",
+)
 POSTGRES_CONNECTION_ENV = (
     "POSTGRES_HOST",
     "POSTGRES_DB",
@@ -67,6 +72,11 @@ def _parse_nats_server(server: str) -> tuple[str | None, int | None]:
     return host, port
 
 
+def _parse_minio_endpoint(endpoint: str) -> tuple[str | None, int | None]:
+    parsed = urlparse(endpoint if "://" in endpoint else f"//{endpoint}")
+    return parsed.hostname, parsed.port or 9000
+
+
 def _postgres_target() -> tuple[str | None, int | None]:
     dsn = os.getenv("POSTGRES_DSN")
     if dsn:
@@ -94,6 +104,13 @@ def require_nats_integration() -> None:
         pytest.skip(f"nats integration target is not reachable at {host}:{port}")
 
 
+def require_minio_integration() -> None:
+    _require_env(MINIO_REQUIRED_ENV, label="minio")
+    host, port = _parse_minio_endpoint(os.environ["MINIO_ENDPOINT"])
+    if not _is_tcp_reachable(host, port):
+        pytest.skip(f"minio integration target is not reachable at {host}:{port}")
+
+
 def require_postgres_integration() -> None:
     host, port = _postgres_target()
     if not _is_tcp_reachable(host, port):
@@ -108,6 +125,11 @@ def keycloak_integration_ready() -> None:
 @pytest.fixture
 def nats_integration_ready() -> None:
     require_nats_integration()
+
+
+@pytest.fixture
+def minio_integration_ready() -> None:
+    require_minio_integration()
 
 
 @pytest.fixture
