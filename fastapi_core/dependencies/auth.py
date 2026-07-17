@@ -5,38 +5,32 @@ from collections.abc import Callable
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import OAuth2PasswordBearer
 from docmesh_py_core.function_logging import log_function_boundary
-from docmesh_py_core import AuthenticatedUser, KeycloakAuthService, ServiceConfigs, TokenValidationError
+from docmesh_py_core import (
+    AuthenticatedUser,
+    KeycloakAuthService,
+    ServiceConfigs,
+    TokenValidationError,
+)
 
 from fastapi_core.dependencies.config import get_settings
-from fastapi_core.schemas.user import UserInfo
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token", auto_error=False)
 
 
 @log_function_boundary()
-def _to_user_info(user: AuthenticatedUser) -> UserInfo:
-    roles: list[str] = []
-    for role in user.realm_roles:
-        if role not in roles:
-            roles.append(role)
+def _get_roles(user: AuthenticatedUser) -> set[str]:
+    roles = set(user.realm_roles)
     for client_roles in user.client_roles.values():
-        for role in client_roles:
-            if role not in roles:
-                roles.append(role)
+        roles.update(client_roles)
+    return roles
 
-    scopes: list[str] = []
+
+@log_function_boundary()
+def _get_scopes(user: AuthenticatedUser) -> set[str]:
     raw_scope = user.claims.get("scope")
     if isinstance(raw_scope, str):
-        scopes = [scope for scope in raw_scope.split() if scope]
-
-    return UserInfo(
-        sub=user.sub,
-        username=user.preferred_username or user.sub,
-        email=user.email,
-        name=user.name,
-        roles=roles,
-        scopes=scopes,
-    )
+        return set(raw_scope.split())
+    return set()
 
 
 @log_function_boundary()
@@ -66,7 +60,7 @@ async def get_current_user(
     token: str | None = Depends(oauth2_scheme),
     provider: KeycloakAuthService = Depends(get_auth_provider),
     settings: ServiceConfigs = Depends(get_settings),
-) -> UserInfo:
+) -> AuthenticatedUser:
     del settings
     if not token:
         raise HTTPException(
@@ -84,7 +78,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 
-    return _to_user_info(user)
+    return user
 
 
 @log_function_boundary()
@@ -97,32 +91,39 @@ def _raise_for_missing(required: tuple[str, ...], granted: set[str]) -> None:
 
 
 @log_function_boundary()
-def require_roles(*roles: str) -> Callable[..., UserInfo]:
-    @log_function_boundary()
-    async def dependency(current_user: UserInfo = Depends(get_current_user)) -> UserInfo:
-        _raise_for_missing(roles, set(current_user.roles))
-        return current_user
-
-    return dependency
-
-
-@log_function_boundary()
-def require_scopes(*scopes: str) -> Callable[..., UserInfo]:
+def require_roles(*roles: str) -> Callable[..., AuthenticatedUser]:
     @log_function_boundary()
     async def dependency(
-        current_user: UserInfo = Security(get_current_user, scopes=list(scopes)),
-    ) -> UserInfo:
-        _raise_for_missing(scopes, set(current_user.scopes))
+        current_user: AuthenticatedUser = Depends(get_current_user),
+    ) -> AuthenticatedUser:
+        _raise_for_missing(roles, _get_roles(current_user))
         return current_user
 
     return dependency
 
 
 @log_function_boundary()
-def require_permissions(*permissions: str) -> Callable[..., UserInfo]:
+def require_scopes(*scopes: str) -> Callable[..., AuthenticatedUser]:
     @log_function_boundary()
-    async def dependency(current_user: UserInfo = Depends(get_current_user)) -> UserInfo:
-        granted = set(current_user.roles) | set(current_user.scopes)
+    async def dependency(
+        current_user: AuthenticatedUser = Security(
+            get_current_user,
+            scopes=list(scopes),
+        ),
+    ) -> AuthenticatedUser:
+        _raise_for_missing(scopes, _get_scopes(current_user))
+        return current_user
+
+    return dependency
+
+
+@log_function_boundary()
+def require_permissions(*permissions: str) -> Callable[..., AuthenticatedUser]:
+    @log_function_boundary()
+    async def dependency(
+        current_user: AuthenticatedUser = Depends(get_current_user),
+    ) -> AuthenticatedUser:
+        granted = _get_roles(current_user) | _get_scopes(current_user)
         _raise_for_missing(permissions, granted)
         return current_user
 

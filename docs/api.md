@@ -444,7 +444,7 @@ async def diagnostics(
 - `get_auth_provider()`는 여전히 keycloak wrapper의 `.client`를 꺼내 auth provider를 구성하는 전용 경로를 유지한다.
 - `get_nats_connection` 같은 **연결 상태/세션을 직접 보장하는 커스텀 dependency**는 아직 기본 제공하지 않는다.
 
-### 5.5 `get_current_user(token=Depends(oauth2_scheme), provider=Depends(get_auth_provider), settings=Depends(get_settings)) -> UserInfo`
+### 5.5 `get_current_user(token=Depends(oauth2_scheme), provider=Depends(get_auth_provider), settings=Depends(get_settings)) -> AuthenticatedUser`
 
 정의 위치: `fastapi_core.dependencies.auth`
 
@@ -453,9 +453,10 @@ async def diagnostics(
 - bearer token이 없으면 401과 `WWW-Authenticate: Bearer`를 반환한다.
 - provider의 `extract_user_info(token)`을 호출한다.
 - `docmesh_py_core.TokenValidationError`를 401 `Invalid token`으로 매핑한다.
-- 결과 `AuthenticatedUser`를 `UserInfo`로 변환한다.
+- provider가 반환한 `AuthenticatedUser` 객체를 변환하지 않고 그대로 반환한다. 원본 realm/client role 구분, 이름 필드와 claims는 dependency 경계에서 보존된다.
+- 공개 `GET /user` endpoint만 안전한 allowlist 응답인 `UserInfo`로 변환하며 원본 `claims`는 노출하지 않는다.
 
-#### 현재 변환 규칙
+#### `/user` 응답 변환 규칙
 - `username = preferred_username or sub`
 - `roles = realm_roles + client_roles[*]` 중복 제거
 - `scopes = claims["scope"]` 공백 분리
@@ -470,11 +471,11 @@ async def diagnostics(
 
 #### `require_roles(*roles)`
 
-`UserInfo.roles`에 요구 role이 모두 있는지 검사한다.
+`AuthenticatedUser.realm_roles`와 모든 `client_roles`를 합친 집합에 요구 role이 모두 있는지 검사한다.
 
 #### `require_scopes(*scopes)`
 
-`UserInfo.scopes`에 요구 scope가 모두 있는지 검사하며 요구 scope를 OpenAPI operation security에 반영한다.
+`AuthenticatedUser.claims["scope"]`의 공백 구분 scope를 검사하며 요구 scope를 OpenAPI operation security에 반영한다.
 
 #### `require_permissions(*permissions)`
 
@@ -483,19 +484,21 @@ role과 scope의 합집합을 permission 집합으로 보고 요구 값이 모�
 #### 동작
 - 각 factory는 `get_current_user()` 결과를 사용한다.
 - 하나라도 없으면 403 `Forbidden`
-- 통과 시 현재 `UserInfo` 반환
+- 통과 시 현재 `AuthenticatedUser` 객체를 그대로 반환
 
 #### 예시
 
 ```python
 from fastapi import APIRouter, Depends
+from docmesh_py_core import AuthenticatedUser
 from fastapi_core.dependencies import require_scopes
-from fastapi_core.schemas.user import UserInfo
 
 router = APIRouter()
 
 @router.get("/documents")
-async def documents(user: UserInfo = Depends(require_scopes("document:read"))):
+async def documents(
+    user: AuthenticatedUser = Depends(require_scopes("document:read")),
+):
     return {"ok": True}
 ```
 

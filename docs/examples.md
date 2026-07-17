@@ -67,19 +67,21 @@ app = create_app(include_auth_router=False)
 
 ## 4. 보호된 endpoint 추가
 
-`get_current_user()` dependency를 사용하면 bearer token을 `UserInfo`로 변환해 주입할 수 있다.
+`get_current_user()` dependency를 사용하면 bearer token에서 검증된 upstream `AuthenticatedUser`를 정보 손실 없이 주입할 수 있다. 공개 `/user` endpoint만 별도의 `UserInfo` 응답 DTO로 변환한다.
 
 ```python
 from fastapi import APIRouter, Depends
+from docmesh_py_core import AuthenticatedUser
 from fastapi_core import create_app
 from fastapi_core.dependencies.auth import get_current_user
-from fastapi_core.schemas.user import UserInfo
 
 router = APIRouter()
 
-@router.get("/me", response_model=UserInfo)
-async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
-    return user
+@router.get("/me")
+async def me(
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> dict[str, str]:
+    return {"sub": user.sub, "username": user.preferred_username or user.sub}
 
 
 app = create_app()
@@ -89,7 +91,8 @@ app.include_router(router)
 현재 구현 기준 동작:
 - `Authorization` 헤더에 bearer token이 없으면 `401`
 - 응답 헤더에 `WWW-Authenticate: Bearer` 포함
-- provider의 `extract_user_info(token)` 결과를 `UserInfo`로 변환
+- provider의 `extract_user_info(token)` 결과인 `AuthenticatedUser` identity와 원본 role/claims 구조를 보존
+- 기본 `/user` 응답에서만 `username`, 평탄화된 `roles`, `scopes`를 가진 `UserInfo`로 변환하고 raw claims는 노출하지 않음
 - `username = preferred_username or sub`
 - `roles = realm_roles + client_roles[*]` 중복 제거
 - `scopes = claims["scope"]`를 공백 기준 분리
@@ -102,16 +105,16 @@ app.include_router(router)
 
 ```python
 from fastapi import APIRouter, Depends
+from docmesh_py_core import AuthenticatedUser
 from fastapi_core import create_app
 from fastapi_core.dependencies import require_roles, require_scopes
-from fastapi_core.schemas.user import UserInfo
 
 router = APIRouter()
 
 @router.get("/documents")
 async def documents(
-    role_user: UserInfo = Depends(require_roles("editor")),
-    scope_user: UserInfo = Depends(require_scopes("document:read")),
+    role_user: AuthenticatedUser = Depends(require_roles("editor")),
+    scope_user: AuthenticatedUser = Depends(require_scopes("document:read")),
 ) -> dict[str, bool]:
     return {"ok": True}
 
@@ -121,10 +124,10 @@ app.include_router(router)
 ```
 
 현재 구현 기준 동작:
-- `require_roles`는 현재 사용자 `roles`, `require_scopes`는 `scopes`를 검사한다.
-- `require_permissions`는 role과 scope의 합집합을 검사한다.
+- `require_roles`는 현재 사용자의 realm/client role을, `require_scopes`는 `claims["scope"]`를 검사한다.
+- `require_permissions`는 두 role 집합과 scope의 합집합을 검사한다.
 - 하나라도 없으면 `403 Forbidden`
-- 통과 시 현재 `UserInfo`를 그대로 재사용 가능
+- 통과 시 현재 `AuthenticatedUser` 객체를 그대로 재사용 가능
 - `require_scopes`의 요구 scope는 OpenAPI security requirement에 노출됨
 
 ---

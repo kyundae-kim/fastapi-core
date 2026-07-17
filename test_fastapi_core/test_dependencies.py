@@ -6,7 +6,12 @@ import pytest
 import fastapi_core.dependencies as dependencies_module
 import fastapi_core.dependencies.config as config_module
 import fastapi_core.dependencies.services as services_module
-from docmesh_py_core import KeycloakAuthService, NatsConnectionBuilder, ServiceRuntime
+from docmesh_py_core import (
+    AuthenticatedUser,
+    KeycloakAuthService,
+    NatsConnectionBuilder,
+    ServiceRuntime,
+)
 from fastapi import Depends, HTTPException, Request
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
@@ -37,7 +42,7 @@ class FakeAuthenticatedUser:
     email = None
     name = "Bob"
     realm_roles = ["user"]
-    client_roles = {}
+    client_roles = {"fastapi-core": ["writer"]}
     claims = {"scope": "openid"}
 
 
@@ -63,6 +68,7 @@ def test_dependency_package_exports_declarative_authorization_helpers():
         "require_roles",
         "require_scopes",
     }.issubset(set(dir(dependencies_module)))
+    assert get_type_hints(get_current_user)["return"] is AuthenticatedUser
 
 
 def test_get_settings_falls_back_before_default_runtime_startup(monkeypatch):
@@ -139,6 +145,30 @@ def test_get_current_user_returns_401_when_token_missing(auth_app_factory):
     assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
+@pytest.mark.asyncio
+async def test_get_current_user_preserves_authenticated_user(settings):
+    user = AuthenticatedUser(
+        sub="user-1",
+        preferred_username="bob",
+        email="bob@example.com",
+        given_name="Bob",
+        family_name="Builder",
+        name="Bob Builder",
+        realm_roles=["user"],
+        client_roles={"fastapi-core": ["writer"]},
+        claims={"scope": "openid profile"},
+    )
+
+    class Provider:
+        def extract_user_info(self, token: str) -> AuthenticatedUser:
+            assert token == "demo-token"
+            return user
+
+    result = await get_current_user("demo-token", Provider(), settings)
+
+    assert result is user
+
+
 def test_require_permissions_returns_403_when_role_missing(auth_app_factory):
     app = auth_app_factory(FakeAuthProvider(), include_auth_router=False)
 
@@ -163,6 +193,23 @@ def test_require_permissions_accepts_scope_permissions(auth_app_factory):
     with TestClient(app) as client:
         response = client.get(
             "/profile",
+            headers={"Authorization": "Bearer demo-token"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+
+def test_require_permissions_accepts_client_roles(auth_app_factory):
+    app = auth_app_factory(FakeAuthProvider(), include_auth_router=False)
+
+    @app.get("/write")
+    async def write(_user=Depends(require_permissions("writer"))):
+        return {"ok": True}
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/write",
             headers={"Authorization": "Bearer demo-token"},
         )
 
@@ -197,15 +244,15 @@ def test_get_current_user_uses_service_client_backed_auth_provider(empty_app_fac
     app.state.auth_provider = None
     app.state.service_clients = FakeServiceClients(provider)
 
-    @app.get("/me", response_model=UserInfo)
-    async def me(user: UserInfo = Depends(get_current_user)):
-        return user
+    @app.get("/me")
+    async def me(user: AuthenticatedUser = Depends(get_current_user)):
+        return {"preferred_username": user.preferred_username}
 
     with TestClient(app) as client:
         response = client.get("/me", headers={"Authorization": "Bearer demo-token"})
 
     assert response.status_code == 200
-    assert response.json()["username"] == "bob"
+    assert response.json()["preferred_username"] == "bob"
     assert provider.token == "demo-token"
 
 

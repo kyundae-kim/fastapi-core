@@ -72,9 +72,9 @@ uv run pytest -q -m integration
 ```
 
 최근 실제 실행 결과:
-- `uv run pytest -q -m 'not integration'` → `103 passed, 11 deselected, 2 warnings`
-- `uv run pytest -q` → `114 passed, 3 warnings`
-- `uv run pytest -q -m integration` → `11 passed, 103 deselected, 3 warnings`
+- `uv run pytest -q -m 'not integration'` → `105 passed, 11 deselected, 2 warnings`
+- `uv run pytest -q` → `116 passed, 3 warnings`
+- `uv run pytest -q -m integration` → `11 passed, 105 deselected, 3 warnings`
 
 테스트 러너/환경 특성:
 - `pytest` 사용
@@ -231,8 +231,10 @@ deprecated 설정 주입 호환 테스트에서는 `create_app(settings=settings
 
 현재 검증하는 항목:
 - `get_current_user()`의 token 없음 경로 → 401
+- `get_current_user()`가 provider의 `AuthenticatedUser` 객체 identity를 보존하는 경로
 - `WWW-Authenticate: Bearer` 헤더 검증
 - `require_permissions("admin")`의 role 부족 경로 → 403
+- `require_permissions(...)`가 client role과 scope를 원본 `AuthenticatedUser` 구조에서 검사하는 경로
 - service_clients 기반 auth provider 경로에서 `keycloak` client가 요청된다.
 - service_clients에서 받은 provider가 token 해석에 사용된다.
 - `get_service_client("sqlite")`가 wrapper 기반 service client를 반환한다.

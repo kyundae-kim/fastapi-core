@@ -140,9 +140,9 @@ def register_error_mapper(
 ) -> None: ...
 
 
-def require_roles(*roles: str) -> Callable[..., UserInfo]: ...
-def require_scopes(*scopes: str) -> Callable[..., UserInfo]: ...
-def require_permissions(*permissions: str) -> Callable[..., UserInfo]: ...
+def require_roles(*roles: str) -> Callable[..., AuthenticatedUser]: ...
+def require_scopes(*scopes: str) -> Callable[..., AuthenticatedUser]: ...
+def require_permissions(*permissions: str) -> Callable[..., AuthenticatedUser]: ...
 ```
 
 `create_app(..., resources=(), error_renderer=None)`는 `ManagedResource` 목록을 공통 lifecycle/readiness registry에 연결하고 선택적 앱 단위 오류 renderer를 설치한다. 반환 객체는 plain `FastAPI` 계약을 유지하므로, 런타임에 동적으로 `app.register_readiness_check` 메서드를 추가하는 방식은 공개 계약으로 사용하지 않는다.
@@ -272,14 +272,15 @@ readiness 확장은 `app.state.readiness_registry`를 단일 source of truth로 
 - SR-070. `get_current_user()`는 bearer token을 읽어야 한다.
 - SR-071. token이 없으면 401을 반환해야 한다.
 - SR-072. token validation 실패를 401로 매핑해야 한다.
-- SR-073. validation 결과를 `UserInfo`로 변환해야 한다.
+- SR-073. `get_current_user()`는 validation 결과인 `AuthenticatedUser`를 변환하지 않고 동일 객체로 반환해야 한다.
+- SR-073A. `/user` endpoint는 `AuthenticatedUser`를 안전한 allowlist `UserInfo` 응답으로 변환하고 raw claims를 노출하지 않아야 한다.
 - SR-074. secure decode / insecure decode / introspection 분기 지원 여부는 구현 단계에서 선택될 수 있으나, 외부 계약은 401/성공 변환 동작을 유지해야 한다.
 
 ### 6.5 Permission dependency
 
 - SR-080. `require_roles(*roles)`, `require_scopes(*scopes)`, `require_permissions(*permissions)`는 dependency factory여야 한다.
-- SR-081. `require_roles`는 `UserInfo.roles`, `require_scopes`는 `UserInfo.scopes`, `require_permissions`는 두 집합의 합집합을 검사해야 한다.
-- SR-082. 필요한 값이 없으면 403을 반환하고 통과 시 현재 사용자 정보를 그대로 반환해야 한다.
+- SR-081. `require_roles`는 `AuthenticatedUser.realm_roles/client_roles`, `require_scopes`는 `claims["scope"]`, `require_permissions`는 role과 scope 합집합을 검사해야 한다.
+- SR-082. 필요한 값이 없으면 403을 반환하고 통과 시 동일한 `AuthenticatedUser` 객체를 반환해야 한다.
 - SR-083. `require_scopes`가 선언한 scope는 OpenAPI operation security requirement에 반영되어야 한다.
 
 ---

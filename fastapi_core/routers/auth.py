@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from docmesh_py_core.function_logging import log_function_boundary
 from docmesh_py_core import (
+    AuthenticatedUser,
     KeycloakTokenAuthenticationError,
     KeycloakTokenConfigurationError,
     KeycloakTokenError,
@@ -27,6 +28,32 @@ _TOKEN_ISSUE_ERRORS = (
     (KeycloakTokenError, (502, "Authentication service error", "upstream_error")),
 )
 _UNEXPECTED_TOKEN_ISSUE_ERROR = (500, "Authentication service error", "unexpected_error")
+
+
+@log_function_boundary()
+def _to_user_info(user: AuthenticatedUser) -> UserInfo:
+    roles = list(
+        dict.fromkeys(
+            [
+                *user.realm_roles,
+                *(
+                    role
+                    for client_roles in user.client_roles.values()
+                    for role in client_roles
+                ),
+            ]
+        )
+    )
+    raw_scope = user.claims.get("scope")
+    scopes = raw_scope.split() if isinstance(raw_scope, str) else []
+    return UserInfo(
+        sub=user.sub,
+        username=user.preferred_username or user.sub,
+        email=user.email,
+        name=user.name,
+        roles=roles,
+        scopes=scopes,
+    )
 
 
 @log_function_boundary()
@@ -99,5 +126,7 @@ async def issue_token(
 
 @router.get("/user", response_model=UserInfo)
 @log_function_boundary()
-async def read_user(current_user: UserInfo = Depends(get_current_user)) -> UserInfo:
-    return current_user
+async def read_user(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> UserInfo:
+    return _to_user_info(current_user)

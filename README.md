@@ -98,14 +98,16 @@ app = create_app(include_auth_router=False)
 
 ```python
 from fastapi import APIRouter, Depends
+from docmesh_py_core import AuthenticatedUser
 from fastapi_core.dependencies.auth import get_current_user
-from fastapi_core.schemas.user import UserInfo
 
 router = APIRouter()
 
-@router.get("/me", response_model=UserInfo)
-async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
-    return user
+@router.get("/me")
+async def me(
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> dict[str, str]:
+    return {"sub": user.sub, "username": user.preferred_username or user.sub}
 ```
 
 더 많은 예제는 `docs/examples.md`를 참고하세요.
@@ -133,8 +135,8 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 - `/token`은 `OAuth2PasswordRequestForm`을 받습니다.
 - 현재 구현은 `scope`, `username`, `password`를 provider의 `fetch_access_token(...)`에 직접 전달합니다.
 - provider 예외는 유형에 따라 `401`, `500`, `503`, `502/500`으로 매핑되며, 실패 응답에는 `WWW-Authenticate: Bearer` 헤더가 포함됩니다.
-- `/user`와 `get_current_user()`는 bearer token을 읽고 provider의 `extract_user_info(...)` 결과를 `UserInfo`로 변환합니다.
-- role은 `require_roles(...)`, scope는 `require_scopes(...)`, role/scope 통합 permission은 `require_permissions(...)`로 검사합니다.
+- `get_current_user()`는 bearer token을 읽고 provider의 `AuthenticatedUser`를 정보 손실 없이 그대로 반환합니다. `/user` endpoint에서만 공개 응답 DTO인 `UserInfo`로 변환합니다.
+- role은 `AuthenticatedUser.realm_roles/client_roles`, scope는 `claims["scope"]`를 기준으로 검사합니다. `require_roles(...)`, `require_scopes(...)`, `require_permissions(...)`도 같은 `AuthenticatedUser`를 반환합니다.
 - 각 앱은 자신의 OAuth2 scheme과 token URL을 유지하므로 multi-app OpenAPI 구성이 서로 영향을 주지 않습니다.
 
 ### 헬스체크
@@ -211,4 +213,4 @@ uv run pytest -q
 ```
 
 최근 실행 결과:
-- `114 passed, 3 third-party/upstream deprecation warnings`
+- `116 passed, 3 third-party/upstream deprecation warnings`
