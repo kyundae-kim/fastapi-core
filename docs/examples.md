@@ -405,7 +405,7 @@ async def sdk_status(sdk: DomainSDK = Depends(domain_sdk.dependency)):
 - `get_resource(name)`은 lifecycle에서 생성된 동일 객체를 route에 주입한다.
 - `ResourceKey[T]`를 등록과 `Depends(key.dependency)`에 함께 사용하면 반환 타입을 유지하고 resource 이름 문자열을 한 곳에서 관리한다.
 - healthcheck의 `None`/`True`는 성공, `False`는 실패다. `HealthCheckResult`를 반환하면 하위 상태가 `domain-sdk.<service>` details로 보존된다.
-- `settings`를 생략한 기본 경로는 custom lifespan보다 먼저 `assemble_service_runtime(...)`으로 외부 서비스 runtime을 준비한다.
+- `runtime`과 deprecated `settings`를 생략한 기본 경로는 custom lifespan보다 먼저 `assemble_service_runtime(...)`으로 외부 서비스 runtime을 준비한다.
 - 준비된 runtime은 `app.state.service_runtime`에 저장되고 clients/settings도 기존 state 키로 노출된다.
 - custom lifespan startup/shutdown이 호출된다.
 - 내부 `service_clients`는 lifespan 종료 시 `await service_runtime.close()`를 통해 정리된다.
@@ -420,30 +420,28 @@ async def sdk_status(sdk: DomainSDK = Depends(domain_sdk.dependency)):
 
 ## 12. 선택 서비스만 로딩하는 예시
 
-`docmesh_py_core.ServiceConfigs`도 서비스 선택에 맞춰 줄여서 로딩할 수 있다.
+기본 assembly 경로에서도 서비스 선택을 필요한 범위로 제한할 수 있다.
 
 ```python
 from fastapi_core.config import AppConfig
-from fastapi_core.docmesh_settings import load_docmesh_settings
 from fastapi_core.factory import create_app
 
 config = AppConfig(
     enabled_services=["sqlite"],
     required_services=["sqlite"],
 )
-settings = load_docmesh_settings(("sqlite",))
-
 app = create_app(
     config=config,
-    settings=settings,
     include_auth_router=False,
 )
 ```
 
-현재 테스트에서 확인된 결과:
+lifespan startup 이후 확인되는 결과:
 - `app.state.settings.sqlite is not None`
 - `app.state.settings.keycloak is None`
 - readiness 기본 대상도 `sqlite`만 사용
+
+테스트나 외부 조립 코드가 이미 완성된 `ServiceRuntime`을 보유한 경우에는 `create_app(runtime=runtime)`으로 동일 객체를 주입한다. `settings=`는 deprecated 호환 경로이며 `runtime=`과 동시에 전달할 수 없다.
 
 ---
 

@@ -114,8 +114,9 @@ async def me(user: UserInfo = Depends(get_current_user)) -> UserInfo:
 
 ### `create_app(...)`
 - `config is None`이면 `load_app_config()`를 사용합니다.
-- `settings is None`이면 lifespan startup에서 `assemble_service_runtime(...)`으로 설정 검증, 필수 서비스 검증, client 조립을 수행합니다.
-- 명시적 `settings`를 전달하면 direct API 주입 경로를 유지하되 동일한 `ServiceRuntime` lifecycle로 감쌉니다.
+- `runtime`과 `settings`가 모두 `None`이면 lifespan startup에서 `assemble_service_runtime(...)`으로 설정 검증, 필수 서비스 검증, client 조립을 수행합니다.
+- 명시적 `runtime`을 전달하면 완성된 `ServiceRuntime`을 재조립하지 않고 동일한 lifecycle과 app state에 연결합니다.
+- `settings` 주입은 deprecated 호환 경로입니다. 새 테스트와 외부 조립 코드는 `runtime=`을 사용해야 하며 두 인자를 동시에 전달할 수 없습니다.
 - 앱 로깅을 먼저 초기화합니다.
 - 기본 경로의 service client map은 lifespan startup에서 준비됩니다.
 - `FastAPI(root_path=..., lifespan=...)`를 생성하고 내부 lifespan wrapper의 `finally`에서 `await service_runtime.close()`를 수행합니다.
@@ -210,4 +211,4 @@ uv run pytest -q
 ```
 
 최근 실행 결과:
-- `101 passed, 2 third-party deprecation warnings`
+- `114 passed, 3 third-party/upstream deprecation warnings`

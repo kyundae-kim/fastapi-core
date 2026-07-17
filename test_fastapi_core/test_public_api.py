@@ -85,6 +85,7 @@ def test_curated_package_exports_are_stable():
 def test_create_app_signature_is_stable():
     assert _parameter_contract(fastapi_core.create_app) == [
         ("config", Parameter.POSITIONAL_OR_KEYWORD, None),
+        ("runtime", Parameter.KEYWORD_ONLY, None),
         ("settings", Parameter.KEYWORD_ONLY, None),
         ("lifespan", Parameter.KEYWORD_ONLY, None),
         ("include_auth_router", Parameter.KEYWORD_ONLY, True),

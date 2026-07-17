@@ -114,6 +114,59 @@ def test_create_app_supports_explicitly_empty_service_selection():
     assert app.state.service_clients == {}
 
 
+def test_create_app_accepts_prebuilt_service_runtime(settings):
+    events: list[str] = []
+
+    class SqliteClient:
+        def check(self):
+            events.append("checked")
+
+        def close(self):
+            events.append("closed")
+
+    runtime = ServiceRuntime(
+        configs=settings,
+        clients={Service.SQLITE: SqliteClient()},
+        selected_services=frozenset({Service.SQLITE}),
+        required_services=frozenset({Service.SQLITE}),
+    )
+
+    app = create_app(
+        config=AppConfig(
+            enabled_services=[],
+            required_services=[],
+            startup_healthcheck=True,
+        ),
+        runtime=runtime,
+        include_auth_router=False,
+    )
+
+    with TestClient(app):
+        assert app.state.service_runtime is runtime
+        assert app.state.settings is settings
+        assert app.state.service_clients is runtime.clients
+        assert app.state.readiness_registry.specs["sqlite"].required is True
+        assert events == ["checked"]
+
+    assert events == ["checked", "closed"]
+
+
+def test_create_app_rejects_runtime_with_settings(settings):
+    runtime = ServiceRuntime(
+        configs=settings,
+        clients={},
+        selected_services=frozenset(),
+    )
+
+    with pytest.raises(ValueError, match="runtime and settings cannot be provided together"):
+        create_app(runtime=runtime, settings=settings)
+
+
+def test_create_app_warns_that_settings_injection_is_deprecated(settings):
+    with pytest.deprecated_call(match="Pass a prebuilt ServiceRuntime via runtime instead"):
+        create_app(settings=settings, include_auth_router=False)
+
+
 def test_create_app_runs_custom_lifespan(settings):
     events: list[str] = []
 

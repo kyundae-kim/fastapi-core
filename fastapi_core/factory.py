@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import warnings
 from collections.abc import Callable, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
@@ -202,7 +203,9 @@ def _configure_service_runtime(app: FastAPI, runtime: ServiceRuntime) -> None:
     app.state.settings = runtime.configs
     app.state.service_clients = runtime.clients
     readiness_registry: ReadinessRegistry = app.state.readiness_registry
-    required_services = set(app.state.config.required_services)
+    required_services = {
+        Service.parse(service).value for service in runtime.required_services
+    }
     for service, client in runtime.clients.items():
         service_name = Service.parse(service).value
         check = client.check
@@ -300,6 +303,7 @@ def _build_lifespan(
 def create_app(
     config: AppConfig | None = None,
     *,
+    runtime: ServiceRuntime | None = None,
     settings: ServiceConfigs | None = None,
     lifespan: Callable | None = None,
     include_auth_router: bool = True,
@@ -308,16 +312,32 @@ def create_app(
 ) -> FastAPI:
     """Create an application with lifespan-managed DocMesh services.
 
-    ``settings`` is an explicit compatibility and test-injection seam. Production
-    applications should omit it so startup assembles the runtime from the process
-    environment and the configured ``RuntimePlan``.
+    ``runtime`` is the explicit service-injection seam. Production applications
+    should omit it so startup assembles the runtime from the process environment
+    and the configured ``RuntimePlan``.
+
+    ``settings`` is deprecated compatibility input. Pass a prebuilt
+    ``ServiceRuntime`` via ``runtime`` instead.
     """
+    if runtime is not None and settings is not None:
+        raise ValueError("runtime and settings cannot be provided together")
+    if settings is not None:
+        warnings.warn(
+            "settings injection is deprecated; Pass a prebuilt ServiceRuntime "
+            "via runtime instead",
+            DeprecationWarning,
+            stacklevel=3,
+        )
     app_config = config or load_app_config()
     root_logger = _configure_application_logging(app_config)
     service_runtime = (
-        _build_injected_service_runtime(settings, app_config)
-        if settings is not None
-        else None
+        runtime
+        if runtime is not None
+        else (
+            _build_injected_service_runtime(settings, app_config)
+            if settings is not None
+            else None
+        )
     )
 
     readiness_registry = ReadinessRegistry(

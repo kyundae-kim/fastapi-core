@@ -167,9 +167,10 @@ readiness 확장은 `app.state.readiness_registry`를 단일 source of truth로 
 
 ### 4.1 App factory
 
-- SR-001. 시스템은 `create_app(config=None, *, settings=None, lifespan=None, include_auth_router=True, resources=(), error_renderer=None) -> FastAPI`를 제공해야 한다.
+- SR-001. 시스템은 `create_app(config=None, *, runtime=None, settings=None, lifespan=None, include_auth_router=True, resources=(), error_renderer=None) -> FastAPI`를 제공해야 한다.
 - SR-002. `config is None`이면 기본 환경 설정 객체를 생성해야 한다.
-- SR-003. `settings is None`이면 환경기반 서비스 설정을 로딩해야 하며, keyword-only `settings` 주입은 테스트·호환성 경계로 제한해야 한다.
+- SR-003. `runtime`과 `settings`가 모두 `None`이면 환경기반 서비스 설정과 runtime을 조립해야 한다. keyword-only `runtime`은 테스트·외부 조립 주입 경계이며, `settings` 주입은 deprecated 호환 경계로만 유지해야 한다.
+- SR-003A. `runtime`과 `settings`를 동시에 전달하면 명시적 오류를 발생시켜야 한다.
 - SR-004. 생성된 앱은 `root_path`를 설정할 수 있어야 한다.
 - SR-005. 커스텀 lifespan을 주입할 수 있어야 한다.
 - SR-006. 생성된 앱은 `app.state.config`, `app.state.settings`, `app.state.service_clients`, `app.state.root_logger`를 저장해야 한다.
@@ -354,6 +355,7 @@ readiness 확장은 `app.state.readiness_registry`를 단일 source of truth로 
 - SR-151. 서비스 대안 그룹은 assembly `one_of` 정책으로 검증되어야 한다.
 - SR-152. startup healthcheck 실패 시 조립된 서비스 client는 custom lifespan 진입 전에 rollback되어야 한다.
 - SR-153. service runtime 종료 실패는 민감정보 없는 구조화 이벤트로 기록하고 `ServiceCloseError`로 전파해야 한다.
+- SR-153A. 명시적으로 주입된 `ServiceRuntime`은 재조립하지 않고 동일 객체를 app state, startup healthcheck, shutdown lifecycle에 사용해야 한다.
 
 ### 10.1 Managed resource lifecycle
 
@@ -408,6 +410,8 @@ readiness 확장은 `app.state.readiness_registry`를 단일 source of truth로 
 - required service가 enabled service에 없으면 앱 생성 또는 startup이 실패하는지 검증
 - 목록형 환경변수의 미설정 기본값과 명시적 빈 목록 의미를 각각 검증
 - 서로 다른 `token_url`의 두 앱에서 OpenAPI security schema가 격리되는지 검증
+- 완성된 `ServiceRuntime` 주입 시 객체 identity, required 정책, startup check, shutdown close가 보존되는지 검증
+- `runtime`과 deprecated `settings`의 동시 주입 거부 및 deprecation warning을 검증
 - role, scope, 통합 permission dependency의 성공/403 및 scope OpenAPI 선언을 검증
 - 유효/무효 correlation ID의 request state와 response header 전파를 검증
 - HTTP, validation, 미처리 예외의 `ProblemDetail` 변환과 민감정보 마스킹을 검증

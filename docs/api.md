@@ -65,13 +65,14 @@ readiness state의 단일 통합 지점은 `app.state.readiness_registry`다. �
 
 ## 3. App factory API
 
-### 3.1 `create_app(config=None, *, settings=None, lifespan=None, include_auth_router=True, resources=(), error_renderer=None) -> FastAPI`
+### 3.1 `create_app(config=None, *, runtime=None, settings=None, lifespan=None, include_auth_router=True, resources=(), error_renderer=None) -> FastAPI`
 
 공통 FastAPI 애플리케이션을 생성한다.
 
 #### 입력
 - `config: AppConfig | None`
-- `settings: docmesh_py_core.ServiceConfigs | None`
+- `runtime: docmesh_py_core.ServiceRuntime | None`
+- `settings: docmesh_py_core.ServiceConfigs | None` (deprecated)
 - `lifespan: Callable | None`
 - `include_auth_router: bool = True`
 - `resources: Sequence[ManagedResource[Any]] = ()`
@@ -80,9 +81,11 @@ readiness state의 단일 통합 지점은 `app.state.readiness_registry`다. �
 #### 현재 구현 동작
 - `config is None`이면 `load_app_config()`를 사용한다.
 - `_configure_application_logging(config)`로 앱 로깅을 초기화한다.
-- `settings is None`이고 활성 서비스가 있으면 lifespan startup에서 `RuntimePlan`을 구성해 `assemble_service_runtime(..., plan=plan)`을 호출하고 설정 탐색, required 검증, client 생성, 선택적 startup healthcheck를 수행한다.
+- `runtime`과 `settings`가 모두 `None`이고 활성 서비스가 있으면 lifespan startup에서 `RuntimePlan`을 구성해 `assemble_service_runtime(..., plan=plan)`을 호출하고 설정 탐색, required 검증, client 생성, 선택적 startup healthcheck를 수행한다.
 - `enabled_services`가 명시적으로 비어 있으면 assembly를 호출하지 않고 빈 `ServiceRuntime`을 설치한다.
-- keyword-only `settings`가 명시되면 direct factory로 client를 만들고 `ServiceRuntime`에 담는 테스트·호환성 주입 경로를 사용한다. 운영 애플리케이션은 이를 생략하고 기본 assembly 경로를 사용해야 한다.
+- keyword-only `runtime`이 명시되면 전달된 `ServiceRuntime`을 그대로 앱 lifecycle과 state에 연결한다. 테스트와 외부 조립 경로는 설정 대신 완성된 runtime을 주입해야 하며 readiness의 required 여부도 `runtime.required_services`를 따른다.
+- keyword-only `settings` 주입은 deprecated 호환 경로다. direct factory로 client를 만들어 `ServiceRuntime`에 담지만 새 코드는 사용하지 않아야 한다.
+- `runtime`과 `settings`를 동시에 전달하면 `ValueError`를 발생시킨다.
 - `FastAPI(root_path=config.root_path, lifespan=_build_lifespan(...))` 인스턴스를 생성한다.
 - `app.state`에 아래 값을 저장한다.
   - `config`
@@ -108,7 +111,7 @@ readiness state의 단일 통합 지점은 `app.state.readiness_registry`다. �
 기본 `AppConfig`에서는 `enabled_services == ["keycloak"]`, `required_services == ["keycloak"]`다.
 
 #### lifespan 동작
-기본 경로에서는 lifespan startup이 enabled/required, `one_of`, 병렬 실행, per-service/overall timeout을 하나의 `RuntimePlan`으로 선언한다. 활성 서비스가 있으면 `assemble_service_runtime(..., plan=plan)`을 await한 뒤 `app.state.service_runtime/settings/service_clients`를 설치하고 service check를 typed registry에 등록한다. `startup_healthcheck=True`이면 assembly 단계에서 동일한 timeout 정책으로 startup healthcheck를 수행하고, 명시적 `settings` 주입 경로에서는 생성된 runtime의 `check()`를 호출한다.
+기본 경로에서는 lifespan startup이 enabled/required, `one_of`, 병렬 실행, per-service/overall timeout을 하나의 `RuntimePlan`으로 선언한다. 활성 서비스가 있으면 `assemble_service_runtime(..., plan=plan)`을 await한 뒤 `app.state.service_runtime/settings/service_clients`를 설치하고 service check를 typed registry에 등록한다. `startup_healthcheck=True`이면 assembly 단계에서 동일한 timeout 정책으로 startup healthcheck를 수행하고, 명시적 `runtime` 또는 deprecated `settings` 주입 경로에서는 주입된 runtime의 `check()`를 호출한다.
 
 사용자가 전달한 custom lifespan은 service runtime과 managed resource 준비 뒤 실행된다. startup check 실패 시 생성된 client/resource를 rollback한다. custom lifespan shutdown 뒤 managed resource를 역순으로 정리하고, 마지막으로 service runtime을 닫는다. service runtime 종료 실패는 `service_runtime_close_failed` 구조화 로그를 남긴 뒤 `ServiceCloseError`로 전파한다.
 

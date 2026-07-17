@@ -72,9 +72,9 @@ uv run pytest -q -m integration
 ```
 
 최근 실제 실행 결과:
-- `uv run pytest -q -m 'not integration'` → `98 passed, 11 deselected, 2 warnings`
-- `uv run pytest -q` → `109 passed, 3 warnings`
-- `uv run pytest -q -m integration` → `11 passed, 98 deselected, 3 warnings`
+- `uv run pytest -q -m 'not integration'` → `103 passed, 11 deselected, 2 warnings`
+- `uv run pytest -q` → `114 passed, 3 warnings`
+- `uv run pytest -q -m integration` → `11 passed, 103 deselected, 3 warnings`
 
 테스트 러너/환경 특성:
 - `pytest` 사용
@@ -136,7 +136,7 @@ PostgreSQL 통합 테스트 env:
 
 ### 4.2 `settings` fixture
 
-각 테스트에서 `create_app(settings=settings)` 형태로 주입된다.
+deprecated 설정 주입 호환 테스트에서는 `create_app(settings=settings)` 형태로 사용한다. 신규 runtime 주입 계약은 완성된 `ServiceRuntime`을 `create_app(runtime=runtime)`으로 전달해 검증한다.
 
 ---
 
@@ -157,6 +157,8 @@ PostgreSQL 통합 테스트 env:
 - enabled/required 서비스와 startup healthcheck 정책이 `RuntimePlan`으로 assembly API에 전달된다.
 - `one_of` 서비스 대안과 per-service/overall timeout이 같은 `RuntimePlan`에 전달된다.
 - 명시적인 빈 서비스 선택은 전체 서비스 fallback 없이 빈 runtime/readiness로 유지된다.
+- 완성된 `ServiceRuntime`을 명시적으로 주입하면 같은 객체와 configs/clients가 app state에 보존된다.
+- `runtime`과 `settings` 동시 전달은 거부되고, deprecated `settings` 주입은 경고를 발생시킨다.
 - 명시적 `settings` 주입 경로도 `ServiceRuntime`으로 감싸고 startup healthcheck를 실행할 수 있다.
 - 명시적 설정에서도 서비스 대안 정책을 검증한다.
 - startup healthcheck 실패 시 생성된 client가 rollback되고 custom lifespan은 진입하지 않는다.
