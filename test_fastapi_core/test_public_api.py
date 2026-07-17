@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import MISSING, fields
+from importlib import import_module
 from inspect import Parameter, signature
 
 import fastapi_core
@@ -159,10 +160,18 @@ def test_extension_function_signatures_are_stable():
     ]
 
 
-def test_readiness_state_exposes_only_typed_registry(settings):
+def test_readiness_state_exposes_only_typed_registry(runtime_factory):
+    class Client:
+        def check(self):
+            return None
+
+    runtime = runtime_factory(
+        clients={"keycloak": Client()},
+        required=("keycloak",),
+    )
     app = create_app(
         config=AppConfig(enabled_services=["keycloak"], required_services=["keycloak"]),
-        settings=settings,
+        runtime=runtime,
         include_auth_router=False,
     )
     registry = app.state.readiness_registry
@@ -189,3 +198,23 @@ def test_obsolete_refactoring_helpers_are_not_reintroduced():
     assert not hasattr(factory_module, "_wrap_readiness_check")
     assert not hasattr(factory_module, "_build_readiness_checks")
     assert not hasattr(ResourceRegistry, "_bind_healthcheck")
+
+
+def test_readiness_and_resource_implementations_have_explicit_module_owners():
+    readiness = import_module("fastapi_core.readiness")
+    resources = import_module("fastapi_core.resources")
+
+    assert readiness.ReadinessCheckSpec is fastapi_core.ReadinessCheckSpec
+    assert readiness.register_readiness_check is fastapi_core.register_readiness_check
+    assert resources.ManagedResource is fastapi_core.ManagedResource
+    assert resources.ResourceKey is fastapi_core.ResourceKey
+
+
+def test_factory_collaborators_have_explicit_module_owners():
+    application_logging = import_module("fastapi_core.logging")
+    lifecycle = import_module("fastapi_core.lifecycle")
+    runtime = import_module("fastapi_core.runtime")
+
+    assert application_logging.JsonLogFormatter.__module__ == "fastapi_core.logging"
+    assert lifecycle.build_lifespan.__module__ == "fastapi_core.lifecycle"
+    assert runtime.configure_service_runtime.__module__ == "fastapi_core.runtime"

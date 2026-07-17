@@ -10,7 +10,11 @@ from docmesh_py_core import (
     AuthenticatedUser,
     KeycloakAuthService,
     NatsConnectionBuilder,
+    Service,
     ServiceRuntime,
+    create_keycloak_client,
+    create_nats_client,
+    create_sqlite_client,
 )
 from fastapi import Depends, HTTPException, Request
 from fastapi.testclient import TestClient
@@ -110,11 +114,36 @@ def test_service_dependency_module_exposes_typed_service_getters():
     assert get_type_hints(services_module.get_service_runtime)["return"] is ServiceRuntime
 
 
-def test_get_service_runtime_returns_lifespan_owned_runtime(settings):
-    app = create_app(settings=settings, include_auth_router=False)
+def test_get_service_runtime_returns_lifespan_owned_runtime(empty_runtime):
+    app = create_app(runtime=empty_runtime, include_auth_router=False)
     request = Request({"type": "http", "app": app})
 
     assert get_service_runtime(request) is app.state.service_runtime
+
+
+def test_service_runtime_takes_precedence_over_legacy_client_state(settings):
+    class Client:
+        def check(self):
+            return None
+
+    runtime_client = Client()
+    legacy_client = Client()
+    runtime = ServiceRuntime(
+        configs=settings,
+        clients={Service.SQLITE: runtime_client},
+        selected_services=frozenset({Service.SQLITE}),
+    )
+    app = create_app(
+        config=AppConfig(enabled_services=[], required_services=[]),
+        runtime=runtime,
+        include_auth_router=False,
+    )
+    app.state.service_clients = {Service.SQLITE: legacy_client}
+    request = Request({"type": "http", "app": app})
+
+    dependency = get_service_client("sqlite")
+
+    assert dependency(request) is runtime_client
 
 
 def test_get_service_runtime_returns_503_before_default_runtime_startup():
@@ -256,12 +285,19 @@ def test_get_current_user_uses_service_client_backed_auth_provider(empty_app_fac
     assert provider.token == "demo-token"
 
 
-def test_get_service_client_returns_initialized_service_client(settings):
+def test_get_service_client_returns_initialized_service_client(
+    settings,
+    runtime_factory,
+):
     config = AppConfig(
         enabled_services=["sqlite"],
         required_services=["sqlite"],
     )
-    app = create_app(config=config, settings=settings, include_auth_router=False)
+    runtime = runtime_factory(
+        clients={"sqlite": create_sqlite_client(settings.sqlite)},
+        required=("sqlite",),
+    )
+    app = create_app(config=config, runtime=runtime, include_auth_router=False)
 
     @app.get("/sqlite")
     async def sqlite_client(client=Depends(get_service_client("sqlite"))):
@@ -277,13 +313,23 @@ def test_get_service_client_returns_initialized_service_client(settings):
     assert response.json()["has_check"] is True
 
 
-def test_get_service_specific_dependencies_return_concrete_clients(settings):
+def test_get_service_specific_dependencies_return_concrete_clients(
+    runtime_factory,
+):
     config = AppConfig(
         enabled_services=["keycloak", "sqlite", "nats"],
         required_services=["keycloak"],
     )
     service_settings = load_docmesh_settings(("keycloak", "sqlite", "nats"))
-    app = create_app(config=config, settings=service_settings, include_auth_router=False)
+    runtime = runtime_factory(
+        clients={
+            "keycloak": create_keycloak_client(service_settings.keycloak),
+            "sqlite": create_sqlite_client(service_settings.sqlite),
+            "nats": create_nats_client(service_settings.nats),
+        },
+        required=("keycloak",),
+    )
+    app = create_app(config=config, runtime=runtime, include_auth_router=False)
 
     @app.get("/clients")
     async def clients(
@@ -314,10 +360,10 @@ def test_get_service_specific_dependencies_return_concrete_clients(settings):
     }
 
 
-def test_get_service_client_returns_503_when_service_is_not_enabled(settings):
+def test_get_service_client_returns_503_when_service_is_not_enabled(empty_runtime):
     app = create_app(
         config=AppConfig(enabled_services=[], required_services=[]),
-        settings=settings,
+        runtime=empty_runtime,
         include_auth_router=False,
     )
 
@@ -332,10 +378,12 @@ def test_get_service_client_returns_503_when_service_is_not_enabled(settings):
     assert response.json()["detail"] == "Service client 'sqlite' is not enabled"
 
 
-def test_get_nats_connection_builder_returns_503_when_service_is_not_enabled(settings):
+def test_get_nats_connection_builder_returns_503_when_service_is_not_enabled(
+    empty_runtime,
+):
     app = create_app(
         config=AppConfig(enabled_services=[], required_services=[]),
-        settings=settings,
+        runtime=empty_runtime,
         include_auth_router=False,
     )
 

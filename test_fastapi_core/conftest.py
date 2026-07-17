@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from docmesh_py_core import Service, ServiceRuntime
 
 from fastapi_core import register_readiness_check
 from fastapi_core.config import AppConfig
@@ -51,11 +52,33 @@ def settings(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture
-def empty_app_factory(settings):
+def runtime_factory(settings):
+    def factory(*, clients=None, required=()):
+        service_clients = {
+            Service.parse(service): client
+            for service, client in (clients or {}).items()
+        }
+        return ServiceRuntime(
+            configs=settings,
+            clients=service_clients,
+            selected_services=frozenset(service_clients),
+            required_services=frozenset(Service.parse(service) for service in required),
+        )
+
+    return factory
+
+
+@pytest.fixture
+def empty_runtime(runtime_factory):
+    return runtime_factory()
+
+
+@pytest.fixture
+def empty_app_factory(runtime_factory):
     def factory(*, resources=(), lifespan=None, **config):
         return create_app(
             config=AppConfig(enabled_services=[], required_services=[], **config),
-            settings=settings,
+            runtime=runtime_factory(),
             lifespan=lifespan,
             include_auth_router=False,
             resources=resources,
@@ -65,9 +88,13 @@ def empty_app_factory(settings):
 
 
 @pytest.fixture
-def auth_app_factory(settings):
+def auth_app_factory(runtime_factory):
     def factory(provider, *, include_auth_router=True):
-        app = create_app(settings=settings, include_auth_router=include_auth_router)
+        app = create_app(
+            config=AppConfig(enabled_services=[], required_services=[]),
+            runtime=runtime_factory(),
+            include_auth_router=include_auth_router,
+        )
         app.state.auth_provider = provider
         return app
 

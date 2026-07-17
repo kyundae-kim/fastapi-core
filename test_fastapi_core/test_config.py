@@ -140,6 +140,21 @@ def test_app_config_prefers_field_name_over_environment_alias():
     assert config.log_level == "INFO"
 
 
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ({"log_level": "INFO"}, "INFO"),
+        ({"DOCMESH_LOG_LEVEL": "DEBUG"}, "DEBUG"),
+        (
+            {"log_level": "INFO", "DOCMESH_LOG_LEVEL": "DEBUG"},
+            "INFO",
+        ),
+    ],
+)
+def test_app_config_preserves_field_name_and_alias_precedence(values, expected):
+    assert AppConfig(**values).log_level == expected
+
+
 
 def test_build_docmesh_env_overlay_copies_environment_without_development_defaults(
     monkeypatch,
