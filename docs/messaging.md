@@ -180,8 +180,8 @@ async def nats_status(conn=Depends(get_resource("nats-connection"))):
 
 메시징 사용 방식은 현재 코드 기준으로 두 층으로 생각하면 된다.
 
-### 방식 A. service_clients/readiness 중심
-- `create_app()`가 만든 `app.state.service_clients`를 기반으로 서비스 client를 재사용
+### 방식 A. runtime/dependency 중심
+- `create_app()`가 만든 `ServiceRuntime`을 `get_nats_connection_builder()` 같은 dependency로 재사용
 - readiness는 service client 기반 check를 사용
 - 현재 기본 구현이 이 방식에 가깝다
 
@@ -195,7 +195,7 @@ async def nats_status(conn=Depends(get_resource("nats-connection"))):
 managed resource의 최소 코드는 6.2 예시를 따른다. NATS builder 자체는 `get_nats_connection_builder()`로 접근하고, builder 위에서 만든 연결 상태 객체는 별도 managed resource로 등록할 수 있다.
 
 `get_nats_connection_builder()`의 현재 실패 계약:
-- NATS가 활성화되지 않았거나 `app.state.service_clients`에 없으면 `503 Service Unavailable`과 `Service client 'nats' is not enabled`를 반환한다.
+- NATS가 runtime에 활성화되지 않았으면 `503 Service Unavailable`과 `Service client 'nats' is not enabled`를 반환한다.
 - 등록된 객체가 `NatsConnectionBuilder`가 아니면 `500 Internal Server Error`를 반환한다.
 
 ---
@@ -219,8 +219,8 @@ managed resource의 최소 코드는 6.2 예시를 따른다. NATS builder 자�
    - `DOCMESH_SERVICES`
    - `READINESS_REQUIRED_SERVICES`
 
-2. **settings fallback 수준**
-   - `build_docmesh_env_overlay()`가 `NATS_SERVERS`, `NATS_TOKEN` 기본값을 채운다.
+2. **명시적 환경 설정 수준**
+   - `NATS_SERVERS`와 필요한 credential은 실행 환경 또는 테스트 fixture가 공급한다. `build_docmesh_env_overlay()`는 placeholder를 추가하지 않는다.
 
 즉, `fastapi-core`는 메시징 세부 필드를 직접 해석하는 문서화보다, **서비스 선택과 readiness 정책에 어떻게 반영되는지**를 설명하는 것이 맞다.
 

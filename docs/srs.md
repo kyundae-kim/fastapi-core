@@ -62,7 +62,7 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 
 - app factory: `create_app(...)`
 - runtime extension: `ManagedResource`, `ResourceKey[T]`, `ReadinessCheckSpec`, `register_readiness_check(...)`, `ErrorMapping`, `ErrorRenderer`, `register_error_mapper(...)`
-- dependency: `get_config()`, `get_settings()`, `get_auth_provider()`, `get_resource(name)`, `get_service_client(service_name)`, `get_keycloak_auth_service()`, `get_postgres_engine()`, `get_sqlite_engine()`, `get_minio_client()`, `get_milvus_client()`, `get_ollama_client()`, `get_langfuse_client()`, `get_nats_connection_builder()`, `get_current_user()`, `require_roles(...)`, `require_scopes(...)`, `require_permissions(...)`
+- dependency: `get_config()`, `get_settings()`, `get_auth_provider()`, `get_resource(name)`, `get_service_runtime()`, `get_service_client(service_name)`, `get_keycloak_auth_service()`, `get_postgres_engine()`, `get_sqlite_engine()`, `get_minio_client()`, `get_milvus_client()`, `get_ollama_client()`, `get_langfuse_client()`, `get_nats_connection_builder()`, `get_current_user()`, `require_roles(...)`, `require_scopes(...)`, `require_permissions(...)`
 - schema: `TokenResponse`, `UserInfo`, `HealthResponse`, `ProblemDetail`
 - endpoint: `/token`, `/user`, `/health/liveness`, `/health/readiness`
 
@@ -167,9 +167,9 @@ readiness 확장은 `app.state.readiness_registry`를 단일 source of truth로 
 
 ### 4.1 App factory
 
-- SR-001. 시스템은 `create_app(config=None, settings=None, lifespan=None, include_auth_router=True, resources=(), error_renderer=None) -> FastAPI`를 제공해야 한다.
+- SR-001. 시스템은 `create_app(config=None, *, settings=None, lifespan=None, include_auth_router=True, resources=(), error_renderer=None) -> FastAPI`를 제공해야 한다.
 - SR-002. `config is None`이면 기본 환경 설정 객체를 생성해야 한다.
-- SR-003. `settings is None`이면 환경기반 서비스 설정을 로딩해야 한다.
+- SR-003. `settings is None`이면 환경기반 서비스 설정을 로딩해야 하며, keyword-only `settings` 주입은 테스트·호환성 경계로 제한해야 한다.
 - SR-004. 생성된 앱은 `root_path`를 설정할 수 있어야 한다.
 - SR-005. 커스텀 lifespan을 주입할 수 있어야 한다.
 - SR-006. 생성된 앱은 `app.state.config`, `app.state.settings`, `app.state.service_clients`, `app.state.root_logger`를 저장해야 한다.
@@ -253,7 +253,8 @@ readiness 확장은 `app.state.readiness_registry`를 단일 source of truth로 
 ### 6.3 Service client access dependency
 
 - SR-065. 시스템은 서비스가 초기화한 외부 서비스 클라이언트에 접근하기 위한 공통 dependency 또는 표준 접근 경로를 제공해야 한다.
-- SR-066. 서비스 클라이언트 접근 경로는 `app.state.service_clients`에 저장된 클라이언트를 우선 재사용해야 한다.
+- SR-066. 서비스 클라이언트 접근 경로는 lifecycle이 소유하는 `ServiceRuntime`을 우선 재사용해야 하며, 애플리케이션 route가 내부 `app.state` map을 직접 읽도록 요구하면 안 된다.
+- SR-066A. `get_service_runtime()`은 동일 앱 lifecycle의 runtime을 반환하고 사용할 수 없으면 503을 반환해야 한다.
 - SR-067. 서비스 클라이언트 접근 경로는 request 처리 중 동일 앱 인스턴스에서 초기화된 클라이언트와 일관된 참조를 제공해야 한다.
 - SR-068. 특정 서비스 클라이언트가 활성화되지 않았거나 구성되지 않은 경우, 구현은 명시적 오류 또는 문서화된 비활성 동작으로 처리해야 한다.
 

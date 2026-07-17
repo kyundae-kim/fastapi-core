@@ -40,7 +40,7 @@ app = create_app()
 - `/health/liveness` 포함
 - `/health/readiness` 포함
 - `/token`, `/user` 포함
-- `app.state.config`, `app.state.settings`, `app.state.service_clients` 저장
+- 내부 lifecycle state에 config, settings, `ServiceRuntime`과 client map 저장; 애플리케이션 route는 공개 dependency로 접근
 - keycloak이 활성화되면 `app.state.auth_provider` 저장
 - 앱별 typed readiness/resource registry 초기화
 - CORS middleware 등록
@@ -192,6 +192,8 @@ async def diagnostics(
 - `get_sqlite_engine()`은 SQLAlchemy `Engine`을 반환한다.
 - `get_keycloak_auth_service()`는 `KeycloakAuthService`를 반환한다.
 - `get_nats_connection_builder()`는 `NatsConnectionBuilder`를 반환한다.
+- generic integration code만 `get_service_runtime()`을 사용하고, 일반 route는 구체 타입 dependency를 우선한다.
+- `app.state.service_runtime`이나 `app.state.service_clients`를 애플리케이션 코드에서 직접 읽지 않는다.
 
 ---
 

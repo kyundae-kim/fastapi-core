@@ -149,11 +149,11 @@ READINESS_REQUIRED_SERVICES=keycloak
 
 ## 4. `create_app(...)`와 설정 연결
 
-현재 구현의 `create_app(config=None, settings=None, lifespan=None, include_auth_router=True, resources=())`는 다음 순서로 설정을 사용한다.
+현재 구현의 `create_app(config=None, *, settings=None, lifespan=None, include_auth_router=True, resources=())`는 다음 순서로 설정을 사용한다.
 
 1. `config`가 없으면 `load_app_config()` 사용
 2. `_configure_application_logging(config)`로 로깅 초기화
-3. 명시적 `settings`가 있으면 direct factory client를 `ServiceRuntime`으로 감싸 주입 경로 구성
+3. 테스트·호환 목적으로 명시적 `settings`가 있으면 direct factory client를 `ServiceRuntime`으로 감싸 주입 경로 구성; 운영 경로에서는 생략
 4. `FastAPI(root_path=config.root_path, lifespan=_build_lifespan(...))` 생성
 5. lifespan startup에서 `settings`가 없고 활성 서비스가 있으면 선택·필수·대안·healthcheck 정책을 `RuntimePlan`으로 선언하고 `assemble_service_runtime(build_docmesh_env_overlay(), plan=...)` 실행
 6. 활성 서비스가 명시적으로 비어 있으면 assembly를 호출하지 않고 빈 `ServiceRuntime` 구성
@@ -180,35 +180,13 @@ READINESS_REQUIRED_SERVICES=keycloak
 
 ### 5.1 `build_docmesh_env_overlay()`
 
-현재 환경변수를 복사한 뒤, `docmesh_py_core.load_service_configs(...)`가 실패하지 않도록 개발/테스트용 fallback 값을 채운다.
-
-대표 기본값:
-- `KEYCLOAK_URL=http://keycloak.local`
-- `KEYCLOAK_REALM=docmesh`
-- `KEYCLOAK_CLIENT_ID=fastapi-core`
-- `KEYCLOAK_CLIENT_SECRET=dev-secret`
-- `POSTGRES_HOST=postgres.local`
-- `POSTGRES_PORT=5432`
-- `POSTGRES_DB=docmesh`
-- `POSTGRES_USER=docmesh`
-- `POSTGRES_PASSWORD=dev-secret`
-- `SQLITE_PATH=:memory:`
-- `MINIO_ENDPOINT=minio.local:9000`
-- `MINIO_ACCESS_KEY=minio`
-- `MINIO_SECRET_KEY=miniosecret`
-- `MILVUS_URI=http://milvus.local:19530`
-- `OLLAMA_HOST=http://ollama.local:11434`
-- `LANGFUSE_HOST=http://langfuse.local:3000`
-- `LANGFUSE_PUBLIC_KEY=dev-public`
-- `LANGFUSE_SECRET_KEY=dev-secret`
-- `NATS_SERVERS=nats://nats.local:4222`
-- `NATS_TOKEN=dev-token`
+현재 프로세스 환경변수를 새 `dict`로 복사한다. 접속 주소, credential, token 또는 테스트용 fallback은 추가하지 않는다. 선택한 서비스의 필수 설정이 없으면 `docmesh_py_core` 설정 로더가 명시적 configuration error를 반환한다. 개발·테스트 값은 테스트 fixture, 로컬 실행 환경 또는 secret 주입 계층이 소유한다.
 
 ### 5.2 `load_docmesh_settings(enabled_services: tuple[str, ...] | None = None)`
 
 동작:
 - `enabled_services`가 `None`이 아니면 집합으로 변환하며, 빈 tuple은 명시적인 빈 서비스 선택으로 보존한다.
-- `build_docmesh_env_overlay()`로 현재 환경의 복사본과 fallback을 결합한다.
+- `build_docmesh_env_overlay()`로 현재 환경의 독립 복사본을 만든다.
 - `docmesh_py_core.load_service_configs(env, services=services)`에 mapping을 직접 전달한다.
 - 로딩 과정에서 프로세스 `os.environ`을 추가·삭제·수정하지 않는다.
 - `enabled_services=None`이면 전체 기본 서비스를 로딩하고, `enabled_services=()`이면 서비스 설정을 하나도 로딩하지 않는다.
@@ -216,8 +194,7 @@ READINESS_REQUIRED_SERVICES=keycloak
 
 ### 5.3 중요 해석
 
-이 기본값들은 **운영 권장값이 아니라 개발/테스트용 fallback**이다.
-운영 환경에서는 반드시 명시적 환경변수 또는 외부 secret 주입으로 대체해야 한다.
+운영과 개발 모두 서비스 설정을 명시적으로 공급해야 한다. 라이브러리는 `dev-secret`, `dev-token`, `.local` endpoint 같은 placeholder를 자동 보충하지 않는다.
 
 ### 5.4 공통 보안 모드
 
@@ -377,7 +354,7 @@ register_readiness_check(
 | Langfuse | 간접 | 선택 서비스 로딩 및 service client/readiness 대상 |
 | NATS | 간접 | 선택 서비스 로딩 및 service client/readiness 또는 custom lifespan 확장 지점 |
 
-즉, 현재 구현에서 이 값들은 `ServiceConfigs`와 `app.state.service_clients`를 통한 통합 기반이며, 그 위에 공통 접근용 `get_service_client(service_name)`와 구체 타입 반환용 전용 dependency(`get_keycloak_auth_service`, `get_postgres_engine`, `get_sqlite_engine`, `get_minio_client`, `get_milvus_client`, `get_ollama_client`, `get_langfuse_client`, `get_nats_connection_builder`)가 얹힌 형태다.
+즉, 내부 lifecycle state는 `ServiceRuntime`이 소유한다. 애플리케이션 코드는 `app.state`를 직접 읽지 않고 `get_service_runtime()`, 공통 `get_service_client(service_name)`, 또는 구체 타입 dependency(`get_keycloak_auth_service`, `get_postgres_engine`, `get_sqlite_engine`, `get_minio_client`, `get_milvus_client`, `get_ollama_client`, `get_langfuse_client`, `get_nats_connection_builder`)를 사용한다.
 
 ---
 

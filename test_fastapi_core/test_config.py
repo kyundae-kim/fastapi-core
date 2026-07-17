@@ -141,27 +141,31 @@ def test_app_config_prefers_field_name_over_environment_alias():
 
 
 
-def test_build_docmesh_env_overlay_applies_defaults_without_overwriting(monkeypatch):
+def test_build_docmesh_env_overlay_copies_environment_without_development_defaults(
+    monkeypatch,
+):
     monkeypatch.setenv("KEYCLOAK_URL", "http://override.test")
     monkeypatch.setenv("NATS_TOKEN", "custom-token")
-    monkeypatch.delenv("KEYCLOAK_REALM", raising=False)
-    monkeypatch.delenv("POSTGRES_DSN", raising=False)
-    monkeypatch.delenv("SQLITE_PATH", raising=False)
-    monkeypatch.delenv("LANGFUSE_HOST", raising=False)
+    for key in (
+        "KEYCLOAK_REALM",
+        "KEYCLOAK_CLIENT_SECRET",
+        "POSTGRES_HOST",
+        "POSTGRES_PASSWORD",
+        "SQLITE_PATH",
+        "LANGFUSE_HOST",
+    ):
+        monkeypatch.delenv(key, raising=False)
 
     env = build_docmesh_env_overlay()
 
     assert env["KEYCLOAK_URL"] == "http://override.test"
     assert env["NATS_TOKEN"] == "custom-token"
-    assert env["KEYCLOAK_REALM"] == "docmesh"
-    assert "POSTGRES_DSN" not in env
-    assert env["POSTGRES_HOST"] == "postgres.local"
-    assert env["POSTGRES_PORT"] == "5432"
-    assert env["POSTGRES_DB"] == "docmesh"
-    assert env["POSTGRES_USER"] == "docmesh"
-    assert env["POSTGRES_PASSWORD"] == "dev-secret"
-    assert env["SQLITE_PATH"] == ":memory:"
-    assert env["LANGFUSE_HOST"] == "http://langfuse.local:3000"
+    assert "KEYCLOAK_REALM" not in env
+    assert "KEYCLOAK_CLIENT_SECRET" not in env
+    assert "POSTGRES_HOST" not in env
+    assert "POSTGRES_PASSWORD" not in env
+    assert "SQLITE_PATH" not in env
+    assert "LANGFUSE_HOST" not in env
 
 
 def test_build_docmesh_env_overlay_preserves_legacy_postgres_dsn(monkeypatch):
@@ -208,9 +212,10 @@ def test_load_docmesh_settings_preserves_explicitly_empty_selection():
     )
 
 
-def test_load_docmesh_settings_passes_overlay_without_mutating_environment(monkeypatch):
+def test_load_docmesh_settings_passes_environment_without_mutating_it(monkeypatch):
     captured: dict[str, object] = {}
     sentinel = object()
+    monkeypatch.delenv("SQLITE_PATH", raising=False)
     original_environment = dict(os.environ)
 
     def fake_load_service_configs(env, *, services):
@@ -229,30 +234,6 @@ def test_load_docmesh_settings_passes_overlay_without_mutating_environment(monke
 
     assert result is sentinel
     assert captured["services"] == {"sqlite"}
-    assert captured["env"]["SQLITE_PATH"] == ":memory:"
+    assert "SQLITE_PATH" not in captured["env"]
     assert dict(os.environ) == original_environment
-    load_docmesh_settings.cache_clear()
-
-
-def test_load_docmesh_settings_loads_postgres_from_default_env(monkeypatch):
-    monkeypatch.delenv("POSTGRES_DSN", raising=False)
-    for key in (
-        "POSTGRES_HOST",
-        "POSTGRES_PORT",
-        "POSTGRES_DB",
-        "POSTGRES_USER",
-        "POSTGRES_PASSWORD",
-    ):
-        monkeypatch.delenv(key, raising=False)
-    load_docmesh_settings.cache_clear()
-
-    settings = load_docmesh_settings(("postgres",))
-
-    assert settings.postgres is not None
-    assert settings.postgres.dsn is None
-    assert settings.postgres.host == "postgres.local"
-    assert settings.postgres.port == 5432
-    assert settings.postgres.db == "docmesh"
-    assert settings.postgres.user == "docmesh"
-    assert settings.postgres.password == "dev-secret"
     load_docmesh_settings.cache_clear()

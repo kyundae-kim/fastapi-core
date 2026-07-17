@@ -4,7 +4,12 @@ from collections.abc import Callable
 from typing import Any, cast
 
 from docmesh_py_core.function_logging import log_function_boundary
-from docmesh_py_core import KeycloakAuthService, NatsConnectionBuilder, ServiceClientWrapper
+from docmesh_py_core import (
+    KeycloakAuthService,
+    NatsConnectionBuilder,
+    ServiceClientWrapper,
+    ServiceRuntime,
+)
 from fastapi import HTTPException, Request, status
 from langfuse import Langfuse
 from minio import Minio
@@ -37,6 +42,11 @@ def _service_type_mismatch(service_name: str, expected_type: str) -> HTTPExcepti
 
 @log_function_boundary()
 def _resolve_service_client(request: Request, service_name: str) -> ServiceClientWrapper | NatsConnectionBuilder:
+    runtime = getattr(request.app.state, "service_runtime", None)
+    if runtime is not None:
+        client = runtime.get(service_name)
+        if client is not None:
+            return client
     service_clients = getattr(request.app.state, "service_clients", None)
     if service_clients is None or service_name not in service_clients:
         raise _service_not_enabled(service_name)
@@ -58,6 +68,17 @@ def get_service_client(service_name: str) -> ServiceClientDependency:
         return _resolve_service_client(request, service_name)
 
     return dependency
+
+
+@log_function_boundary()
+def get_service_runtime(request: Request) -> ServiceRuntime:
+    runtime = getattr(request.app.state, "service_runtime", None)
+    if runtime is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service runtime is not available",
+        )
+    return runtime
 
 
 @log_function_boundary()

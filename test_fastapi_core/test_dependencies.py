@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import get_type_hints
 
+import pytest
 import fastapi_core.dependencies as dependencies_module
 import fastapi_core.dependencies.config as config_module
 import fastapi_core.dependencies.services as services_module
-from docmesh_py_core import KeycloakAuthService, NatsConnectionBuilder
-from fastapi import Depends, Request
+from docmesh_py_core import KeycloakAuthService, NatsConnectionBuilder, ServiceRuntime
+from fastapi import Depends, HTTPException, Request
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 
@@ -15,6 +16,7 @@ from fastapi_core.dependencies import (
     get_keycloak_auth_service,
     get_nats_connection_builder,
     get_service_client,
+    get_service_runtime,
     get_sqlite_engine,
 )
 from fastapi_core.dependencies.auth import (
@@ -92,12 +94,35 @@ def test_service_dependency_module_exposes_typed_service_getters():
         "get_ollama_client",
         "get_langfuse_client",
         "get_nats_connection_builder",
+        "get_service_runtime",
     }
 
     assert expected.issubset(set(dir(services_module)))
     assert get_type_hints(services_module.get_keycloak_auth_service)["return"] is KeycloakAuthService
     assert get_type_hints(services_module.get_sqlite_engine)["return"] is Engine
     assert get_type_hints(services_module.get_nats_connection_builder)["return"] is NatsConnectionBuilder
+    assert get_type_hints(services_module.get_service_runtime)["return"] is ServiceRuntime
+
+
+def test_get_service_runtime_returns_lifespan_owned_runtime(settings):
+    app = create_app(settings=settings, include_auth_router=False)
+    request = Request({"type": "http", "app": app})
+
+    assert get_service_runtime(request) is app.state.service_runtime
+
+
+def test_get_service_runtime_returns_503_before_default_runtime_startup():
+    app = create_app(
+        config=AppConfig(enabled_services=[], required_services=[]),
+        include_auth_router=False,
+    )
+    request = Request({"type": "http", "app": app})
+
+    with pytest.raises(HTTPException) as exc_info:
+        get_service_runtime(request)
+
+    assert getattr(exc_info.value, "status_code", None) == 503
+    assert getattr(exc_info.value, "detail", None) == "Service runtime is not available"
 
 
 def test_get_current_user_returns_401_when_token_missing(auth_app_factory):

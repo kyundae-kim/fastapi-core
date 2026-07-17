@@ -37,6 +37,7 @@ DEPENDENCY_EXPORTS = {
     "get_postgres_engine",
     "get_resource",
     "get_service_client",
+    "get_service_runtime",
     "get_settings",
     "get_sqlite_engine",
     "require_permissions",
@@ -84,11 +85,11 @@ def test_curated_package_exports_are_stable():
 def test_create_app_signature_is_stable():
     assert _parameter_contract(fastapi_core.create_app) == [
         ("config", Parameter.POSITIONAL_OR_KEYWORD, None),
-        ("settings", Parameter.POSITIONAL_OR_KEYWORD, None),
-        ("lifespan", Parameter.POSITIONAL_OR_KEYWORD, None),
-        ("include_auth_router", Parameter.POSITIONAL_OR_KEYWORD, True),
-        ("resources", Parameter.POSITIONAL_OR_KEYWORD, ()),
-        ("error_renderer", Parameter.POSITIONAL_OR_KEYWORD, None),
+        ("settings", Parameter.KEYWORD_ONLY, None),
+        ("lifespan", Parameter.KEYWORD_ONLY, None),
+        ("include_auth_router", Parameter.KEYWORD_ONLY, True),
+        ("resources", Parameter.KEYWORD_ONLY, ()),
+        ("error_renderer", Parameter.KEYWORD_ONLY, None),
     ]
 
 

@@ -53,7 +53,7 @@ from fastapi_core import (
 
 코드 크기 축소 리팩토링에서 위 package-root re-export와 다음 package API는 보호 계약이다.
 
-- `fastapi_core.dependencies`: `get_auth_provider`, `get_config`, `get_current_user`, `get_keycloak_auth_service`, `get_langfuse_client`, `get_milvus_client`, `get_minio_client`, `get_nats_connection_builder`, `get_ollama_client`, `get_postgres_engine`, `get_resource`, `get_service_client`, `get_settings`, `get_sqlite_engine`, `require_permissions`, `require_roles`, `require_scopes`
+- `fastapi_core.dependencies`: `get_auth_provider`, `get_config`, `get_current_user`, `get_keycloak_auth_service`, `get_langfuse_client`, `get_milvus_client`, `get_minio_client`, `get_nats_connection_builder`, `get_ollama_client`, `get_postgres_engine`, `get_resource`, `get_service_client`, `get_service_runtime`, `get_settings`, `get_sqlite_engine`, `require_permissions`, `require_roles`, `require_scopes`
 - `fastapi_core.schemas`: `HealthResponse`, `HealthServiceDetail`, `ProblemDetail`, `TokenResponse`, `UserInfo`
 - endpoint: `POST /token`, `GET /user`, `GET /health/liveness`, `GET /health/readiness`
 
@@ -65,7 +65,7 @@ readiness state의 단일 통합 지점은 `app.state.readiness_registry`다. �
 
 ## 3. App factory API
 
-### 3.1 `create_app(config=None, settings=None, lifespan=None, include_auth_router=True, resources=(), error_renderer=None) -> FastAPI`
+### 3.1 `create_app(config=None, *, settings=None, lifespan=None, include_auth_router=True, resources=(), error_renderer=None) -> FastAPI`
 
 공통 FastAPI 애플리케이션을 생성한다.
 
@@ -82,7 +82,7 @@ readiness state의 단일 통합 지점은 `app.state.readiness_registry`다. �
 - `_configure_application_logging(config)`로 앱 로깅을 초기화한다.
 - `settings is None`이고 활성 서비스가 있으면 lifespan startup에서 `RuntimePlan`을 구성해 `assemble_service_runtime(..., plan=plan)`을 호출하고 설정 탐색, required 검증, client 생성, 선택적 startup healthcheck를 수행한다.
 - `enabled_services`가 명시적으로 비어 있으면 assembly를 호출하지 않고 빈 `ServiceRuntime`을 설치한다.
-- `settings`가 명시되면 direct factory로 client를 만들고 `ServiceRuntime`에 담는 테스트/특수 실행용 주입 경로를 사용한다.
+- keyword-only `settings`가 명시되면 direct factory로 client를 만들고 `ServiceRuntime`에 담는 테스트·호환성 주입 경로를 사용한다. 운영 애플리케이션은 이를 생략하고 기본 assembly 경로를 사용해야 한다.
 - `FastAPI(root_path=config.root_path, lifespan=_build_lifespan(...))` 인스턴스를 생성한다.
 - `app.state`에 아래 값을 저장한다.
   - `config`
@@ -103,7 +103,7 @@ readiness state의 단일 통합 지점은 `app.state.readiness_registry`다. �
 - resource startup 실패 시 이미 생성한 resource를 역순 rollback한다.
 
 #### readiness 기본 구성
-기본 `create_app()` 경로는 `config.enabled_services`를 기준으로 service client check를 `app.state.readiness_registry.specs`에 등록한다. 각 `ReadinessCheckSpec`이 check와 required/timeout/redaction 정책을 함께 보관한다.
+기본 `create_app()` 경로는 `config.enabled_services`를 기준으로 service client check를 `app.state.readiness_registry.specs`에 등록한다. 각 `ReadinessCheckSpec`이 check와 required/timeout/redaction 정책을 함께 보관하며, DocMesh 서비스 오류는 기본적으로 redaction한다.
 
 기본 `AppConfig`에서는 `enabled_services == ["keycloak"]`, `required_services == ["keycloak"]`다.
 
@@ -374,10 +374,10 @@ package root에서 import할 수 있는 immutable 오류 매핑 선언이다.
 
 정의 위치: `fastapi_core.dependencies.services`
 
-서비스 이름을 받아 `app.state.service_clients`에서 해당 클라이언트를 꺼내 주는 dependency factory다.
+서비스 이름을 받아 lifespan이 소유하는 `ServiceRuntime`에서 해당 클라이언트를 꺼내 주는 dependency factory다. legacy state map은 호환 fallback으로만 사용한다.
 
 #### 동작
-- `create_app(...)`가 저장한 `app.state.service_clients`를 조회한다.
+- `create_app(...)`가 저장한 `app.state.service_runtime`을 우선 조회한다.
 - 요청한 `service_name`이 존재하면 같은 앱 인스턴스에서 초기화된 클라이언트 객체를 그대로 반환한다.
 - `service_clients`가 없거나 해당 서비스가 활성화되지 않았으면 `503 Service Unavailable`과 `Service client '<name>' is not enabled`를 반환한다.
 
@@ -410,7 +410,11 @@ async def sqlite_health(sqlite_client=Depends(get_service_client("sqlite"))):
 - `get_langfuse_client(request) -> langfuse.Langfuse`
 - `get_nats_connection_builder(request) -> docmesh_py_core.NatsConnectionBuilder`
 
-이 함수들은 모두 `app.state.service_clients`를 재사용하며, wrapper 기반 서비스는 내부 `.client`를 꺼내 concrete client를 반환한다. NATS만 예외적으로 wrapper가 아니라 builder 객체 자체를 반환한다.
+이 함수들은 모두 lifecycle-owned runtime을 재사용하며, wrapper 기반 서비스는 내부 `.client`를 꺼내 concrete client를 반환한다. NATS만 예외적으로 wrapper가 아니라 builder 객체 자체를 반환한다.
+
+#### `get_service_runtime(request: Request) -> ServiceRuntime`
+
+generic runtime 관리 기능이 필요한 integration code를 위한 dependency다. lifespan이 설치한 동일 `ServiceRuntime`을 반환하며 startup 전이거나 사용할 수 없으면 `503 Service runtime is not available`을 반환한다. 일반 route는 이 함수보다 구체 타입 dependency를 우선 사용한다.
 
 #### 전용 dependency 예시
 
@@ -625,20 +629,7 @@ class AppConfig(BaseSettings):
 
 정의 위치: `fastapi_core.docmesh_settings`
 
-현재 환경변수를 복사한 뒤, `docmesh_py_core.load_service_configs(...)`가 실패하지 않도록 개발/테스트용 fallback 값을 채운다.
-
-대표 기본값 예:
-- `KEYCLOAK_URL=http://keycloak.local`
-- `KEYCLOAK_REALM=docmesh`
-- `KEYCLOAK_CLIENT_ID=fastapi-core`
-- `KEYCLOAK_CLIENT_SECRET=dev-secret`
-- `SQLITE_PATH=:memory:`
-- `MINIO_ENDPOINT=minio.local:9000`
-- `MILVUS_URI=http://milvus.local:19530`
-- `OLLAMA_HOST=http://ollama.local:11434`
-- `LANGFUSE_HOST=http://langfuse.local:3000`
-- `NATS_SERVERS=nats://nats.local:4222`
-- `NATS_TOKEN=dev-token`
+현재 환경변수를 독립된 `dict`로 복사한다. 개발 endpoint, placeholder credential 또는 서비스 fallback은 추가하지 않는다. 필수 서비스 설정은 실행 환경이나 테스트 fixture가 명시적으로 공급해야 한다.
 
 ### 7.4 `load_docmesh_settings(enabled_services: tuple[str, ...] | None = None) -> ServiceConfigs`
 

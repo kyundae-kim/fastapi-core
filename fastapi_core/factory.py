@@ -220,7 +220,7 @@ def _configure_service_runtime(app: FastAPI, runtime: ServiceRuntime) -> None:
                 name=service_name,
                 check=check,
                 required=service_name in required_services,
-                redact_errors=False,
+                redact_errors=True,
             )
         )
     keycloak_client = runtime.clients.get(Service.KEYCLOAK)
@@ -299,12 +299,19 @@ def _build_lifespan(
 @log_function_boundary()
 def create_app(
     config: AppConfig | None = None,
+    *,
     settings: ServiceConfigs | None = None,
     lifespan: Callable | None = None,
     include_auth_router: bool = True,
     resources: Sequence[ManagedResource[Any]] = (),
     error_renderer: ErrorRenderer | None = None,
 ) -> FastAPI:
+    """Create an application with lifespan-managed DocMesh services.
+
+    ``settings`` is an explicit compatibility and test-injection seam. Production
+    applications should omit it so startup assembles the runtime from the process
+    environment and the configured ``RuntimePlan``.
+    """
     app_config = config or load_app_config()
     root_logger = _configure_application_logging(app_config)
     service_runtime = (

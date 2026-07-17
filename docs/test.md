@@ -259,11 +259,11 @@ PostgreSQL 통합 테스트 env:
 - 두 readiness timeout과 `DOCMESH_SERVICE_ALTERNATIVES`를 파싱한다.
 - `DOCMESH_SERVICES`, `READINESS_REQUIRED_SERVICES`를 읽는다.
 - 기본 `AppConfig` 값이 현재 구현과 일치한다.
-- `build_docmesh_env_overlay()`가 기본값을 채우되 기존 환경변수를 덮어쓰지 않는다.
+- `build_docmesh_env_overlay()`가 개발용 기본값을 추가하지 않고 현재 환경을 독립 mapping으로 복사한다.
 - `load_docmesh_settings(...)`가 overlay mapping을 loader에 전달하고 프로세스 `os.environ`을 변경하지 않는다.
 - `load_docmesh_settings(("sqlite",))`가 선택 서비스만 로딩한다.
 - `load_docmesh_settings(())`가 명시적인 빈 서비스 선택을 보존한다.
-- `load_docmesh_settings(("postgres",))`가 fallback 개별 접속 환경변수로 PostgreSQL 설정을 로딩한다.
+- 서비스별 필수 값은 테스트 fixture가 명시적으로 공급한다.
 
 ## 5.5A runtime extension 테스트
 

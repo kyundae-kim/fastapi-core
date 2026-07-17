@@ -187,6 +187,27 @@ async def test_configure_service_runtime_preserves_async_checks(settings):
     assert events == ["checked"]
 
 
+def test_configure_service_runtime_redacts_service_check_errors_by_default(settings):
+    class Client:
+        def check(self):
+            raise RuntimeError("postgresql://user:secret@database.test/docmesh")
+
+    app = create_app(
+        config=AppConfig(enabled_services=[], required_services=[]),
+        settings=settings,
+        include_auth_router=False,
+    )
+    runtime = ServiceRuntime(
+        configs=settings,
+        clients={Service.POSTGRES: Client()},
+        selected_services=frozenset({Service.POSTGRES}),
+    )
+
+    _configure_service_runtime(app, runtime)
+
+    assert app.state.readiness_registry.specs["postgres"].redact_errors is True
+
+
 def test_configure_service_runtime_rejects_client_without_check(settings):
     app = create_app(
         config=AppConfig(enabled_services=[], required_services=[]),
