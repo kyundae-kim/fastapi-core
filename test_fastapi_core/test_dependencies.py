@@ -315,7 +315,11 @@ def test_get_service_specific_dependencies_return_concrete_clients(settings):
 
 
 def test_get_service_client_returns_503_when_service_is_not_enabled(settings):
-    app = create_app(settings=settings, include_auth_router=False)
+    app = create_app(
+        config=AppConfig(enabled_services=[], required_services=[]),
+        settings=settings,
+        include_auth_router=False,
+    )
 
     @app.get("/sqlite")
     async def sqlite_client(client=Depends(get_service_client("sqlite"))):
@@ -329,7 +333,11 @@ def test_get_service_client_returns_503_when_service_is_not_enabled(settings):
 
 
 def test_get_nats_connection_builder_returns_503_when_service_is_not_enabled(settings):
-    app = create_app(settings=settings, include_auth_router=False)
+    app = create_app(
+        config=AppConfig(enabled_services=[], required_services=[]),
+        settings=settings,
+        include_auth_router=False,
+    )
 
     @app.get("/nats")
     async def nats_client(_client: NatsConnectionBuilder = Depends(get_nats_connection_builder)):
