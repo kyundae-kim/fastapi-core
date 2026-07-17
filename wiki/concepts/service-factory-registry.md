@@ -1,10 +1,10 @@
 ---
 title: ServiceFactoryRegistry
 created: 2026-06-25
-updated: 2026-07-02
+updated: 2026-07-17
 type: concept
 tags: [service, module, integration, api, implementation]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-examples-guide-2026.md]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md]
 confidence: low
 contested: true
 ---
@@ -25,12 +25,11 @@ older examples 기준 registry 패턴의 장점은 다음과 같다.
 
 ## Current status
 
-최신 public 문서 기준 canonical path는 direct factory 조립이다.
+v0.3.0 public 문서와 examples 기준 canonical lifecycle은 assembly-first이며, direct factory는 필요할 때 쓰는 보조 경로다.
 
-- `CommonConfig()` 또는 `load_service_configs()`로 설정을 준비한다.
-- 필요한 서비스만 `create_*_client()`로 생성한다.
-- 종료 시 `close_service_clients()` 또는 개별 `close()`를 호출한다.
-- `nats`는 `NatsConnectionBuilder`를 통해 연결을 지연 생성한다.^[raw/articles/docmesh-py-core-api-reference-2026.md]^[raw/articles/docmesh-py-core-examples-guide-2026.md]
+- 일반 lifecycle은 `assemble_services()` 또는 `await assemble_service_runtime()`으로 조립하고 `ServiceBundle`/`ServiceRuntime` context manager로 종료한다.
+- CLI·배치·단일 서비스 테스트·SDK hook 제어에는 `CommonConfig()` 또는 `load_service_configs()`와 `create_*_client()`를 직접 조합할 수 있다.
+- `nats`는 `NatsConnectionBuilder`를 통해 연결을 지연 생성한다.^[raw/articles/docmesh-py-core-api-reference-v0.3.0.md]
 
 따라서 이 위키에서 `ServiceFactoryRegistry`는 "현재 canonical public API"라기보다, older docs와 일부 소비 코드에서 중요한 historical integration pattern으로 보는 편이 맞다.
 

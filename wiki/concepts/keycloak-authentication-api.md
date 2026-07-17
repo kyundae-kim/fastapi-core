@@ -1,10 +1,10 @@
 ---
 title: Keycloak authentication API
 created: 2026-06-25
-updated: 2026-07-13
+updated: 2026-07-17
 type: concept
 tags: [service, api, security, integration, implementation]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, fastapi_core/factory.py, fastapi_core/dependencies/auth.py, fastapi_core/routers/auth.py]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md, fastapi_core/factory.py, fastapi_core/dependencies/auth.py, fastapi_core/routers/auth.py]
 confidence: medium
 ---
 
@@ -23,7 +23,7 @@ confidence: medium
 
 ## Token acquisition
 
-`fetch_access_token(*, scope=None, username=None, password=None) -> AccessTokenResult`는 기본적으로 `client_credentials` grant를 사용하고, 선택적으로 `scope`를 전달할 수 있다. v0.2.0 문서는 password grant에서 함수 인자를 우선 사용하되, 생략된 값은 `config.token_username`, `config.token_password`에서 가져온다고 설명한다.^[raw/articles/docmesh-py-core-api-reference-v0.2.0.md]
+`fetch_access_token(*, scope=None, username=None, password=None) -> AccessTokenResult`의 기본 grant type은 `password`이며, `client_credentials`도 명시적으로 선택할 수 있다. 함수 인자를 우선 사용하되, 생략된 username/password는 `config.token_username`, `config.token_password`에서 가져온다.^[raw/articles/docmesh-py-core-api-reference-v0.3.0.md]
 
 대표 반환 필드는 `access_token`, `token_type`, `expires_in`, `refresh_token`, `scope`다.
 
@@ -32,6 +32,7 @@ confidence: medium
 - HTTP `400/401/403`은 인증 오류로 분류된다.
 - HTTP `408/429` 및 `5xx`는 일시적 오류로 분류되어 재시도 대상이 된다.
 - `password` grant에서 함수 인자가 빠진 경우 config의 `token_username`, `token_password`를 fallback으로 사용한다.
+- 기본 password grant로 Keycloak client healthcheck를 실행할 때도 `KEYCLOAK_TOKEN_USERNAME`과 `KEYCLOAK_TOKEN_PASSWORD`가 모두 필요하다. 이 누락은 config loading 이후 healthcheck 단계에서 드러난다.^[raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md]
 - 함수 인자와 config 양쪽을 합쳐도 credential이 완전하지 않으면 `KeycloakTokenConfigurationError`가 발생한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md]
 - 일시적 장애는 `config.max_retries + 1`번까지 재시도되고, 재시도 이벤트는 `build_service_log_event()` 포맷으로 로깅된다.^[raw/articles/docmesh-py-core-api-reference-2026.md]^[raw/articles/docmesh-py-core-configuration-guide-2026.md]
 
@@ -47,7 +48,7 @@ confidence: medium
 
 `KeycloakProvisioner(config: KeycloakConfig, *, admin_client)`는 Realm/Client/Role을 선언형으로 생성·갱신하는 프로비저너이며, 멱등 실행과 dry-run을 지원하지만 선언에서 제거된 리소스를 자동 삭제하지는 않는다.^[raw/articles/docmesh-py-core-api-reference-2026.md]
 
-`admin_client`는 `ensure_realm`, `ensure_client`, `ensure_realm_role`, `ensure_client_role` 계약을 만족해야 하며, 결과는 `created`, `updated`, `unchanged`, `failed`, `planned`, `dry_run` 필드를 가진다. 다만 `ProvisioningResult` 자체는 패키지 루트 `__all__`로 재-export되지는 않는다.^[raw/articles/docmesh-py-core-api-reference-2026.md]
+`admin_client`는 `ensure_realm`, `ensure_client`, `ensure_realm_role`, `ensure_client_role` 계약을 만족해야 하며, 결과는 `created`, `updated`, `unchanged`, `failed`, `planned`, `dry_run` 필드를 가진다. v0.3.0에서는 `ProvisioningResult`도 패키지 루트 공개 import 목록에 포함된다.^[raw/articles/docmesh-py-core-api-reference-v0.3.0.md]
 
 설정 가이드는 `KEYCLOAK_PROVISIONING_ENABLED=true`일 때 admin 인증 방식이 정확히 하나여야 한다고 못 박는다.
 
@@ -67,4 +68,4 @@ confidence: medium
 
 fastapi-core는 현재 이 API를 채택해 Keycloak client/provider를 구성한다. `/token`은 `fetch_access_token()`으로 토큰을 발급하고 예외 유형을 HTTP 오류로 매핑하며, `/user`와 `get_current_user()`는 bearer token을 검증해 역할과 scope를 `UserInfo`로 변환한다.
 
-예제 문서는 `client_credentials`와 `password` grant를 분리해 보여주고, RS256 토큰 검증 시 `allowed_algorithms=["RS256"]`를 명시하는 패턴을 제시한다. 즉 fastapi-core 통합에서는 사용자 credential을 설정 객체에 영구 보관하기보다 토큰 요청 시점 인자로 전달하고, JWT 검증은 Keycloak 배포 알고리즘에 맞춰 명시적으로 구성하는 것이 권장된다.
+예제 문서는 `client_credentials`와 `password` grant를 분리해 보여주고, RS256 토큰 검증 시 `allowed_algorithms=["RS256"]`를 명시하는 패턴을 제시한다. 즉 fastapi-core 통합에서는 사용자 credential을 설정 객체에 영구 보관하기보다 토큰 요청 시점 인자로 전달하고, JWT 검증은 Keycloak 배포 알고리즘에 맞춰 명시적으로 구성하는 것이 권장된다.^[raw/articles/docmesh-py-core-examples-guide-v0.3.0.md]

@@ -197,3 +197,25 @@
   - `uv run pytest -q -m 'not integration'` → `46 passed, 11 deselected, 2 warnings in 0.36s`
   - `uv run pytest -q -m integration` → `11 passed, 46 deselected, 2 warnings in 20.43s`
   - `uv run pytest -q` → `57 passed, 2 warnings in 20.75s`
+
+## [2026-07-17] ingest | docmesh-py-core v0.3.0 API Reference
+- Captured immutable source: raw/articles/docmesh-py-core-api-reference-v0.3.0.md
+- Refreshed entity and concept pages: entities/docmesh-py-core.md, concepts/service-configuration-contracts.md, concepts/service-factory-registry.md, concepts/service-health-check-aggregation.md, concepts/application-integration-patterns.md, concepts/keycloak-authentication-api.md, concepts/operational-logging-and-retry-utilities.md
+- Updated index.md navigation date; no new wiki page was needed because the source updated existing central topics.
+- Corrected superseded claims: health/provisioning result types are package-root imports in v0.3.0; the canonical lifecycle is assembly-first; Keycloak token acquisition defaults to password grant.
+
+## [2026-07-17] ingest | docmesh-py-core v0.3.0 Examples
+- Captured immutable source: raw/articles/docmesh-py-core-examples-guide-v0.3.0.md
+- Refreshed entity and concept pages: entities/docmesh-py-core.md, concepts/application-integration-patterns.md, concepts/service-health-check-aggregation.md, concepts/keycloak-authentication-api.md, concepts/operational-logging-and-retry-utilities.md, concepts/service-configuration-contracts.md, concepts/service-factory-registry.md
+- Updated index.md summaries; no new wiki page was needed because the examples corroborate and refine existing central topics.
+- Recorded the typed `RuntimePlan` async lifecycle, PostgreSQL/SQLite `one_of` assembly, Keycloak startup-health credential requirement, and the current FastAPI/health/observability recipes.
+
+## [2026-07-17] ingest | docmesh-py-core v0.3.0 Configuration Guide
+- Captured immutable source: raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md
+- Refreshed entity and concept pages: entities/docmesh-py-core.md, concepts/service-configuration-contracts.md, concepts/keycloak-authentication-api.md, concepts/application-integration-patterns.md, concepts/operational-logging-and-retry-utilities.md
+- Corrected/clarified configuration behavior: accepted boolean forms, deprecated PostgreSQL DSN migration, Langfuse retry-field scope, production placeholder diagnostics, NATS authentication exclusivity, and Keycloak startup-health failure timing.
+
+## [2026-07-17] ingest | docmesh-py-core v0.3.0 .env.example
+- Captured immutable source: raw/articles/docmesh-py-core-env-example-v0.3.0.md
+- Updated concepts/service-configuration-contracts.md with template-consumption guidance.
+- Recorded that the template contains placeholders, should be narrowed to selected services, and direct factory consumers should pass matching names to `load_service_configs(services={...})`.
