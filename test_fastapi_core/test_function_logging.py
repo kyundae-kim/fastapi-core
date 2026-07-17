@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 _PACKAGE_ROOT = Path(__file__).parents[1] / "fastapi_core"
-_EXCLUDED_FUNCTIONS = {("factory.py", "JsonLogFormatter.format")}
+_EXCLUDED_FUNCTIONS = {("logging.py", "JsonLogFormatter.format")}
 
 
 def _function_names(tree: ast.AST) -> list[tuple[ast.FunctionDef | ast.AsyncFunctionDef, str]]:

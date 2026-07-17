@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import MISSING, fields
+from importlib import import_module
 from inspect import Parameter, signature
 
 import fastapi_core
@@ -15,8 +16,10 @@ from fastapi_core.factory import create_app
 
 ROOT_EXPORTS = {
     "ErrorMapping",
+    "ErrorRenderer",
     "ManagedResource",
     "ReadinessCheckSpec",
+    "ResourceKey",
     "create_app",
     "register_error_mapper",
     "register_readiness_check",
@@ -35,6 +38,7 @@ DEPENDENCY_EXPORTS = {
     "get_postgres_engine",
     "get_resource",
     "get_service_client",
+    "get_service_runtime",
     "get_settings",
     "get_sqlite_engine",
     "require_permissions",
@@ -82,10 +86,11 @@ def test_curated_package_exports_are_stable():
 def test_create_app_signature_is_stable():
     assert _parameter_contract(fastapi_core.create_app) == [
         ("config", Parameter.POSITIONAL_OR_KEYWORD, None),
-        ("settings", Parameter.POSITIONAL_OR_KEYWORD, None),
-        ("lifespan", Parameter.POSITIONAL_OR_KEYWORD, None),
-        ("include_auth_router", Parameter.POSITIONAL_OR_KEYWORD, True),
-        ("resources", Parameter.POSITIONAL_OR_KEYWORD, ()),
+        ("runtime", Parameter.KEYWORD_ONLY, None),
+        ("lifespan", Parameter.KEYWORD_ONLY, None),
+        ("include_auth_router", Parameter.KEYWORD_ONLY, True),
+        ("resources", Parameter.KEYWORD_ONLY, ()),
+        ("error_renderer", Parameter.KEYWORD_ONLY, None),
     ]
 
 
@@ -126,11 +131,15 @@ def test_runtime_extension_contracts_are_stable():
         "title",
         "type_uri",
         "headers",
+        "code",
+        "extensions",
     ]
     assert _field_defaults(fastapi_core.ErrorMapping) == {
         "title": None,
         "type_uri": "about:blank",
         "headers": None,
+        "code": None,
+        "extensions": None,
     }
 
 
@@ -150,10 +159,18 @@ def test_extension_function_signatures_are_stable():
     ]
 
 
-def test_readiness_state_exposes_only_typed_registry(settings):
+def test_readiness_state_exposes_only_typed_registry(runtime_factory):
+    class Client:
+        def check(self):
+            return None
+
+    runtime = runtime_factory(
+        clients={"keycloak": Client()},
+        required=("keycloak",),
+    )
     app = create_app(
         config=AppConfig(enabled_services=["keycloak"], required_services=["keycloak"]),
-        settings=settings,
+        runtime=runtime,
         include_auth_router=False,
     )
     registry = app.state.readiness_registry
@@ -173,6 +190,7 @@ def test_readiness_state_exposes_only_typed_registry(settings):
     assert not hasattr(registry, "services")
     assert not hasattr(registry, "required_services")
     assert not hasattr(registry, "owns_legacy_state")
+    assert not hasattr(app.state.resource_registry, "_healthcheck_names")
 
 
 def test_obsolete_refactoring_helpers_are_not_reintroduced():
@@ -180,3 +198,27 @@ def test_obsolete_refactoring_helpers_are_not_reintroduced():
     assert not hasattr(factory_module, "_wrap_readiness_check")
     assert not hasattr(factory_module, "_build_readiness_checks")
     assert not hasattr(ResourceRegistry, "_bind_healthcheck")
+    assert not hasattr(factory_module, "build_injected_service_runtime")
+    runtime = import_module("fastapi_core.runtime")
+    assert not hasattr(runtime, "build_injected_service_runtime")
+    assert not hasattr(runtime, "build_service_clients")
+
+
+def test_readiness_and_resource_implementations_have_explicit_module_owners():
+    readiness = import_module("fastapi_core.readiness")
+    resources = import_module("fastapi_core.resources")
+
+    assert readiness.ReadinessCheckSpec is fastapi_core.ReadinessCheckSpec
+    assert readiness.register_readiness_check is fastapi_core.register_readiness_check
+    assert resources.ManagedResource is fastapi_core.ManagedResource
+    assert resources.ResourceKey is fastapi_core.ResourceKey
+
+
+def test_factory_collaborators_have_explicit_module_owners():
+    application_logging = import_module("fastapi_core.logging")
+    lifecycle = import_module("fastapi_core.lifecycle")
+    runtime = import_module("fastapi_core.runtime")
+
+    assert application_logging.JsonLogFormatter.__module__ == "fastapi_core.logging"
+    assert lifecycle.build_lifespan.__module__ == "fastapi_core.lifecycle"
+    assert runtime.configure_service_runtime.__module__ == "fastapi_core.runtime"

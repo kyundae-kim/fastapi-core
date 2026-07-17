@@ -12,52 +12,62 @@ from fastapi_core.docmesh_settings import build_docmesh_env_overlay, load_docmes
 
 
 def test_app_config_reads_env_fields_from_settings(monkeypatch):
-    monkeypatch.setenv("ROOT_PATH", "/api")
-    monkeypatch.setenv("TOKEN_URL", "/api/auth/token")
-    monkeypatch.setenv("CORS_ORIGINS", "https://a.example, https://b.example")
-    monkeypatch.setenv("CORS_CREDENTIALS", "true")
-    monkeypatch.setenv("READINESS_PARALLEL", "true")
-    monkeypatch.setenv("READINESS_TIMEOUT_SECONDS", "0.25")
-    monkeypatch.setenv("READINESS_OVERALL_TIMEOUT_SECONDS", "1.5")
-    monkeypatch.setenv(
-        "DOCMESH_SERVICE_ALTERNATIVES",
-        "postgres,sqlite;minio,milvus",
+    cases = (
+        ("ROOT_PATH", "/api", "root_path", "/api"),
+        ("TOKEN_URL", "/api/auth/token", "token_url", "/api/auth/token"),
+        (
+            "CORS_ORIGINS",
+            "https://a.example, https://b.example",
+            "cors_origins",
+            ["https://a.example", "https://b.example"],
+        ),
+        ("CORS_CREDENTIALS", "true", "cors_credentials", True),
+        ("READINESS_PARALLEL", "true", "readiness_parallel", True),
+        (
+            "READINESS_TIMEOUT_SECONDS",
+            "0.25",
+            "readiness_timeout_seconds",
+            0.25,
+        ),
+        (
+            "READINESS_OVERALL_TIMEOUT_SECONDS",
+            "1.5",
+            "readiness_overall_timeout_seconds",
+            1.5,
+        ),
+        (
+            "DOCMESH_SERVICE_ALTERNATIVES",
+            "postgres,sqlite;minio,milvus",
+            "service_alternatives",
+            [["postgres", "sqlite"], ["minio", "milvus"]],
+        ),
+        ("DOCMESH_HEALTHCHECK_ENABLED", "true", "startup_healthcheck", True),
+        ("DOCMESH_LOG_LEVEL", "INFO", "log_level", "INFO"),
+        ("APP_LOG_PATH", "/tmp/app.log", "log_path", "/tmp/app.log"),
+        ("APP_LOG_JSON", "false", "log_json", False),
+        ("APP_LOG_FORCE", "true", "log_force", True),
+        (
+            "DOCMESH_SERVICES",
+            "keycloak,sqlite",
+            "enabled_services",
+            ["keycloak", "sqlite"],
+        ),
+        ("READINESS_REQUIRED_SERVICES", "sqlite", "required_services", ["sqlite"]),
     )
-    monkeypatch.setenv("DOCMESH_HEALTHCHECK_ENABLED", "true")
-    monkeypatch.setenv("DOCMESH_LOG_LEVEL", "INFO")
-    monkeypatch.setenv("APP_LOG_PATH", "/tmp/app.log")
-    monkeypatch.setenv("APP_LOG_JSON", "false")
-    monkeypatch.setenv("APP_LOG_FORCE", "true")
-    monkeypatch.setenv("DOCMESH_SERVICES", "keycloak,sqlite")
-    monkeypatch.setenv("READINESS_REQUIRED_SERVICES", "sqlite")
+    for environment_name, raw_value, _, _ in cases:
+        monkeypatch.setenv(environment_name, raw_value)
     load_app_config.cache_clear()
 
     config = load_app_config()
 
-    assert config.root_path == "/api"
-    assert config.token_url == "/api/auth/token"
-    assert config.cors_origins == ["https://a.example", "https://b.example"]
-    assert config.cors_credentials is True
-    assert config.readiness_parallel is True
-    assert config.readiness_timeout_seconds == 0.25
-    assert config.readiness_overall_timeout_seconds == 1.5
-    assert config.service_alternatives == [
-        ["postgres", "sqlite"],
-        ["minio", "milvus"],
-    ]
-    assert config.startup_healthcheck is True
-    assert config.log_level == "INFO"
-    assert config.log_path == "/tmp/app.log"
-    assert config.log_json is False
-    assert config.log_force is True
-    assert config.enabled_services == ["keycloak", "sqlite"]
-    assert config.required_services == ["sqlite"]
+    for _, _, field_name, expected in cases:
+        assert getattr(config, field_name) == expected
     load_app_config.cache_clear()
 
 
 
 def test_app_config_defaults_match_existing_behavior(monkeypatch):
-    for key in [
+    environment_names = {
         "ROOT_PATH",
         "TOKEN_URL",
         "CORS_ORIGINS",
@@ -73,28 +83,14 @@ def test_app_config_defaults_match_existing_behavior(monkeypatch):
         "APP_LOG_FORCE",
         "DOCMESH_SERVICES",
         "READINESS_REQUIRED_SERVICES",
-    ]:
+    }
+    for key in environment_names:
         monkeypatch.delenv(key, raising=False)
     load_app_config.cache_clear()
 
     config = load_app_config()
 
-    assert isinstance(config, AppConfig)
-    assert config.root_path == ""
-    assert config.token_url == "/token"
-    assert config.cors_origins == ["*"]
-    assert config.cors_credentials is False
-    assert config.readiness_parallel is False
-    assert config.readiness_timeout_seconds is None
-    assert config.readiness_overall_timeout_seconds is None
-    assert config.service_alternatives == []
-    assert config.startup_healthcheck is False
-    assert config.log_level == "WARNING"
-    assert config.log_path is None
-    assert config.log_json is True
-    assert config.log_force is False
-    assert config.enabled_services == ["keycloak"]
-    assert config.required_services == ["keycloak"]
+    assert config == AppConfig()
     load_app_config.cache_clear()
 
 
@@ -140,26 +136,66 @@ def test_app_config_prefers_field_name_over_environment_alias():
     assert config.log_level == "INFO"
 
 
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ({"log_level": "INFO"}, "INFO"),
+        ({"DOCMESH_LOG_LEVEL": "DEBUG"}, "DEBUG"),
+        (
+            {"log_level": "INFO", "DOCMESH_LOG_LEVEL": "DEBUG"},
+            "INFO",
+        ),
+    ],
+)
+def test_app_config_preserves_field_name_and_alias_precedence(values, expected):
+    assert AppConfig(**values).log_level == expected
 
-def test_build_docmesh_env_overlay_applies_defaults_without_overwriting(monkeypatch):
+
+
+def test_build_docmesh_env_overlay_copies_environment_without_development_defaults(
+    monkeypatch,
+):
     monkeypatch.setenv("KEYCLOAK_URL", "http://override.test")
     monkeypatch.setenv("NATS_TOKEN", "custom-token")
-    monkeypatch.delenv("KEYCLOAK_REALM", raising=False)
-    monkeypatch.delenv("POSTGRES_DSN", raising=False)
-    monkeypatch.delenv("SQLITE_PATH", raising=False)
-    monkeypatch.delenv("LANGFUSE_HOST", raising=False)
+    for key in (
+        "KEYCLOAK_REALM",
+        "KEYCLOAK_CLIENT_SECRET",
+        "POSTGRES_HOST",
+        "POSTGRES_PASSWORD",
+        "SQLITE_PATH",
+        "LANGFUSE_HOST",
+    ):
+        monkeypatch.delenv(key, raising=False)
 
     env = build_docmesh_env_overlay()
 
     assert env["KEYCLOAK_URL"] == "http://override.test"
     assert env["NATS_TOKEN"] == "custom-token"
-    assert env["KEYCLOAK_REALM"] == "docmesh"
-    assert env["POSTGRES_DSN"] == (
-        "postgresql+psycopg://docmesh:dev-secret@postgres.local:5432/docmesh"
-    )
-    assert env["SQLITE_PATH"] == ":memory:"
-    assert env["LANGFUSE_HOST"] == "http://langfuse.local:3000"
+    assert "KEYCLOAK_REALM" not in env
+    assert "KEYCLOAK_CLIENT_SECRET" not in env
+    assert "POSTGRES_HOST" not in env
+    assert "POSTGRES_PASSWORD" not in env
+    assert "SQLITE_PATH" not in env
+    assert "LANGFUSE_HOST" not in env
 
+
+def test_build_docmesh_env_overlay_preserves_legacy_postgres_dsn(monkeypatch):
+    dsn = "postgresql+psycopg://docmesh:secret@postgres.test:5432/docmesh"
+    monkeypatch.setenv("POSTGRES_DSN", dsn)
+    for key in (
+        "POSTGRES_HOST",
+        "POSTGRES_PORT",
+        "POSTGRES_DB",
+        "POSTGRES_USER",
+        "POSTGRES_PASSWORD",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    env = build_docmesh_env_overlay()
+
+    assert env["POSTGRES_DSN"] == dsn
+    assert "POSTGRES_HOST" not in env
+    assert "POSTGRES_PASSWORD" not in env
 
 
 def test_load_docmesh_settings_uses_selected_services():
@@ -169,9 +205,28 @@ def test_load_docmesh_settings_uses_selected_services():
     assert settings.keycloak is None
 
 
-def test_load_docmesh_settings_passes_overlay_without_mutating_environment(monkeypatch):
+def test_load_docmesh_settings_preserves_explicitly_empty_selection():
+    settings = load_docmesh_settings(())
+
+    assert all(
+        getattr(settings, service) is None
+        for service in (
+            "keycloak",
+            "postgres",
+            "sqlite",
+            "minio",
+            "milvus",
+            "ollama",
+            "langfuse",
+            "nats",
+        )
+    )
+
+
+def test_load_docmesh_settings_passes_environment_without_mutating_it(monkeypatch):
     captured: dict[str, object] = {}
     sentinel = object()
+    monkeypatch.delenv("SQLITE_PATH", raising=False)
     original_environment = dict(os.environ)
 
     def fake_load_service_configs(env, *, services):
@@ -190,19 +245,6 @@ def test_load_docmesh_settings_passes_overlay_without_mutating_environment(monke
 
     assert result is sentinel
     assert captured["services"] == {"sqlite"}
-    assert captured["env"]["SQLITE_PATH"] == ":memory:"
+    assert "SQLITE_PATH" not in captured["env"]
     assert dict(os.environ) == original_environment
-    load_docmesh_settings.cache_clear()
-
-
-def test_load_docmesh_settings_loads_postgres_from_default_env(monkeypatch):
-    monkeypatch.delenv("POSTGRES_DSN", raising=False)
-    load_docmesh_settings.cache_clear()
-
-    settings = load_docmesh_settings(("postgres",))
-
-    assert settings.postgres is not None
-    assert settings.postgres.dsn == (
-        "postgresql+psycopg://docmesh:dev-secret@postgres.local:5432/docmesh"
-    )
     load_docmesh_settings.cache_clear()

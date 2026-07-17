@@ -1,16 +1,16 @@
 ---
 title: Operational logging and retry utilities
 created: 2026-06-29
-updated: 2026-07-13
+updated: 2026-07-17
 type: concept
 tags: [api, observability, implementation, security]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.2.0.md]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md]
 confidence: medium
 ---
 
 # Operational logging and retry utilities
 
-`docmesh-py-core`는 서비스 연결 코드 주변의 운영 보일러플레이트를 줄이기 위해 `mask_sensitive_value`, `configure_logging`, `build_service_log_event`, `retry_call`, `close_service_clients`를 공개 helper 표면으로 제공한다.^[raw/articles/docmesh-py-core-api-reference-2026.md]
+`docmesh-py-core`는 서비스 연결 코드 주변의 운영 보일러플레이트를 줄이기 위해 `mask_sensitive_value`, `configure_logging`, `build_service_log_event`, `retry_call`, `close_service_clients`를 공개 helper 표면으로 제공한다.^[raw/articles/docmesh-py-core-api-reference-v0.3.0.md]
 
 ## Utility surface
 
@@ -20,9 +20,9 @@ confidence: medium
 - `retry_call(operation, ..., retry_on, max_attempts, base_delay_seconds=0.5)`: 지수 백오프 기반으로 동기 함수를 재시도한다.
 - `close_service_clients(clients)`: 여러 wrapper/client에 대해 `close()`를 순회 호출하고 `None` 값은 무시한다. 비동기/혼합 cleanup에는 실패를 모아 나머지 종료를 계속하는 `async_close_service_clients()`를 사용한다.^[raw/articles/docmesh-py-core-api-reference-v0.2.0.md]
 
-설정 가이드는 `DOCMESH_LOG_LEVEL`의 기본값을 `INFO`로 두고, `configure_logging(level=...)`를 주지 않으면 이 env를 읽도록 문서화한다. 또한 `DOCMESH_LOG_LEVEL`은 `CommonConfig` 필드가 아니라 로깅 함수가 직접 읽는 환경변수라고 구분한다.^[raw/articles/docmesh-py-core-configuration-guide-2026.md]
+v0.3.0 설정 가이드는 `DOCMESH_LOG_LEVEL`의 기본값을 `INFO`로 두고, `configure_logging(level=...)`를 주지 않으면 이 env를 읽도록 문서화한다. 또한 `DOCMESH_LOG_LEVEL`은 `CommonConfig` 필드가 아니라 로깅 함수가 직접 읽는 환경변수라고 구분한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md]
 
-v0.2.0 예제는 `configure_logging(log_path=Path("./logs/docmesh.log"), force=True)` 호출을 제시하며, `log_path`의 부모 디렉터리가 자동 생성되고 `level`을 생략하면 `DOCMESH_LOG_LEVEL`을 읽는다고 설명한다.^[raw/articles/docmesh-py-core-examples-guide-v0.2.0.md]
+v0.3.0 예제는 `configure_logging(log_path=Path("./logs/docmesh.log"), force=True)` 호출을 제시하며, `log_path`의 부모 디렉터리가 자동 생성되고 `level`을 생략하면 `DOCMESH_LOG_LEVEL`을 읽는다고 설명한다.^[raw/articles/docmesh-py-core-examples-guide-v0.3.0.md]
 
 ## Guardrails
 

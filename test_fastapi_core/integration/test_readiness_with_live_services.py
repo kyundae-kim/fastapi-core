@@ -14,6 +14,9 @@ pytestmark = pytest.mark.integration
         ("keycloak", "keycloak_integration_ready"),
         ("nats", "nats_integration_ready"),
         ("postgres", "postgres_integration_ready"),
+        ("minio", "minio_integration_ready"),
+        ("milvus", "milvus_integration_ready"),
+        ("sqlite", "sqlite_integration_ready"),
     ],
 )
 def test_readiness_reports_required_live_service(

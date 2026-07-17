@@ -16,6 +16,7 @@ from fastapi_core.dependencies.services import (
     get_postgres_engine,
     get_resource,
     get_service_client,
+    get_service_runtime,
     get_sqlite_engine,
 )
 
@@ -32,6 +33,7 @@ __all__ = [
     "get_postgres_engine",
     "get_resource",
     "get_service_client",
+    "get_service_runtime",
     "get_settings",
     "get_sqlite_engine",
     "require_permissions",

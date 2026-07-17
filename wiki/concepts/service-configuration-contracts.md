@@ -1,10 +1,10 @@
 ---
 title: Service configuration contracts
 created: 2026-06-25
-updated: 2026-07-13
+updated: 2026-07-17
 type: concept
 tags: [config, contract, integration, implementation, security]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-env-example-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md]
 confidence: medium
 ---
 
@@ -17,7 +17,7 @@ confidence: medium
 - 공통 식별자는 `CommonConfig().env`와 `DOCMESH_HEALTHCHECK_ENABLED` 축이다.
 - 공용 로깅 기본 레벨은 `DOCMESH_LOG_LEVEL`로 제어할 수 있고, 명시 설정이 없으면 `INFO`를 사용한다.
 - 공백 문자열은 미설정(`None`)으로 처리된다.
-- Boolean 값은 `true` / `false`만 허용된다.
+- Boolean 값은 `true` / `false`, `1` / `0`, `yes` / `no`, `on` / `off`를 허용한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md]
 - 민감정보는 secret manager 또는 배포 플랫폼 secret 기능으로 주입하는 것이 권장된다.
 - 서비스별 timeout/retry는 전역 공통값이 아니라 서비스별 환경변수로 관리된다.
 - `LANGFUSE_ENVIRONMENT`가 비어 있으면 `CommonConfig().env` 값을 상속한다.^[raw/articles/docmesh-py-core-configuration-guide-2026.md]
@@ -29,16 +29,17 @@ confidence: medium
 - `services=None`이면 `keycloak`, `postgres`, `sqlite`, `minio`, `milvus`, `ollama`, `langfuse`, `nats` 전체를 검증한다.
 - `services={...}`를 주면 지정한 서비스만 로드하고 나머지는 `None`으로 둔다.
 - 명시 mapping을 `env`로 전달하면 프로세스 환경을 수정하지 않고 그 mapping만 설정 소스로 사용한다. `load_available_service_configs()`는 관련 key가 있는 후보만 로드하며 부분 설정은 오류로 처리한다.
-- 마지막 단계에서 `validate_runtime_security()`를 호출해 production 계열 런타임 보안 제약을 확인한다.
+- v0.3.0 `.env.example`은 deployment template이며 placeholder를 실제 배포값으로 교체해야 한다. 필요한 서비스만 선택하고 direct factory에서는 `load_service_configs(services={...})`로 같은 서비스 이름을 전달해 무관한 placeholder가 검증되지 않도록 한다.^[raw/articles/docmesh-py-core-env-example-v0.3.0.md]
+- 마지막 단계에서 `validate_runtime_security()`를 호출해 production 계열 런타임 보안 제약을 확인한다. v0.3.0은 `load_available_service_configs()`가 관련 prefix가 전혀 없는 후보는 `None`으로 두되, 관련 키가 하나라도 있는 불완전한 설정은 `ConfigError`로 처리한다고 명시한다.^[raw/articles/docmesh-py-core-api-reference-v0.3.0.md]
 - production 보안 제약은 `DOCMESH_SECURITY_MODE`가 있으면 그 값을 우선 사용하고, 없으면 `CommonConfig.env`를 `DOCMESH_PRODUCTION_ALIASES`(기본 `prod,production`)와 비교해 활성화한다.^[raw/articles/docmesh-py-core-api-reference-v0.2.0.md]
 
 ## Service-specific contracts
 
 - Keycloak: `KeycloakDiscoveryConfig()`와 `KeycloakConfig()`를 구분하며, `KEYCLOAK_CLIENT_PUBLIC=false`면 `KEYCLOAK_CLIENT_SECRET`가 필요하다. password grant에서는 함수 인자가 우선이고, 생략된 username/password는 `KEYCLOAK_TOKEN_USERNAME`/`KEYCLOAK_TOKEN_PASSWORD`에서 보완한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md]
-- PostgreSQL: `config.dsn`이 있으면 host/db/user/password 개별 필드보다 우선한다.
+- PostgreSQL: `POSTGRES_DSN`은 deprecated이며 v0.4.0 제거를 목표로 한다. 신규 설정은 host/db/user/password 개별 필드를 모두 사용하고, DSN과 개별 필드는 혼용할 수 없다.^[raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md]
 - SQLite: 로컬 개발과 테스트에 적합하며 `:memory:`를 지원한다. 상위 디렉터리 자동 생성은 하지 않고, 파일 경로 문제는 설정 로딩이 아니라 실제 연결 단계에서 드러난다.^[raw/articles/docmesh-py-core-configuration-guide-2026.md]
 - MinIO / Milvus / Ollama: 여러 timeout/retry/model 관련 env가 설정 모델에는 존재하지만, 현재 팩토리 구현이 일부 값을 생성자에 직접 전달하지 않는다고 문서가 명시한다.
-- Langfuse: `enabled=False`면 client 생성이 `None`이 될 수 있고, `enabled=True`일 때만 host/public_key/secret_key가 필수다.
+- Langfuse: `enabled=False`면 client 생성이 `None`이 될 수 있고, `enabled=True`일 때만 host/public_key/secret_key가 필수다. `LANGFUSE_MAX_RETRIES`는 현재 parsing/validation에만 사용되며 기본 factory나 runtime defaults에는 자동 연결되지 않는다.^[raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md]
 - NATS: `NATS_SERVERS`는 쉼표 구분 목록으로 파싱되고, user/password · token · creds file 중 정확히 하나의 인증 모드만 허용된다.^[raw/articles/docmesh-py-core-configuration-guide-2026.md]
 
 ## Aggregate model
@@ -65,6 +66,8 @@ confidence: medium
 - password grant는 설정 로딩 단계에서 username/password를 강제하지 않으며, 실제 토큰 요청 시 함수 인자와 config fallback을 합쳐 완전한 credential이 있어야 한다.
 - `DOCMESH_HEALTHCHECK_ENABLED`는 `check_on_startup`에 자동 연결되지 않으므로, 소비 애플리케이션이 startup 정책에 반영해야 한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md]
 - production/prod 환경에서는 `KEYCLOAK_VERIFY_SSL=false`, `MINIO_SECURE=false`, `MILVUS_SECURE=false` 같은 비보안 설정이 `validate_runtime_security()`에 의해 거부된다.
+- `assemble_services()`는 `load_available_service_configs()`를 사용하므로 PostgreSQL과 SQLite처럼 대체 가능한 후보를 `one_of=({"postgres", "sqlite"},)`로 조립할 수 있다.^[raw/articles/docmesh-py-core-examples-guide-v0.3.0.md]
+- `diagnose_services(env, plan=...)`는 startup 전 검증에 동일한 `RuntimePlan`을 재사용하며, production에서는 placeholder secret 또는 example/localhost endpoint를 원래 값을 노출하지 않는 `production_placeholder` issue로 보고한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md]
 
 ## Operational significance
 

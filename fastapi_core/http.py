@@ -4,7 +4,7 @@ import inspect
 import logging
 import re
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from http import HTTPStatus
 from uuid import uuid4
 
@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.exceptions import HTTPException
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from fastapi_core.schemas.error import ProblemDetail
@@ -31,9 +31,12 @@ class ErrorMapping:
     title: str | None = None
     type_uri: str = "about:blank"
     headers: dict[str, str] | None = None
+    code: str | None = None
+    extensions: dict[str, object] | None = None
 
 
 ErrorMapper = Callable[[Request, Exception], ErrorMapping | Awaitable[ErrorMapping]]
+ErrorRenderer = Callable[[Request, ErrorMapping], Response | Awaitable[Response]]
 
 
 @log_function_boundary()
@@ -95,7 +98,7 @@ def _problem_response(
         type=type_uri,
         title=title or _status_title(status_code),
         status=status_code,
-        detail=_mask_problem_detail(detail),
+        detail=detail,
         instance=request.url.path,
         correlation_id=correlation_id,
     )
@@ -108,13 +111,37 @@ def _problem_response(
 
 
 @log_function_boundary()
-async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+def _problem_renderer(request: Request, mapping: ErrorMapping) -> Response:
     return _problem_response(
         request,
-        status_code=exc.status_code,
-        detail=detail,
-        headers=exc.headers,
+        status_code=mapping.status_code,
+        detail=mapping.detail,
+        title=mapping.title,
+        type_uri=mapping.type_uri,
+        headers=mapping.headers,
+    )
+
+
+@log_function_boundary()
+async def _render_error(request: Request, mapping: ErrorMapping) -> Response:
+    sanitized = replace(mapping, detail=_mask_problem_detail(mapping.detail))
+    renderer: ErrorRenderer = request.app.state.error_renderer
+    response = renderer(request, sanitized)
+    if inspect.isawaitable(response):
+        return await response
+    return response
+
+
+@log_function_boundary()
+async def _http_exception_handler(request: Request, exc: HTTPException) -> Response:
+    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    return await _render_error(
+        request,
+        ErrorMapping(
+            status_code=exc.status_code,
+            detail=detail,
+            headers=exc.headers,
+        ),
     )
 
 
@@ -122,11 +149,10 @@ async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONR
 async def _validation_exception_handler(
     request: Request,
     _exc: RequestValidationError,
-) -> JSONResponse:
-    return _problem_response(
+) -> Response:
+    return await _render_error(
         request,
-        status_code=422,
-        detail="Request validation failed",
+        ErrorMapping(status_code=422, detail="Request validation failed"),
     )
 
 
@@ -134,7 +160,7 @@ async def _validation_exception_handler(
 async def _unhandled_exception_handler(
     request: Request,
     _exc: Exception,
-) -> JSONResponse:
+) -> Response:
     correlation_id = getattr(request.state, "correlation_id", None)
     logger.error(
         "unhandled_request_error",
@@ -146,15 +172,18 @@ async def _unhandled_exception_handler(
             }
         },
     )
-    return _problem_response(
+    return await _render_error(
         request,
-        status_code=500,
-        detail="Internal Server Error",
+        ErrorMapping(status_code=500, detail="Internal Server Error"),
     )
 
 
 @log_function_boundary()
-def install_problem_handlers(app: FastAPI) -> None:
+def install_problem_handlers(
+    app: FastAPI,
+    error_renderer: ErrorRenderer | None = None,
+) -> None:
+    app.state.error_renderer = error_renderer or _problem_renderer
     app.add_exception_handler(HTTPException, _http_exception_handler)
     app.add_exception_handler(RequestValidationError, _validation_exception_handler)
     app.add_exception_handler(Exception, _unhandled_exception_handler)
@@ -170,17 +199,10 @@ def register_error_mapper(
     async def mapped_exception_handler(
         request: Request,
         exc: Exception,
-    ) -> JSONResponse:
+    ) -> Response:
         mapping = mapper(request, exc)
         if inspect.isawaitable(mapping):
             mapping = await mapping
-        return _problem_response(
-            request,
-            status_code=mapping.status_code,
-            detail=mapping.detail,
-            title=mapping.title,
-            type_uri=mapping.type_uri,
-            headers=mapping.headers,
-        )
+        return await _render_error(request, mapping)
 
     app.add_exception_handler(exception_type, mapped_exception_handler)

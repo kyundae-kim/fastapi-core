@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from docmesh_py_core.function_logging import log_function_boundary
 from docmesh_py_core import HealthCheckError, build_service_log_event
 
-from fastapi_core.extensions import ReadinessRegistry
+from fastapi_core.readiness import ReadinessRegistry
 from fastapi_core.schemas.health import HealthResponse, HealthServiceDetail, HealthStatus
 
 router = APIRouter(prefix="/health", tags=["health"])
@@ -24,7 +24,7 @@ def _readiness_error(
 ) -> str | None:
     if ok:
         return error
-    spec = registry.specs[service_name]
+    spec = registry.resolve_spec(service_name)
     if spec.redact_errors:
         return "readiness check failed"
     if error:
@@ -102,7 +102,7 @@ async def readiness(request: Request) -> HealthResponse | JSONResponse:
     details: dict[str, HealthServiceDetail] = {}
     failures: list[tuple[str, HealthServiceDetail]] = []
     for service in result.services:
-        spec = registry.specs[service.service]
+        spec = registry.resolve_spec(service.service)
         detail = HealthServiceDetail(
             ok=service.ok,
             latency_ms=service.latency_ms,

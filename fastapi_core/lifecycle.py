@@ -1,0 +1,73 @@
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable
+from contextlib import asynccontextmanager
+
+from docmesh_py_core import ServiceCloseError, ServiceRuntime
+from docmesh_py_core.function_logging import log_function_boundary
+from fastapi import FastAPI
+
+from fastapi_core.config import AppConfig
+from fastapi_core.resources import ResourceRegistry
+from fastapi_core.runtime import assemble_runtime, configure_service_runtime
+
+logger = logging.getLogger(__name__)
+
+
+@log_function_boundary()
+def build_lifespan(
+    lifespan: Callable | None,
+    config: AppConfig,
+    runtime: ServiceRuntime | None,
+    resources: ResourceRegistry,
+) -> Callable:
+    @asynccontextmanager
+    @log_function_boundary()
+    async def managed_lifespan(app: FastAPI):
+        app_runtime = runtime
+        try:
+            if app_runtime is None:
+                app_runtime = await assemble_runtime(config)
+                configure_service_runtime(app, app_runtime)
+            elif config.startup_healthcheck:
+                await app_runtime.check(
+                    parallel=config.readiness_parallel,
+                    timeout_seconds=config.readiness_timeout_seconds,
+                    overall_timeout_seconds=config.readiness_overall_timeout_seconds,
+                )
+            await resources.start(app)
+            if config.startup_healthcheck:
+                await resources.check_startup(
+                    parallel=config.readiness_parallel,
+                    overall_timeout_seconds=config.readiness_overall_timeout_seconds,
+                )
+            if lifespan is None:
+                yield
+            else:
+                async with lifespan(app):
+                    yield
+        finally:
+            try:
+                await resources.close()
+            finally:
+                if app_runtime is not None:
+                    try:
+                        await app_runtime.close()
+                    except ServiceCloseError as exc:
+                        logger.error(
+                            "service_runtime_close_failed",
+                            extra={
+                                "event": {
+                                    "operation": "service_runtime_close",
+                                    "outcome": "error",
+                                    "failure_count": len(exc.failures),
+                                }
+                            },
+                        )
+                        raise
+
+    return managed_lifespan
+
+
+__all__ = ["build_lifespan"]

@@ -96,7 +96,7 @@ def test_user_endpoint_returns_401_for_invalid_live_token(
 
 
 def test_create_app_wires_keycloak_service_client_and_openapi_token_url(keycloak_only_app):
-    assert "keycloak" in keycloak_only_app.state.service_clients
+    assert "keycloak" in keycloak_only_app.state.service_runtime.clients
     assert keycloak_only_app.state.auth_provider is not None
 
     security_scheme = keycloak_only_app.openapi()["components"]["securitySchemes"][

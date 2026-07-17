@@ -1,7 +1,7 @@
 ---
 title: docmesh-py-core vs fastapi-core usage comparison
 created: 2026-06-29
-updated: 2026-07-13
+updated: 2026-07-17
 type: query
 tags: [query, comparison, implementation, api]
 sources: [raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-v0.2.0.md, pyproject.toml, .venv/lib/python3.11/site-packages/docmesh_py_core/__init__.py, .venv/lib/python3.11/site-packages/docmesh_py_core/config.py, .venv/lib/python3.11/site-packages/docmesh_py_core/factories.py, .venv/lib/python3.11/site-packages/docmesh_py_core/health.py, fastapi_core/config.py, fastapi_core/docmesh_settings.py, fastapi_core/dependencies/auth.py, fastapi_core/dependencies/services.py, fastapi_core/routers/auth.py, fastapi_core/routers/health.py, fastapi_core/factory.py, test_fastapi_core/conftest.py, test_fastapi_core/test_factory.py, test_fastapi_core/test_health_router.py, test_fastapi_core/test_auth_router.py, test_fastapi_core/test_dependencies.py, test_fastapi_core/test_config.py, test_fastapi_core/integration/]
@@ -44,6 +44,7 @@ confidence: high
 - shutdown은 `finally`에서 `await ServiceRuntime.close()`를 실행하며, runtime 내부의 async cleanup으로 sync/async client와 custom lifespan 예외를 모두 처리한다.
 - readiness는 `await async_check_all_services(...)`를 사용하며 필수 실패 시 `HealthCheckError.result`의 전체 서비스 상태를 보존한다.
 - 기본 `create_app()` 경로는 lifespan startup에서 `assemble_service_runtime(...)`을 사용하고 runtime/configs/clients를 `app.state`에 설치한다.
+- 외부 조립·테스트 경로는 완성된 `ServiceRuntime`을 `create_app(runtime=...)`으로 주입할 수 있다. 기존 `settings=` direct factory 경로는 deprecated 호환 경계이며 두 주입 인자는 함께 사용할 수 없다.
 - `load_docmesh_settings()`는 overlay mapping을 `load_service_configs(env, ...)`에 직접 전달하며 프로세스 환경을 변경하지 않는다.
 - `DOCMESH_HEALTHCHECK_ENABLED`는 기본값 `False`인 `AppConfig.startup_healthcheck`로 연결된다.
 - fastapi-core v0.3의 managed resource와 typed readiness registry는 Py Core runtime 위에 애플리케이션 고유 자원을 합성하며, 기존 `ServiceRuntime` 소유권을 중복하지 않는다.
