@@ -41,9 +41,9 @@ def test_create_app_includes_default_routes(empty_runtime):
     assert response.json() == {"status": "ok", "details": None}
     assert user_response.status_code != 404
     assert token_response.status_code != 404
-    assert app.state.settings is empty_runtime.configs
+    assert app.state.service_runtime.configs is empty_runtime.configs
     assert app.state.config.token_url.endswith("token")
-    assert app.state.service_clients == {}
+    assert app.state.service_runtime.clients == {}
     assert app.state.root_logger is not None
     assert app.state.readiness_registry.specs == {}
 
@@ -99,7 +99,7 @@ def test_create_app_supports_explicitly_empty_service_selection():
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "details": None}
-    assert app.state.service_clients == {}
+    assert app.state.service_runtime.clients == {}
 
 
 def test_create_app_accepts_prebuilt_service_runtime(settings):
@@ -131,8 +131,8 @@ def test_create_app_accepts_prebuilt_service_runtime(settings):
 
     with TestClient(app):
         assert app.state.service_runtime is runtime
-        assert app.state.settings is settings
-        assert app.state.service_clients is runtime.clients
+        assert app.state.service_runtime.configs is settings
+        assert app.state.service_runtime.clients is runtime.clients
         assert app.state.readiness_registry.specs["sqlite"].required is True
         assert events == ["checked"]
 
@@ -158,7 +158,7 @@ def test_create_app_runs_custom_lifespan(empty_runtime):
     assert events == ["startup", "shutdown"]
 
 
-def test_create_app_binds_prebuilt_runtime_services_and_settings(
+def test_create_app_binds_prebuilt_runtime_services(
     settings,
     runtime_factory,
 ):
@@ -173,9 +173,9 @@ def test_create_app_binds_prebuilt_runtime_services_and_settings(
     )
     app = create_app(config=config, runtime=runtime, include_auth_router=False)
 
-    assert app.state.settings is settings
+    assert app.state.service_runtime.configs is settings
     assert sorted(app.state.readiness_registry.specs) == ["sqlite"]
-    assert sorted(app.state.service_clients) == ["sqlite"]
+    assert sorted(app.state.service_runtime.clients) == ["sqlite"]
     assert app.state.readiness_registry.specs["sqlite"].required is True
 
 
@@ -388,8 +388,8 @@ def test_create_app_assembles_default_runtime_during_lifespan(monkeypatch):
 
     with TestClient(app):
         assert app.state.service_runtime is runtime
-        assert app.state.settings is settings
-        assert app.state.service_clients is runtime.clients
+        assert app.state.service_runtime.configs is settings
+        assert app.state.service_runtime.clients is runtime.clients
         assert sorted(app.state.readiness_registry.specs) == ["sqlite"]
 
     assert calls["plan"] == RuntimePlan(

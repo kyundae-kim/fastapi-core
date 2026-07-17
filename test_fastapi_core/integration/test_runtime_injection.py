@@ -19,5 +19,5 @@ def test_integration_app_factory_uses_runtime_injection_without_deprecated_setti
         app = integration_app_factory(config, include_auth_router=False)
 
     assert isinstance(app.state.service_runtime, ServiceRuntime)
-    assert app.state.settings is app.state.service_runtime.configs
-    assert app.state.service_clients is app.state.service_runtime.clients
+    assert not hasattr(app.state, "settings")
+    assert not hasattr(app.state, "service_clients")

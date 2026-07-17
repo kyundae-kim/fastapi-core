@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from contextlib import asynccontextmanager
+from functools import partial
 
 import pytest
 from docmesh_py_core import (
@@ -345,6 +346,33 @@ def test_managed_resource_rolls_back_when_later_factory_fails(empty_app_factory)
             pass
 
     assert events == ["create:first", "create:second", "close:first"]
+
+
+def test_managed_resource_rollback_preserves_conflicting_readiness_check(
+    empty_app_factory,
+):
+    instance = object()
+
+    def existing_healthcheck(_resource):
+        return None
+
+    existing_check = partial(existing_healthcheck, instance)
+    app = empty_app_factory(
+        resources=[
+            ManagedResource(
+                "sdk",
+                factory=lambda _app: instance,
+                healthcheck=lambda _resource: None,
+            )
+        ]
+    )
+    register_readiness_check(app, "sdk", existing_check)
+
+    with pytest.raises(ValueError, match="already registered"):
+        with TestClient(app):
+            pass
+
+    assert app.state.readiness_registry.specs["sdk"].check is existing_check
 
 
 def test_required_managed_resource_startup_check_failure_rolls_back(empty_app_factory):

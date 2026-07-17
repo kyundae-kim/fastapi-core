@@ -42,15 +42,10 @@ def _service_type_mismatch(service_name: str, expected_type: str) -> HTTPExcepti
 
 @log_function_boundary()
 def _resolve_service_client(request: Request, service_name: str) -> ServiceClientWrapper | NatsConnectionBuilder:
-    runtime = getattr(request.app.state, "service_runtime", None)
-    if runtime is not None:
-        client = runtime.get(service_name)
-        if client is not None:
-            return client
-    service_clients = getattr(request.app.state, "service_clients", None)
-    if service_clients is None or service_name not in service_clients:
+    client = get_service_runtime(request).get(service_name)
+    if client is None:
         raise _service_not_enabled(service_name)
-    return service_clients[service_name]
+    return client
 
 
 @log_function_boundary()
@@ -59,6 +54,11 @@ def _resolve_wrapped_service_client(request: Request, service_name: str) -> Serv
     if not isinstance(client, ServiceClientWrapper):
         raise _service_type_mismatch(service_name, "wrapped service client")
     return client
+
+
+@log_function_boundary()
+def _unwrap_service_client(request: Request, service_name: str) -> Any:
+    return _resolve_wrapped_service_client(request, service_name).client
 
 
 @log_function_boundary()
@@ -88,44 +88,37 @@ def get_resource(name: str) -> ResourceDependency:
 
 @log_function_boundary()
 def get_keycloak_auth_service(request: Request) -> KeycloakAuthService:
-    wrapper = _resolve_wrapped_service_client(request, "keycloak")
-    return cast(KeycloakAuthService, wrapper.client)
+    return cast(KeycloakAuthService, _unwrap_service_client(request, "keycloak"))
 
 
 @log_function_boundary()
 def get_postgres_engine(request: Request) -> Engine:
-    wrapper = _resolve_wrapped_service_client(request, "postgres")
-    return cast(Engine, wrapper.client)
+    return cast(Engine, _unwrap_service_client(request, "postgres"))
 
 
 @log_function_boundary()
 def get_sqlite_engine(request: Request) -> Engine:
-    wrapper = _resolve_wrapped_service_client(request, "sqlite")
-    return cast(Engine, wrapper.client)
+    return cast(Engine, _unwrap_service_client(request, "sqlite"))
 
 
 @log_function_boundary()
 def get_minio_client(request: Request) -> Minio:
-    wrapper = _resolve_wrapped_service_client(request, "minio")
-    return cast(Minio, wrapper.client)
+    return cast(Minio, _unwrap_service_client(request, "minio"))
 
 
 @log_function_boundary()
 def get_milvus_client(request: Request) -> MilvusClient:
-    wrapper = _resolve_wrapped_service_client(request, "milvus")
-    return cast(MilvusClient, wrapper.client)
+    return cast(MilvusClient, _unwrap_service_client(request, "milvus"))
 
 
 @log_function_boundary()
 def get_ollama_client(request: Request) -> OllamaClient:
-    wrapper = _resolve_wrapped_service_client(request, "ollama")
-    return cast(OllamaClient, wrapper.client)
+    return cast(OllamaClient, _unwrap_service_client(request, "ollama"))
 
 
 @log_function_boundary()
 def get_langfuse_client(request: Request) -> Langfuse:
-    wrapper = _resolve_wrapped_service_client(request, "langfuse")
-    return cast(Langfuse, wrapper.client)
+    return cast(Langfuse, _unwrap_service_client(request, "langfuse"))
 
 
 @log_function_boundary()

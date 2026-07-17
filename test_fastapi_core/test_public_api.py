@@ -87,7 +87,6 @@ def test_create_app_signature_is_stable():
     assert _parameter_contract(fastapi_core.create_app) == [
         ("config", Parameter.POSITIONAL_OR_KEYWORD, None),
         ("runtime", Parameter.KEYWORD_ONLY, None),
-        ("settings", Parameter.KEYWORD_ONLY, None),
         ("lifespan", Parameter.KEYWORD_ONLY, None),
         ("include_auth_router", Parameter.KEYWORD_ONLY, True),
         ("resources", Parameter.KEYWORD_ONLY, ()),
@@ -191,6 +190,7 @@ def test_readiness_state_exposes_only_typed_registry(runtime_factory):
     assert not hasattr(registry, "services")
     assert not hasattr(registry, "required_services")
     assert not hasattr(registry, "owns_legacy_state")
+    assert not hasattr(app.state.resource_registry, "_healthcheck_names")
 
 
 def test_obsolete_refactoring_helpers_are_not_reintroduced():
@@ -198,6 +198,10 @@ def test_obsolete_refactoring_helpers_are_not_reintroduced():
     assert not hasattr(factory_module, "_wrap_readiness_check")
     assert not hasattr(factory_module, "_build_readiness_checks")
     assert not hasattr(ResourceRegistry, "_bind_healthcheck")
+    assert not hasattr(factory_module, "build_injected_service_runtime")
+    runtime = import_module("fastapi_core.runtime")
+    assert not hasattr(runtime, "build_injected_service_runtime")
+    assert not hasattr(runtime, "build_service_clients")
 
 
 def test_readiness_and_resource_implementations_have_explicit_module_owners():

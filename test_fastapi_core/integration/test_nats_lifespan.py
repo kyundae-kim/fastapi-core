@@ -44,7 +44,7 @@ def test_custom_lifespan_runs_with_live_nats_service_clients(nats_only_lifespan_
     with TestClient(app):
         assert app.state.nats_probe == {"connected": True}
         assert events == ["startup"]
-        assert "nats" in app.state.service_clients
+        assert "nats" in app.state.service_runtime.clients
 
     assert events == ["startup", "shutdown"]
     assert app.state.nats_probe is None

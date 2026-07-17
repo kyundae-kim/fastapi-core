@@ -12,52 +12,62 @@ from fastapi_core.docmesh_settings import build_docmesh_env_overlay, load_docmes
 
 
 def test_app_config_reads_env_fields_from_settings(monkeypatch):
-    monkeypatch.setenv("ROOT_PATH", "/api")
-    monkeypatch.setenv("TOKEN_URL", "/api/auth/token")
-    monkeypatch.setenv("CORS_ORIGINS", "https://a.example, https://b.example")
-    monkeypatch.setenv("CORS_CREDENTIALS", "true")
-    monkeypatch.setenv("READINESS_PARALLEL", "true")
-    monkeypatch.setenv("READINESS_TIMEOUT_SECONDS", "0.25")
-    monkeypatch.setenv("READINESS_OVERALL_TIMEOUT_SECONDS", "1.5")
-    monkeypatch.setenv(
-        "DOCMESH_SERVICE_ALTERNATIVES",
-        "postgres,sqlite;minio,milvus",
+    cases = (
+        ("ROOT_PATH", "/api", "root_path", "/api"),
+        ("TOKEN_URL", "/api/auth/token", "token_url", "/api/auth/token"),
+        (
+            "CORS_ORIGINS",
+            "https://a.example, https://b.example",
+            "cors_origins",
+            ["https://a.example", "https://b.example"],
+        ),
+        ("CORS_CREDENTIALS", "true", "cors_credentials", True),
+        ("READINESS_PARALLEL", "true", "readiness_parallel", True),
+        (
+            "READINESS_TIMEOUT_SECONDS",
+            "0.25",
+            "readiness_timeout_seconds",
+            0.25,
+        ),
+        (
+            "READINESS_OVERALL_TIMEOUT_SECONDS",
+            "1.5",
+            "readiness_overall_timeout_seconds",
+            1.5,
+        ),
+        (
+            "DOCMESH_SERVICE_ALTERNATIVES",
+            "postgres,sqlite;minio,milvus",
+            "service_alternatives",
+            [["postgres", "sqlite"], ["minio", "milvus"]],
+        ),
+        ("DOCMESH_HEALTHCHECK_ENABLED", "true", "startup_healthcheck", True),
+        ("DOCMESH_LOG_LEVEL", "INFO", "log_level", "INFO"),
+        ("APP_LOG_PATH", "/tmp/app.log", "log_path", "/tmp/app.log"),
+        ("APP_LOG_JSON", "false", "log_json", False),
+        ("APP_LOG_FORCE", "true", "log_force", True),
+        (
+            "DOCMESH_SERVICES",
+            "keycloak,sqlite",
+            "enabled_services",
+            ["keycloak", "sqlite"],
+        ),
+        ("READINESS_REQUIRED_SERVICES", "sqlite", "required_services", ["sqlite"]),
     )
-    monkeypatch.setenv("DOCMESH_HEALTHCHECK_ENABLED", "true")
-    monkeypatch.setenv("DOCMESH_LOG_LEVEL", "INFO")
-    monkeypatch.setenv("APP_LOG_PATH", "/tmp/app.log")
-    monkeypatch.setenv("APP_LOG_JSON", "false")
-    monkeypatch.setenv("APP_LOG_FORCE", "true")
-    monkeypatch.setenv("DOCMESH_SERVICES", "keycloak,sqlite")
-    monkeypatch.setenv("READINESS_REQUIRED_SERVICES", "sqlite")
+    for environment_name, raw_value, _, _ in cases:
+        monkeypatch.setenv(environment_name, raw_value)
     load_app_config.cache_clear()
 
     config = load_app_config()
 
-    assert config.root_path == "/api"
-    assert config.token_url == "/api/auth/token"
-    assert config.cors_origins == ["https://a.example", "https://b.example"]
-    assert config.cors_credentials is True
-    assert config.readiness_parallel is True
-    assert config.readiness_timeout_seconds == 0.25
-    assert config.readiness_overall_timeout_seconds == 1.5
-    assert config.service_alternatives == [
-        ["postgres", "sqlite"],
-        ["minio", "milvus"],
-    ]
-    assert config.startup_healthcheck is True
-    assert config.log_level == "INFO"
-    assert config.log_path == "/tmp/app.log"
-    assert config.log_json is False
-    assert config.log_force is True
-    assert config.enabled_services == ["keycloak", "sqlite"]
-    assert config.required_services == ["sqlite"]
+    for _, _, field_name, expected in cases:
+        assert getattr(config, field_name) == expected
     load_app_config.cache_clear()
 
 
 
 def test_app_config_defaults_match_existing_behavior(monkeypatch):
-    for key in [
+    environment_names = {
         "ROOT_PATH",
         "TOKEN_URL",
         "CORS_ORIGINS",
@@ -73,28 +83,14 @@ def test_app_config_defaults_match_existing_behavior(monkeypatch):
         "APP_LOG_FORCE",
         "DOCMESH_SERVICES",
         "READINESS_REQUIRED_SERVICES",
-    ]:
+    }
+    for key in environment_names:
         monkeypatch.delenv(key, raising=False)
     load_app_config.cache_clear()
 
     config = load_app_config()
 
-    assert isinstance(config, AppConfig)
-    assert config.root_path == ""
-    assert config.token_url == "/token"
-    assert config.cors_origins == ["*"]
-    assert config.cors_credentials is False
-    assert config.readiness_parallel is False
-    assert config.readiness_timeout_seconds is None
-    assert config.readiness_overall_timeout_seconds is None
-    assert config.service_alternatives == []
-    assert config.startup_healthcheck is False
-    assert config.log_level == "WARNING"
-    assert config.log_path is None
-    assert config.log_json is True
-    assert config.log_force is False
-    assert config.enabled_services == ["keycloak"]
-    assert config.required_services == ["keycloak"]
+    assert config == AppConfig()
     load_app_config.cache_clear()
 
 

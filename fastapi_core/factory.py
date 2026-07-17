@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import warnings
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from docmesh_py_core import ServiceConfigs, ServiceRuntime
+from docmesh_py_core import ServiceRuntime
 from docmesh_py_core.function_logging import log_function_boundary
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,10 +22,7 @@ from fastapi_core.readiness import ReadinessRegistry
 from fastapi_core.resources import ManagedResource, ResourceRegistry
 from fastapi_core.routers.auth import router as auth_router
 from fastapi_core.routers.health import router as health_router
-from fastapi_core.runtime import (
-    build_injected_service_runtime,
-    configure_service_runtime,
-)
+from fastapi_core.runtime import configure_service_runtime
 
 
 @log_function_boundary()
@@ -53,7 +49,6 @@ def create_app(
     config: AppConfig | None = None,
     *,
     runtime: ServiceRuntime | None = None,
-    settings: ServiceConfigs | None = None,
     lifespan: Callable | None = None,
     include_auth_router: bool = True,
     resources: Sequence[ManagedResource[Any]] = (),
@@ -64,30 +59,9 @@ def create_app(
     ``runtime`` is the explicit service-injection seam. Production applications
     should omit it so startup assembles the runtime from the process environment
     and the configured ``RuntimePlan``.
-
-    ``settings`` is deprecated compatibility input. Pass a prebuilt
-    ``ServiceRuntime`` via ``runtime`` instead.
     """
-    if runtime is not None and settings is not None:
-        raise ValueError("runtime and settings cannot be provided together")
-    if settings is not None:
-        warnings.warn(
-            "settings injection is deprecated; Pass a prebuilt ServiceRuntime "
-            "via runtime instead",
-            DeprecationWarning,
-            stacklevel=3,
-        )
     app_config = config or load_app_config()
     root_logger = configure_application_logging(app_config)
-    service_runtime = (
-        runtime
-        if runtime is not None
-        else (
-            build_injected_service_runtime(settings, app_config)
-            if settings is not None
-            else None
-        )
-    )
 
     readiness_registry = ReadinessRegistry(
         default_timeout_seconds=app_config.readiness_timeout_seconds
@@ -98,19 +72,17 @@ def create_app(
         lifespan=build_lifespan(
             lifespan,
             app_config,
-            service_runtime,
+            runtime,
             resource_registry,
         ),
     )
     app.state.config = app_config
     app.state.root_logger = root_logger
-    app.state.service_runtime = service_runtime
-    app.state.settings = settings
-    app.state.service_clients = {}
+    app.state.service_runtime = runtime
     app.state.readiness_registry = readiness_registry
     app.state.resource_registry = resource_registry
-    if service_runtime is not None:
-        configure_service_runtime(app, service_runtime)
+    if runtime is not None:
+        configure_service_runtime(app, runtime)
     _configure_oauth2_scheme(app, app_config.token_url)
     install_problem_handlers(app, error_renderer)
 

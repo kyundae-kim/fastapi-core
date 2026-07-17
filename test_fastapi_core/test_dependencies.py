@@ -4,7 +4,6 @@ from typing import get_type_hints
 
 import pytest
 import fastapi_core.dependencies as dependencies_module
-import fastapi_core.dependencies.config as config_module
 import fastapi_core.dependencies.services as services_module
 from docmesh_py_core import (
     AuthenticatedUser,
@@ -61,10 +60,6 @@ class FakeServiceClient:
         self.client = provider
 
 
-class FakeServiceClients(dict[str, FakeServiceClient]):
-    def __init__(self, provider: FakeAuthProvider):
-        super().__init__({"keycloak": FakeServiceClient(provider)})
-
 
 def test_dependency_package_exports_declarative_authorization_helpers():
     assert {
@@ -75,23 +70,11 @@ def test_dependency_package_exports_declarative_authorization_helpers():
     assert get_type_hints(get_current_user)["return"] is AuthenticatedUser
 
 
-def test_get_settings_falls_back_before_default_runtime_startup(monkeypatch):
-    sentinel = object()
-    config = AppConfig(
-        enabled_services=["sqlite"],
-        required_services=["sqlite"],
-    )
-    app = create_app(config=config, include_auth_router=False)
+def test_get_settings_returns_runtime_configs(empty_runtime):
+    app = create_app(runtime=empty_runtime, include_auth_router=False)
     request = Request({"type": "http", "app": app})
-    monkeypatch.setattr(
-        config_module,
-        "load_docmesh_settings",
-        lambda _services: sentinel,
-    )
 
-    result = get_settings(request, config)
-
-    assert result is sentinel
+    assert get_settings(request) is empty_runtime.configs
 
 
 def test_service_dependency_module_exposes_typed_service_getters():
@@ -121,13 +104,13 @@ def test_get_service_runtime_returns_lifespan_owned_runtime(empty_runtime):
     assert get_service_runtime(request) is app.state.service_runtime
 
 
-def test_service_runtime_takes_precedence_over_legacy_client_state(settings):
+def test_service_client_is_resolved_from_runtime(settings):
     class Client:
         def check(self):
             return None
 
     runtime_client = Client()
-    legacy_client = Client()
+
     runtime = ServiceRuntime(
         configs=settings,
         clients={Service.SQLITE: runtime_client},
@@ -138,7 +121,7 @@ def test_service_runtime_takes_precedence_over_legacy_client_state(settings):
         runtime=runtime,
         include_auth_router=False,
     )
-    app.state.service_clients = {Service.SQLITE: legacy_client}
+
     request = Request({"type": "http", "app": app})
 
     dependency = get_service_client("sqlite")
@@ -175,7 +158,7 @@ def test_get_current_user_returns_401_when_token_missing(auth_app_factory):
 
 
 @pytest.mark.asyncio
-async def test_get_current_user_preserves_authenticated_user(settings):
+async def test_get_current_user_preserves_authenticated_user():
     user = AuthenticatedUser(
         sub="user-1",
         preferred_username="bob",
@@ -193,7 +176,7 @@ async def test_get_current_user_preserves_authenticated_user(settings):
             assert token == "demo-token"
             return user
 
-    result = await get_current_user("demo-token", Provider(), settings)
+    result = await get_current_user("demo-token", Provider())
 
     assert result is user
 
@@ -267,11 +250,15 @@ def test_require_roles_and_scopes_are_declarative_dependencies(auth_app_factory)
     assert {"OAuth2PasswordBearer": ["openid"]} in security
 
 
-def test_get_current_user_uses_service_client_backed_auth_provider(empty_app_factory):
-    app = empty_app_factory()
+def test_get_current_user_uses_service_client_backed_auth_provider(runtime_factory):
     provider = FakeAuthProvider()
-    app.state.auth_provider = None
-    app.state.service_clients = FakeServiceClients(provider)
+    wrapper = FakeServiceClient(provider)
+    wrapper.check = lambda: None
+    app = create_app(
+        config=AppConfig(enabled_services=[], required_services=[]),
+        runtime=runtime_factory(clients={"keycloak": wrapper}),
+        include_auth_router=False,
+    )
 
     @app.get("/me")
     async def me(user: AuthenticatedUser = Depends(get_current_user)):
@@ -360,26 +347,17 @@ def test_get_service_specific_dependencies_return_concrete_clients(
     }
 
 
-def test_get_service_client_returns_503_when_service_is_not_enabled(empty_runtime):
-    app = create_app(
-        config=AppConfig(enabled_services=[], required_services=[]),
-        runtime=empty_runtime,
-        include_auth_router=False,
-    )
-
-    @app.get("/sqlite")
-    async def sqlite_client(client=Depends(get_service_client("sqlite"))):
-        return {"service_type": type(client).__name__}
-
-    with TestClient(app) as client:
-        response = client.get("/sqlite")
-
-    assert response.status_code == 503
-    assert response.json()["detail"] == "Service client 'sqlite' is not enabled"
-
-
-def test_get_nats_connection_builder_returns_503_when_service_is_not_enabled(
+@pytest.mark.parametrize(
+    ("service_name", "dependency"),
+    [
+        pytest.param("sqlite", get_service_client("sqlite"), id="generic"),
+        pytest.param("nats", get_nats_connection_builder, id="typed-nats"),
+    ],
+)
+def test_service_dependencies_return_503_when_service_is_not_enabled(
     empty_runtime,
+    service_name,
+    dependency,
 ):
     app = create_app(
         config=AppConfig(enabled_services=[], required_services=[]),
@@ -387,12 +365,12 @@ def test_get_nats_connection_builder_returns_503_when_service_is_not_enabled(
         include_auth_router=False,
     )
 
-    @app.get("/nats")
-    async def nats_client(_client: NatsConnectionBuilder = Depends(get_nats_connection_builder)):
-        return {"ok": True}
+    @app.get("/service")
+    async def service_client(client=Depends(dependency)):
+        return {"service_type": type(client).__name__}
 
     with TestClient(app) as client:
-        response = client.get("/nats")
+        response = client.get("/service")
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "Service client 'nats' is not enabled"
+    assert response.json()["detail"] == f"Service client '{service_name}' is not enabled"

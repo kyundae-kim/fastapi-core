@@ -14,7 +14,12 @@ from docmesh_py_core import (
     build_service_log_event,
 )
 
-from fastapi_core.dependencies.auth import get_auth_provider, get_current_user
+from fastapi_core.dependencies.auth import (
+    _get_roles,
+    _get_scopes,
+    get_auth_provider,
+    get_current_user,
+)
 from fastapi_core.schemas.token import TokenResponse
 from fastapi_core.schemas.user import UserInfo
 
@@ -32,27 +37,13 @@ _UNEXPECTED_TOKEN_ISSUE_ERROR = (500, "Authentication service error", "unexpecte
 
 @log_function_boundary()
 def _to_user_info(user: AuthenticatedUser) -> UserInfo:
-    roles = list(
-        dict.fromkeys(
-            [
-                *user.realm_roles,
-                *(
-                    role
-                    for client_roles in user.client_roles.values()
-                    for role in client_roles
-                ),
-            ]
-        )
-    )
-    raw_scope = user.claims.get("scope")
-    scopes = raw_scope.split() if isinstance(raw_scope, str) else []
     return UserInfo(
         sub=user.sub,
         username=user.preferred_username or user.sub,
         email=user.email,
         name=user.name,
-        roles=roles,
-        scopes=scopes,
+        roles=_get_roles(user),
+        scopes=_get_scopes(user),
     )
 
 

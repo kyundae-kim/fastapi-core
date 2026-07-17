@@ -78,7 +78,6 @@ class ResourceRegistry:
         self.resources = tuple(resources)
         self.readiness = readiness
         self.instances: dict[str, Any] = {}
-        self._healthcheck_names: set[str] = set()
         self._validate(reserved_names)
 
     @log_function_boundary()
@@ -126,7 +125,6 @@ class ResourceRegistry:
                             redact_errors=resource.redact_errors,
                         )
                     )
-                    self._healthcheck_names.add(name)
         except BaseException as exc:
             try:
                 await self.close()
@@ -173,9 +171,15 @@ class ResourceRegistry:
             except BaseException as exc:
                 failures.append(exc)
             finally:
-                if name in self._healthcheck_names:
+                spec = self.readiness.specs.get(name)
+                if (
+                    spec is not None
+                    and isinstance(spec.check, partial)
+                    and spec.check.func is resource.healthcheck
+                    and len(spec.check.args) == 1
+                    and spec.check.args[0] is value
+                ):
                     self.readiness.unregister(name)
-                    self._healthcheck_names.discard(name)
         if failures:
             raise BaseExceptionGroup("managed resource shutdown failed", failures)
 
