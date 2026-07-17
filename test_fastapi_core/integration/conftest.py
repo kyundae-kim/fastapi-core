@@ -7,6 +7,18 @@ from contextlib import contextmanager
 from urllib.parse import urlparse
 
 import pytest
+from docmesh_py_core import (
+    Service,
+    ServiceRuntime,
+    create_keycloak_client,
+    create_langfuse_client,
+    create_milvus_client,
+    create_minio_client,
+    create_nats_client,
+    create_ollama_client,
+    create_postgres_client,
+    create_sqlite_client,
+)
 
 from fastapi_core.config import AppConfig, load_app_config
 from fastapi_core.docmesh_settings import load_docmesh_settings
@@ -26,6 +38,7 @@ KEYCLOAK_REQUIRED_ENV = (
 
 NATS_REQUIRED_ENV = ("NATS_SERVERS",)
 MILVUS_REQUIRED_ENV = ("MILVUS_URI",)
+SQLITE_REQUIRED_ENV = ("SQLITE_PATH",)
 MINIO_REQUIRED_ENV = (
     "MINIO_ENDPOINT",
     "MINIO_ACCESS_KEY",
@@ -37,6 +50,17 @@ POSTGRES_CONNECTION_ENV = (
     "POSTGRES_USER",
     "POSTGRES_PASSWORD",
 )
+
+SERVICE_CLIENT_FACTORIES = {
+    "keycloak": create_keycloak_client,
+    "postgres": create_postgres_client,
+    "sqlite": create_sqlite_client,
+    "minio": create_minio_client,
+    "milvus": create_milvus_client,
+    "ollama": create_ollama_client,
+    "langfuse": create_langfuse_client,
+    "nats": create_nats_client,
+}
 
 
 @contextmanager
@@ -130,6 +154,10 @@ def require_postgres_integration() -> None:
         pytest.skip(f"postgres integration target is not reachable at {host}:{port}")
 
 
+def require_sqlite_integration() -> None:
+    _require_env(SQLITE_REQUIRED_ENV, label="sqlite")
+
+
 @pytest.fixture
 def keycloak_integration_ready() -> None:
     require_keycloak_integration()
@@ -156,6 +184,11 @@ def postgres_integration_ready() -> None:
 
 
 @pytest.fixture
+def sqlite_integration_ready() -> None:
+    require_sqlite_integration()
+
+
+@pytest.fixture
 def integration_app_config_factory():
     def build(
         *,
@@ -175,26 +208,41 @@ def integration_app_config_factory():
 
 
 @pytest.fixture
-def integration_settings_factory():
-    def build(config: AppConfig):
+def integration_runtime_factory():
+    def build(config: AppConfig) -> ServiceRuntime:
         with cleared_config_caches():
-            return load_docmesh_settings(tuple(config.enabled_services))
+            settings = load_docmesh_settings(tuple(config.enabled_services))
+        clients = {}
+        for service_name in config.enabled_services:
+            service_config = getattr(settings, service_name)
+            client = SERVICE_CLIENT_FACTORIES[service_name](service_config)
+            if client is not None:
+                clients[Service.parse(service_name)] = client
+        return ServiceRuntime(
+            configs=settings,
+            clients=clients,
+            selected_services=frozenset(clients),
+            required_services=frozenset(
+                Service.parse(service_name)
+                for service_name in config.required_services
+            ),
+        )
 
     return build
 
 
 @pytest.fixture
-def integration_app_factory(integration_settings_factory):
+def integration_app_factory(integration_runtime_factory):
     def build(
         config: AppConfig,
         *,
         include_auth_router: bool = True,
         lifespan=None,
     ):
-        settings = integration_settings_factory(config)
+        runtime = integration_runtime_factory(config)
         return create_app(
             config=config,
-            settings=settings,
+            runtime=runtime,
             include_auth_router=include_auth_router,
             lifespan=lifespan,
         )
