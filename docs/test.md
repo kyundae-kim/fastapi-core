@@ -132,7 +132,7 @@ PostgreSQL 통합 테스트 env:
 의미:
 - 현재 구현에서 `ServiceConfigs` 생성이 성립하도록 필수 환경값 세트를 코드로 고정한 것
 - 테스트는 mock이 아니라 **실제 설정 모델 생성 경로**를 통과한다.
-- PostgreSQL은 테스트용 `POSTGRES_DSN`을 주입하고 선택 서비스에 포함해 `PostgresConfig` 생성까지 검증한다.
+- PostgreSQL은 테스트용 개별 접속 환경변수를 주입하고 선택 서비스에 포함해 `PostgresConfig` 생성까지 검증한다.
 
 ### 4.2 `settings` fixture
 
@@ -154,8 +154,9 @@ PostgreSQL 통합 테스트 env:
 - `app.state.config.token_url`이 기본값으로 반영된다.
 - `app.state.service_clients`가 생성된다.
 - 기본 앱 경로가 lifespan startup에서 `assemble_service_runtime(...)`을 호출하고 `app.state.service_runtime`을 설치한다.
-- enabled/required 서비스와 startup healthcheck 정책이 assembly API에 전달된다.
-- `one_of` 서비스 대안과 per-service/overall timeout이 assembly API에 전달된다.
+- enabled/required 서비스와 startup healthcheck 정책이 `RuntimePlan`으로 assembly API에 전달된다.
+- `one_of` 서비스 대안과 per-service/overall timeout이 같은 `RuntimePlan`에 전달된다.
+- 명시적인 빈 서비스 선택은 전체 서비스 fallback 없이 빈 runtime/readiness로 유지된다.
 - 명시적 `settings` 주입 경로도 `ServiceRuntime`으로 감싸고 startup healthcheck를 실행할 수 있다.
 - 명시적 설정에서도 서비스 대안 정책을 검증한다.
 - startup healthcheck 실패 시 생성된 client가 rollback되고 custom lifespan은 진입하지 않는다.
@@ -261,7 +262,8 @@ PostgreSQL 통합 테스트 env:
 - `build_docmesh_env_overlay()`가 기본값을 채우되 기존 환경변수를 덮어쓰지 않는다.
 - `load_docmesh_settings(...)`가 overlay mapping을 loader에 전달하고 프로세스 `os.environ`을 변경하지 않는다.
 - `load_docmesh_settings(("sqlite",))`가 선택 서비스만 로딩한다.
-- `load_docmesh_settings(("postgres",))`가 fallback `POSTGRES_DSN`으로 PostgreSQL 설정을 로딩한다.
+- `load_docmesh_settings(())`가 명시적인 빈 서비스 선택을 보존한다.
+- `load_docmesh_settings(("postgres",))`가 fallback 개별 접속 환경변수로 PostgreSQL 설정을 로딩한다.
 
 ## 5.5A runtime extension 테스트
 

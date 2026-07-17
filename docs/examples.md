@@ -248,11 +248,15 @@ DOCMESH_LOG_LEVEL=INFO
 APP_LOG_PATH=/tmp/app.log
 APP_LOG_JSON=true
 APP_LOG_FORCE=true
-DOCMESH_SERVICES=keycloak,postgres,nats
+DOCMESH_SERVICES=keycloak,postgres,sqlite,nats
 READINESS_REQUIRED_SERVICES=keycloak
 
-# PostgreSQL: DSN 방식
-POSTGRES_DSN=postgresql+psycopg://docmesh:change-me@postgres.example.com:5432/docmesh
+# PostgreSQL: 권장 개별 접속 항목
+POSTGRES_HOST=postgres.example.com
+POSTGRES_PORT=5432
+POSTGRES_DB=docmesh
+POSTGRES_USER=docmesh
+POSTGRES_PASSWORD=change-me
 ```
 
 현재 구현 기준 해석:
@@ -261,7 +265,7 @@ POSTGRES_DSN=postgresql+psycopg://docmesh:change-me@postgres.example.com:5432/do
 - `DOCMESH_SERVICE_ALTERNATIVES` → 세미콜론/쉼표 형식의 `one_of` 서비스 그룹
 - timeout 값 → startup healthcheck와 readiness endpoint에 공통 적용
 - `APP_LOG_*`, `DOCMESH_LOG_LEVEL` → 앱 로깅 초기화에 사용
-- PostgreSQL은 `POSTGRES_DSN` 하나를 사용하거나, 아래 개별 환경변수를 대신 사용할 수 있음
+- PostgreSQL은 개별 접속 환경변수를 권장하며, deprecated 호환 경로로 `POSTGRES_DSN` 하나를 사용할 수 있음
 
 ```env
 POSTGRES_HOST=postgres.example.com
@@ -275,7 +279,7 @@ POSTGRES_POOL_SIZE=5
 POSTGRES_MAX_OVERFLOW=10
 ```
 
-`POSTGRES_DSN`과 개별 접속 항목을 함께 설정할 필요는 없다. 실제 비밀번호와 DSN은 secret으로 주입하고 문서나 저장소에 커밋하지 않는다.
+`POSTGRES_DSN`과 개별 접속 항목은 함께 설정할 수 없다. 실제 비밀번호와 DSN은 secret으로 주입하고 문서나 저장소에 커밋하지 않는다.
 
 ---
 

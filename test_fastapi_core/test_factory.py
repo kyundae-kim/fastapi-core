@@ -8,6 +8,9 @@ import pytest
 from docmesh_py_core import (
     ConfigError,
     HealthCheckError,
+    HealthcheckPolicy,
+    RuntimePlan,
+    Service,
     ServiceCloseError,
     ServiceRuntime,
     assemble_service_runtime,
@@ -28,7 +31,7 @@ def _patch_injected_client(monkeypatch, client, service="keycloak"):
     monkeypatch.setattr(
         factory_module,
         "_build_service_clients",
-        lambda _settings, _services: {service: client},
+        lambda _settings, _services: {Service.parse(service): client},
     )
 
 
@@ -174,8 +177,8 @@ async def test_configure_service_runtime_preserves_async_checks(settings):
     )
     runtime = ServiceRuntime(
         configs=settings,
-        clients={"nats": AsyncClient()},
-        selected_services=frozenset({"nats"}),
+        clients={Service.NATS: AsyncClient()},
+        selected_services=frozenset({Service.NATS}),
     )
     _configure_service_runtime(app, runtime)
 
@@ -192,9 +195,9 @@ def test_configure_service_runtime_rejects_client_without_check(settings):
     )
     runtime = ServiceRuntime(
         configs=settings,
-        clients={"keycloak": object()},
-        selected_services=frozenset({"keycloak"}),
-        required_services=frozenset({"keycloak"}),
+        clients={Service.KEYCLOAK: object()},
+        selected_services=frozenset({Service.KEYCLOAK}),
+        required_services=frozenset({Service.KEYCLOAK}),
     )
 
     with pytest.raises(AttributeError):
@@ -276,8 +279,8 @@ def test_configure_service_runtime_passes_keycloak_healthcheck_credentials(
     )
     runtime = ServiceRuntime(
         configs=settings,
-        clients={"keycloak": KeycloakClient()},
-        selected_services=frozenset({"keycloak"}),
+        clients={Service.KEYCLOAK: KeycloakClient()},
+        selected_services=frozenset({Service.KEYCLOAK}),
     )
     _configure_service_runtime(app, runtime)
     monkeypatch.setenv("KEYCLOAK_TOKEN_PASSWORD", "changed")
@@ -308,9 +311,9 @@ def test_create_app_assembles_default_runtime_during_lifespan(monkeypatch):
 
     runtime = ServiceRuntime(
         configs=settings,
-        clients={"sqlite": SqliteClient()},
-        selected_services=frozenset({"sqlite"}),
-        required_services=frozenset({"sqlite"}),
+        clients={Service.SQLITE: SqliteClient()},
+        selected_services=frozenset({Service.SQLITE}),
+        required_services=frozenset({Service.SQLITE}),
     )
 
     async def fake_assemble_service_runtime(env, **kwargs):
@@ -325,7 +328,7 @@ def test_create_app_assembles_default_runtime_during_lifespan(monkeypatch):
         raising=False,
     )
     config = AppConfig(
-        enabled_services=["sqlite"],
+        enabled_services=["sqlite", "postgres"],
         required_services=["sqlite"],
         startup_healthcheck=True,
         readiness_parallel=True,
@@ -341,13 +344,17 @@ def test_create_app_assembles_default_runtime_during_lifespan(monkeypatch):
         assert app.state.service_clients is runtime.clients
         assert sorted(app.state.readiness_registry.specs) == ["sqlite"]
 
-    assert calls["services"] == {"sqlite"}
-    assert calls["required"] == {"sqlite"}
-    assert calls["one_of"] == ({"sqlite", "postgres"},)
-    assert calls["check_on_startup"] is True
-    assert calls["parallel_healthchecks"] is True
-    assert calls["healthcheck_timeout_seconds"] == 0.25
-    assert calls["overall_healthcheck_timeout_seconds"] == 1.5
+    assert calls["plan"] == RuntimePlan(
+        services=(Service.SQLITE.required(), Service.POSTGRES.optional()),
+        one_of=((Service.SQLITE, Service.POSTGRES),),
+        healthcheck=HealthcheckPolicy(
+            on_startup=True,
+            parallel=True,
+            timeout_seconds=0.25,
+            overall_timeout_seconds=1.5,
+        ),
+    )
+    assert set(calls) == {"env", "plan"}
     assert calls["env"]["SQLITE_PATH"] == ":memory:"
     assert events == ["closed"]
 

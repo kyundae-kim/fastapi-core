@@ -16,14 +16,17 @@ if str(ROOT) not in sys.path:
 
 
 def build_test_settings(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("POSTGRES_DSN", raising=False)
     env = {
         "KEYCLOAK_URL": "http://keycloak.test",
         "KEYCLOAK_REALM": "docmesh",
         "KEYCLOAK_CLIENT_ID": "fastapi-core",
         "KEYCLOAK_CLIENT_SECRET": "secret",
-        "POSTGRES_DSN": (
-            "postgresql+psycopg://docmesh:secret@postgres.test:5432/docmesh"
-        ),
+        "POSTGRES_HOST": "postgres.test",
+        "POSTGRES_PORT": "5432",
+        "POSTGRES_DB": "docmesh",
+        "POSTGRES_USER": "docmesh",
+        "POSTGRES_PASSWORD": "secret",
         "SQLITE_PATH": ":memory:",
         "MINIO_ENDPOINT": "minio.test:9000",
         "MINIO_ACCESS_KEY": "minio",

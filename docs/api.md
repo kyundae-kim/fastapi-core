@@ -77,7 +77,8 @@ readiness state의 단일 통합 지점은 `app.state.readiness_registry`다. �
 #### 현재 구현 동작
 - `config is None`이면 `load_app_config()`를 사용한다.
 - `_configure_application_logging(config)`로 앱 로깅을 초기화한다.
-- `settings is None`이면 lifespan startup에서 `assemble_service_runtime(...)`을 호출해 설정 탐색, required 검증, client 생성, 선택적 startup healthcheck를 수행한다.
+- `settings is None`이고 활성 서비스가 있으면 lifespan startup에서 `RuntimePlan`을 구성해 `assemble_service_runtime(..., plan=plan)`을 호출하고 설정 탐색, required 검증, client 생성, 선택적 startup healthcheck를 수행한다.
+- `enabled_services`가 명시적으로 비어 있으면 assembly를 호출하지 않고 빈 `ServiceRuntime`을 설치한다.
 - `settings`가 명시되면 direct factory로 client를 만들고 `ServiceRuntime`에 담는 테스트/특수 실행용 주입 경로를 사용한다.
 - `FastAPI(root_path=config.root_path, lifespan=_build_lifespan(...))` 인스턴스를 생성한다.
 - `app.state`에 아래 값을 저장한다.
@@ -104,7 +105,7 @@ readiness state의 단일 통합 지점은 `app.state.readiness_registry`다. �
 기본 `AppConfig`에서는 `enabled_services == ["keycloak"]`, `required_services == ["keycloak"]`다.
 
 #### lifespan 동작
-기본 경로에서는 lifespan startup이 `assemble_service_runtime(...)`을 await한 뒤 `app.state.service_runtime/settings/service_clients`를 설치하고 service check를 typed registry에 등록한다. enabled/required와 함께 `one_of`, 병렬 실행, per-service/overall timeout을 전달한다. `startup_healthcheck=True`이면 assembly 단계에서 동일한 timeout 정책으로 startup healthcheck를 수행하고, 명시적 `settings` 주입 경로에서는 생성된 runtime의 `check()`를 호출한다.
+기본 경로에서는 lifespan startup이 enabled/required, `one_of`, 병렬 실행, per-service/overall timeout을 하나의 `RuntimePlan`으로 선언한다. 활성 서비스가 있으면 `assemble_service_runtime(..., plan=plan)`을 await한 뒤 `app.state.service_runtime/settings/service_clients`를 설치하고 service check를 typed registry에 등록한다. `startup_healthcheck=True`이면 assembly 단계에서 동일한 timeout 정책으로 startup healthcheck를 수행하고, 명시적 `settings` 주입 경로에서는 생성된 runtime의 `check()`를 호출한다.
 
 사용자가 전달한 custom lifespan은 service runtime과 managed resource 준비 뒤 실행된다. startup check 실패 시 생성된 client/resource를 rollback한다. custom lifespan shutdown 뒤 managed resource를 역순으로 정리하고, 마지막으로 service runtime을 닫는다. service runtime 종료 실패는 `service_runtime_close_failed` 구조화 로그를 남긴 뒤 `ServiceCloseError`로 전파한다.
 

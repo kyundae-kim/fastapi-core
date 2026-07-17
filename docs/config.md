@@ -78,8 +78,8 @@ class AppConfig(BaseSettings):
 | `readiness_parallel` | `app.state.config`, readiness endpoint | readiness check 병렬 실행 여부 |
 | `readiness_timeout_seconds` | runtime startup/readiness endpoint | 서비스별 healthcheck 제한 시간 |
 | `readiness_overall_timeout_seconds` | runtime startup/readiness endpoint | 전체 healthcheck 실행 제한 시간 |
-| `service_alternatives` | runtime `one_of` 검증 | 각 그룹에서 최소 한 서비스가 구성되어야 하는 대안 정책 |
-| `startup_healthcheck` | `assemble_service_runtime(..., check_on_startup=...)` | startup에서 required service healthcheck를 수행할지 여부 |
+| `service_alternatives` | `RuntimePlan.one_of` 검증 | 그룹의 모든 서비스를 `enabled_services`에 선택하고, 그중 최소 한 서비스가 구성되어야 하는 대안 정책 |
+| `startup_healthcheck` | `RuntimePlan.healthcheck.on_startup` | startup에서 required service healthcheck를 수행할지 여부 |
 | `log_level` | `_configure_application_logging(...)` | 루트 로거 레벨 |
 | `log_path` | `_configure_application_logging(...)` | 파일 로그 경로 |
 | `log_json` | `_configure_application_logging(...)` | JSON formatter 사용 여부 |
@@ -141,7 +141,7 @@ DOCMESH_LOG_LEVEL=INFO
 APP_LOG_PATH=/tmp/app.log
 APP_LOG_JSON=true
 APP_LOG_FORCE=true
-DOCMESH_SERVICES=keycloak,nats
+DOCMESH_SERVICES=keycloak,postgres,sqlite,minio,milvus,nats
 READINESS_REQUIRED_SERVICES=keycloak
 ```
 
@@ -155,19 +155,20 @@ READINESS_REQUIRED_SERVICES=keycloak
 2. `_configure_application_logging(config)`로 로깅 초기화
 3. 명시적 `settings`가 있으면 direct factory client를 `ServiceRuntime`으로 감싸 주입 경로 구성
 4. `FastAPI(root_path=config.root_path, lifespan=_build_lifespan(...))` 생성
-5. lifespan startup에서 `settings`가 없으면 `assemble_service_runtime(build_docmesh_env_overlay(), services=..., required=..., one_of=..., check_on_startup=..., healthcheck_timeout_seconds=..., overall_healthcheck_timeout_seconds=...)` 실행
-6. runtime의 `configs`, `clients`를 `app.state`에 설치하고 readiness check를 typed registry에 등록
-7. `app.state.config = config`, `app.state.root_logger = root_logger`
-8. `app.state.service_runtime = runtime`
-9. `app.state.settings = runtime.configs`
-10. `app.state.service_clients = runtime.clients`
-11. keycloak client가 있으면 `app.state.auth_provider = service_clients["keycloak"].client`
-12. 앱별 `ReadinessRegistry`에 service client check와 required 메타데이터 등록
-13. `ResourceRegistry`에서 managed resource를 생성하고 healthcheck를 readiness에 자동 등록
-14. 앱별 OAuth2 scheme과 OpenAPI security metadata 구성
-15. CORS, correlation ID middleware 및 표준 exception handler 등록
-16. router 포함
-17. custom lifespan 종료 후 managed resource를 역순 정리하고 service runtime 종료
+5. lifespan startup에서 `settings`가 없고 활성 서비스가 있으면 선택·필수·대안·healthcheck 정책을 `RuntimePlan`으로 선언하고 `assemble_service_runtime(build_docmesh_env_overlay(), plan=...)` 실행
+6. 활성 서비스가 명시적으로 비어 있으면 assembly를 호출하지 않고 빈 `ServiceRuntime` 구성
+7. runtime의 `configs`, `clients`를 `app.state`에 설치하고 readiness check를 typed registry에 등록
+8. `app.state.config = config`, `app.state.root_logger = root_logger`
+9. `app.state.service_runtime = runtime`
+10. `app.state.settings = runtime.configs`
+11. `app.state.service_clients = runtime.clients`
+12. keycloak client가 있으면 `app.state.auth_provider = service_clients["keycloak"].client`
+13. 앱별 `ReadinessRegistry`에 service client check와 required 메타데이터 등록
+14. `ResourceRegistry`에서 managed resource를 생성하고 healthcheck를 readiness에 자동 등록
+15. 앱별 OAuth2 scheme과 OpenAPI security metadata 구성
+16. CORS, correlation ID middleware 및 표준 exception handler 등록
+17. router 포함
+18. custom lifespan 종료 후 managed resource를 역순 정리하고 service runtime 종료
 
 즉, 설정은 현재 코드에서 **앱 조립**, **로깅 초기화**, **service_clients/readiness 기본 구성**, **auth 문서 표면(OpenAPI) 조정**에 직접 사용된다. `token_url`은 앱마다 별도 `OAuth2PasswordBearer`에 저장되므로, 한 프로세스에서 서로 다른 값을 사용하는 여러 앱을 생성해도 기존 앱의 OpenAPI password flow가 변경되지 않는다.
 
@@ -186,7 +187,11 @@ READINESS_REQUIRED_SERVICES=keycloak
 - `KEYCLOAK_REALM=docmesh`
 - `KEYCLOAK_CLIENT_ID=fastapi-core`
 - `KEYCLOAK_CLIENT_SECRET=dev-secret`
-- `POSTGRES_DSN=postgresql+psycopg://docmesh:dev-secret@postgres.local:5432/docmesh`
+- `POSTGRES_HOST=postgres.local`
+- `POSTGRES_PORT=5432`
+- `POSTGRES_DB=docmesh`
+- `POSTGRES_USER=docmesh`
+- `POSTGRES_PASSWORD=dev-secret`
 - `SQLITE_PATH=:memory:`
 - `MINIO_ENDPOINT=minio.local:9000`
 - `MINIO_ACCESS_KEY=minio`
@@ -202,11 +207,11 @@ READINESS_REQUIRED_SERVICES=keycloak
 ### 5.2 `load_docmesh_settings(enabled_services: tuple[str, ...] | None = None)`
 
 동작:
-- `enabled_services`가 있으면 집합으로 변환한다.
+- `enabled_services`가 `None`이 아니면 집합으로 변환하며, 빈 tuple은 명시적인 빈 서비스 선택으로 보존한다.
 - `build_docmesh_env_overlay()`로 현재 환경의 복사본과 fallback을 결합한다.
 - `docmesh_py_core.load_service_configs(env, services=services)`에 mapping을 직접 전달한다.
 - 로딩 과정에서 프로세스 `os.environ`을 추가·삭제·수정하지 않는다.
-- 서비스 선택이 없으면 전체 기본 서비스를 로딩한다.
+- `enabled_services=None`이면 전체 기본 서비스를 로딩하고, `enabled_services=()`이면 서비스 설정을 하나도 로딩하지 않는다.
 - `lru_cache(maxsize=1)`로 캐시된다.
 
 ### 5.3 중요 해석
@@ -281,7 +286,7 @@ password grant에서는 함수 인자의 `username` / `password`가 우선하고
 - `READINESS_PARALLEL`은 실제로 사용된다.
 - 두 timeout은 startup healthcheck와 `/health/readiness`에 동일하게 전달된다.
 - 서비스별 timeout은 해당 서비스 실패로, overall timeout은 details 없는 `503 error`로 반환된다.
-- `DOCMESH_SERVICE_ALTERNATIVES` 각 그룹은 assembly 시 적어도 하나의 설정된 서비스를 요구한다.
+- `DOCMESH_SERVICE_ALTERNATIVES` 각 그룹의 서비스는 모두 `DOCMESH_SERVICES`에 포함되어야 하며, assembly 시 그룹마다 적어도 하나의 유효한 설정을 요구한다.
 - `DOCMESH_HEALTHCHECK_ENABLED`는 `AppConfig.startup_healthcheck`로 연결된다.
 - 앱 정책 기본값은 `False`이며, 환경변수를 설정하지 않으면 startup network check 없이 readiness endpoint에서 상태를 확인한다.
 - `startup_healthcheck=True`이면 custom lifespan 진입 전에 runtime healthcheck가 실행되고 required 실패 시 앱 startup이 실패한다.
@@ -384,7 +389,7 @@ register_readiness_check(
 - `KEYCLOAK_REALM`
 - `KEYCLOAK_CLIENT_ID`
 - `KEYCLOAK_CLIENT_SECRET`
-- `POSTGRES_DSN`
+- `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
 - `SQLITE_PATH`
 - `MINIO_ENDPOINT`
 - `MINIO_ACCESS_KEY`
@@ -439,7 +444,7 @@ READINESS_TIMEOUT_SECONDS=5
 READINESS_OVERALL_TIMEOUT_SECONDS=15
 DOCMESH_SERVICE_ALTERNATIVES=postgres,sqlite
 DOCMESH_HEALTHCHECK_ENABLED=true
-DOCMESH_SERVICES=keycloak,nats
+DOCMESH_SERVICES=keycloak,postgres,sqlite,nats
 READINESS_REQUIRED_SERVICES=keycloak
 ```
 
@@ -450,13 +455,17 @@ KEYCLOAK_URL=http://keycloak.local
 KEYCLOAK_REALM=docmesh
 KEYCLOAK_CLIENT_ID=fastapi-core
 KEYCLOAK_CLIENT_SECRET=[REDACTED]
-POSTGRES_DSN=postgresql+psycopg://docmesh:[REDACTED]@postgres.local:5432/docmesh
+POSTGRES_HOST=postgres.local
+POSTGRES_PORT=5432
+POSTGRES_DB=docmesh
+POSTGRES_USER=docmesh
+POSTGRES_PASSWORD=[REDACTED]
 SQLITE_PATH=:memory:
 NATS_SERVERS=nats://nats.local:4222
 NATS_TOKEN=[REDACTED]
 ```
 
-`POSTGRES_DSN` 대신 `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`를 설정할 수 있다. 선택 항목은 `POSTGRES_SSLMODE`, `POSTGRES_CONNECT_TIMEOUT_SECONDS`, `POSTGRES_POOL_SIZE`, `POSTGRES_MAX_OVERFLOW`이다.
+개별 PostgreSQL 접속 항목이 현재 권장 경로다. deprecated 호환 경로인 `POSTGRES_DSN`을 사용할 때는 개별 접속 항목과 함께 설정하지 않는다. 선택 항목은 `POSTGRES_SSLMODE`, `POSTGRES_CONNECT_TIMEOUT_SECONDS`, `POSTGRES_POOL_SIZE`, `POSTGRES_MAX_OVERFLOW`이다.
 
 ---
 

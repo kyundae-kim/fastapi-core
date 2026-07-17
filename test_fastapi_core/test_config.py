@@ -154,12 +154,33 @@ def test_build_docmesh_env_overlay_applies_defaults_without_overwriting(monkeypa
     assert env["KEYCLOAK_URL"] == "http://override.test"
     assert env["NATS_TOKEN"] == "custom-token"
     assert env["KEYCLOAK_REALM"] == "docmesh"
-    assert env["POSTGRES_DSN"] == (
-        "postgresql+psycopg://docmesh:dev-secret@postgres.local:5432/docmesh"
-    )
+    assert "POSTGRES_DSN" not in env
+    assert env["POSTGRES_HOST"] == "postgres.local"
+    assert env["POSTGRES_PORT"] == "5432"
+    assert env["POSTGRES_DB"] == "docmesh"
+    assert env["POSTGRES_USER"] == "docmesh"
+    assert env["POSTGRES_PASSWORD"] == "dev-secret"
     assert env["SQLITE_PATH"] == ":memory:"
     assert env["LANGFUSE_HOST"] == "http://langfuse.local:3000"
 
+
+def test_build_docmesh_env_overlay_preserves_legacy_postgres_dsn(monkeypatch):
+    dsn = "postgresql+psycopg://docmesh:secret@postgres.test:5432/docmesh"
+    monkeypatch.setenv("POSTGRES_DSN", dsn)
+    for key in (
+        "POSTGRES_HOST",
+        "POSTGRES_PORT",
+        "POSTGRES_DB",
+        "POSTGRES_USER",
+        "POSTGRES_PASSWORD",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    env = build_docmesh_env_overlay()
+
+    assert env["POSTGRES_DSN"] == dsn
+    assert "POSTGRES_HOST" not in env
+    assert "POSTGRES_PASSWORD" not in env
 
 
 def test_load_docmesh_settings_uses_selected_services():
@@ -167,6 +188,24 @@ def test_load_docmesh_settings_uses_selected_services():
 
     assert settings.sqlite is not None
     assert settings.keycloak is None
+
+
+def test_load_docmesh_settings_preserves_explicitly_empty_selection():
+    settings = load_docmesh_settings(())
+
+    assert all(
+        getattr(settings, service) is None
+        for service in (
+            "keycloak",
+            "postgres",
+            "sqlite",
+            "minio",
+            "milvus",
+            "ollama",
+            "langfuse",
+            "nats",
+        )
+    )
 
 
 def test_load_docmesh_settings_passes_overlay_without_mutating_environment(monkeypatch):
@@ -197,12 +236,23 @@ def test_load_docmesh_settings_passes_overlay_without_mutating_environment(monke
 
 def test_load_docmesh_settings_loads_postgres_from_default_env(monkeypatch):
     monkeypatch.delenv("POSTGRES_DSN", raising=False)
+    for key in (
+        "POSTGRES_HOST",
+        "POSTGRES_PORT",
+        "POSTGRES_DB",
+        "POSTGRES_USER",
+        "POSTGRES_PASSWORD",
+    ):
+        monkeypatch.delenv(key, raising=False)
     load_docmesh_settings.cache_clear()
 
     settings = load_docmesh_settings(("postgres",))
 
     assert settings.postgres is not None
-    assert settings.postgres.dsn == (
-        "postgresql+psycopg://docmesh:dev-secret@postgres.local:5432/docmesh"
-    )
+    assert settings.postgres.dsn is None
+    assert settings.postgres.host == "postgres.local"
+    assert settings.postgres.port == 5432
+    assert settings.postgres.db == "docmesh"
+    assert settings.postgres.user == "docmesh"
+    assert settings.postgres.password == "dev-secret"
     load_docmesh_settings.cache_clear()

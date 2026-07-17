@@ -14,9 +14,11 @@ def _docmesh_default_env() -> dict[str, str]:
         "KEYCLOAK_REALM": "docmesh",
         "KEYCLOAK_CLIENT_ID": "fastapi-core",
         "KEYCLOAK_CLIENT_SECRET": "dev-secret",
-        "POSTGRES_DSN": (
-            "postgresql+psycopg://docmesh:dev-secret@postgres.local:5432/docmesh"
-        ),
+        "POSTGRES_HOST": "postgres.local",
+        "POSTGRES_PORT": "5432",
+        "POSTGRES_DB": "docmesh",
+        "POSTGRES_USER": "docmesh",
+        "POSTGRES_PASSWORD": "dev-secret",
         "SQLITE_PATH": ":memory:",
         "MINIO_ENDPOINT": "minio.local:9000",
         "MINIO_ACCESS_KEY": "minio",
@@ -35,6 +37,8 @@ def _docmesh_default_env() -> dict[str, str]:
 def build_docmesh_env_overlay() -> dict[str, str]:
     env = dict(os.environ)
     for key, value in _docmesh_default_env().items():
+        if key.startswith("POSTGRES_") and "POSTGRES_DSN" in env:
+            continue
         env.setdefault(key, value)
     return env
 
@@ -44,7 +48,7 @@ def build_docmesh_env_overlay() -> dict[str, str]:
 def load_docmesh_settings(
     enabled_services: tuple[str, ...] | None = None,
 ) -> ServiceConfigs:
-    services = set(enabled_services) if enabled_services else None
+    services = set(enabled_services) if enabled_services is not None else None
     return load_service_configs(
         build_docmesh_env_overlay(),
         services=services,
