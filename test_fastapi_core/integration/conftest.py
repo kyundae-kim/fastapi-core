@@ -25,6 +25,7 @@ KEYCLOAK_REQUIRED_ENV = (
 )
 
 NATS_REQUIRED_ENV = ("NATS_SERVERS",)
+MILVUS_REQUIRED_ENV = ("MILVUS_URI",)
 MINIO_REQUIRED_ENV = (
     "MINIO_ENDPOINT",
     "MINIO_ACCESS_KEY",
@@ -77,6 +78,11 @@ def _parse_minio_endpoint(endpoint: str) -> tuple[str | None, int | None]:
     return parsed.hostname, parsed.port or 9000
 
 
+def _parse_milvus_uri(uri: str) -> tuple[str | None, int | None]:
+    parsed = urlparse(uri if "://" in uri else f"//{uri}")
+    return parsed.hostname, parsed.port or 19530
+
+
 def _postgres_target() -> tuple[str | None, int | None]:
     dsn = os.getenv("POSTGRES_DSN")
     if dsn:
@@ -111,6 +117,13 @@ def require_minio_integration() -> None:
         pytest.skip(f"minio integration target is not reachable at {host}:{port}")
 
 
+def require_milvus_integration() -> None:
+    _require_env(MILVUS_REQUIRED_ENV, label="milvus")
+    host, port = _parse_milvus_uri(os.environ["MILVUS_URI"])
+    if not _is_tcp_reachable(host, port):
+        pytest.skip(f"milvus integration target is not reachable at {host}:{port}")
+
+
 def require_postgres_integration() -> None:
     host, port = _postgres_target()
     if not _is_tcp_reachable(host, port):
@@ -130,6 +143,11 @@ def nats_integration_ready() -> None:
 @pytest.fixture
 def minio_integration_ready() -> None:
     require_minio_integration()
+
+
+@pytest.fixture
+def milvus_integration_ready() -> None:
+    require_milvus_integration()
 
 
 @pytest.fixture
