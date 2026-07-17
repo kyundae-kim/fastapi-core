@@ -5,11 +5,11 @@ import time
 from contextlib import asynccontextmanager
 
 import pytest
-from docmesh_py_core import HealthCheckError
+from docmesh_py_core import HealthCheckError, HealthCheckResult, ServiceHealthStatus
 from fastapi import Depends
 from fastapi.testclient import TestClient
 
-from fastapi_core import ManagedResource, register_readiness_check
+from fastapi_core import ManagedResource, ResourceKey, register_readiness_check
 from fastapi_core.dependencies import get_resource
 
 
@@ -155,6 +155,26 @@ def test_get_resource_returns_503_when_resource_is_not_registered(empty_app_fact
     assert response.json()["detail"] == "Managed resource 'sdk' is not available"
 
 
+def test_resource_key_is_shared_by_registration_and_typed_dependency(empty_app_factory):
+    class Resource:
+        value = "ready"
+
+    resource_key = ResourceKey[Resource]("sdk")
+    app = empty_app_factory(
+        resources=[ManagedResource(resource_key, factory=lambda _app: Resource())],
+    )
+
+    @app.get("/typed-resource")
+    async def resource_endpoint(resource: Resource = Depends(resource_key.dependency)):
+        return {"value": resource.value}
+
+    with TestClient(app) as client:
+        response = client.get("/typed-resource")
+
+    assert response.status_code == 200
+    assert response.json() == {"value": "ready"}
+
+
 def test_managed_resource_healthcheck_is_registered_for_readiness(empty_app_factory):
     checks: list[str] = []
 
@@ -181,6 +201,77 @@ def test_managed_resource_healthcheck_is_registered_for_readiness(empty_app_fact
     assert response.status_code == 200
     assert response.json()["details"]["sdk"]["required"] is True
     assert checks == ["checked"]
+
+
+def test_required_managed_resource_false_healthcheck_fails_readiness(empty_app_factory):
+    app = empty_app_factory(
+        resources=[
+            ManagedResource(
+                "sdk",
+                factory=lambda _app: object(),
+                healthcheck=lambda _resource: False,
+                required=True,
+            )
+        ],
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/health/readiness")
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "error"
+    assert response.json()["details"]["sdk"]["ok"] is False
+
+
+def test_managed_resource_structured_healthcheck_preserves_namespaced_details(
+    empty_app_factory,
+):
+    result = HealthCheckResult(
+        ok=False,
+        services=[
+            ServiceHealthStatus(
+                service="postgres",
+                ok=False,
+                latency_ms=7,
+                error="password=database-secret",
+            ),
+            ServiceHealthStatus(service="minio", ok=True, latency_ms=11),
+        ],
+    )
+    app = empty_app_factory(
+        resources=[
+            ManagedResource(
+                "dms",
+                factory=lambda _app: object(),
+                healthcheck=lambda _resource: result,
+                required=True,
+            )
+        ],
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/health/readiness")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "error",
+        "details": {
+            "dms.postgres": {
+                "ok": False,
+                "latency_ms": 7,
+                "error": "readiness check failed",
+                "required": True,
+                "enabled": True,
+            },
+            "dms.minio": {
+                "ok": True,
+                "latency_ms": 11,
+                "error": None,
+                "required": True,
+                "enabled": True,
+            },
+        },
+    }
 
 
 def test_managed_resource_sync_healthcheck_respects_timeout(empty_app_factory):

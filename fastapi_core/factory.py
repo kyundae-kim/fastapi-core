@@ -43,7 +43,11 @@ from fastapi_core.extensions import (
     ReadinessRegistry,
     ResourceRegistry,
 )
-from fastapi_core.http import CorrelationIdMiddleware, install_problem_handlers
+from fastapi_core.http import (
+    CorrelationIdMiddleware,
+    ErrorRenderer,
+    install_problem_handlers,
+)
 from fastapi_core.routers.auth import router as auth_router
 from fastapi_core.routers.health import router as health_router
 
@@ -299,6 +303,7 @@ def create_app(
     lifespan: Callable | None = None,
     include_auth_router: bool = True,
     resources: Sequence[ManagedResource[Any]] = (),
+    error_renderer: ErrorRenderer | None = None,
 ) -> FastAPI:
     app_config = config or load_app_config()
     root_logger = _configure_application_logging(app_config)
@@ -331,7 +336,7 @@ def create_app(
     if service_runtime is not None:
         _configure_service_runtime(app, service_runtime)
     _configure_oauth2_scheme(app, app_config.token_url)
-    install_problem_handlers(app)
+    install_problem_handlers(app, error_renderer)
 
     app.add_middleware(
         CORSMiddleware,

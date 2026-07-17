@@ -12,6 +12,8 @@ from ollama import Client as OllamaClient
 from pymilvus import MilvusClient
 from sqlalchemy.engine import Engine
 
+from fastapi_core.resources import ResourceKey
+
 
 ServiceClientDependency = Callable[[Request], Any]
 ResourceDependency = Callable[[Request], Any]
@@ -60,23 +62,7 @@ def get_service_client(service_name: str) -> ServiceClientDependency:
 
 @log_function_boundary()
 def get_resource(name: str) -> ResourceDependency:
-    @log_function_boundary()
-    def dependency(request: Request) -> Any:
-        registry = getattr(request.app.state, "resource_registry", None)
-        if registry is None:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Managed resource '{name}' is not available",
-            )
-        try:
-            return registry.require(name)
-        except KeyError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Managed resource '{name}' is not available",
-            ) from exc
-
-    return dependency
+    return ResourceKey[Any](name).dependency
 
 
 @log_function_boundary()

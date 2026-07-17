@@ -363,8 +363,7 @@ register_readiness_check(
 
 ```python
 from fastapi import Depends, FastAPI
-from fastapi_core import ManagedResource, create_app
-from fastapi_core.dependencies import get_resource
+from fastapi_core import ManagedResource, ResourceKey, create_app
 
 
 class DomainSDK:
@@ -376,10 +375,13 @@ async def create_sdk(_app: FastAPI) -> DomainSDK:
     return DomainSDK()
 
 
+domain_sdk = ResourceKey[DomainSDK]("domain-sdk")
+
+
 app = create_app(
     resources=[
         ManagedResource(
-            "domain-sdk",
+            domain_sdk,
             factory=create_sdk,
             healthcheck=lambda sdk: sdk.check(),
             required=True,
@@ -389,7 +391,7 @@ app = create_app(
 
 
 @app.get("/sdk-status")
-async def sdk_status(sdk=Depends(get_resource("domain-sdk"))):
+async def sdk_status(sdk: DomainSDK = Depends(domain_sdk.dependency)):
     return {"ready": sdk is not None}
 ```
 
@@ -399,6 +401,8 @@ async def sdk_status(sdk=Depends(get_resource("domain-sdk"))):
 - healthcheck가 있으면 readiness registry에 자동 등록된다.
 - 명시적 close callback이 없으면 `aclose()`, `close()` 순서로 자동 정리한다.
 - `get_resource(name)`은 lifecycle에서 생성된 동일 객체를 route에 주입한다.
+- `ResourceKey[T]`를 등록과 `Depends(key.dependency)`에 함께 사용하면 반환 타입을 유지하고 resource 이름 문자열을 한 곳에서 관리한다.
+- healthcheck의 `None`/`True`는 성공, `False`는 실패다. `HealthCheckResult`를 반환하면 하위 상태가 `domain-sdk.<service>` details로 보존된다.
 - `settings`를 생략한 기본 경로는 custom lifespan보다 먼저 `assemble_service_runtime(...)`으로 외부 서비스 runtime을 준비한다.
 - 준비된 runtime은 `app.state.service_runtime`에 저장되고 clients/settings도 기존 state 키로 노출된다.
 - custom lifespan startup/shutdown이 호출된다.
@@ -472,6 +476,8 @@ app = create_app(config=config, include_auth_router=False)
 ## 14. domain 오류와 correlation ID 연계
 
 ```python
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from fastapi_core import ErrorMapping, create_app, register_error_mapper
 
 
@@ -479,7 +485,20 @@ class DomainSDKError(Exception):
     pass
 
 
-app = create_app()
+def render_error(request: Request, mapping: ErrorMapping) -> JSONResponse:
+    return JSONResponse(
+        status_code=mapping.status_code,
+        content={
+            "error": {
+                "code": mapping.code,
+                "message": mapping.detail,
+                "correlation_id": request.state.correlation_id,
+            }
+        },
+    )
+
+
+app = create_app(error_renderer=render_error)
 register_error_mapper(
     app,
     DomainSDKError,
@@ -487,12 +506,13 @@ register_error_mapper(
         status_code=502,
         title="Domain service error",
         detail=str(exc),
+        code="DOMAIN_SERVICE_ERROR",
         type_uri="https://errors.example/domain-service",
     ),
 )
 ```
 
-모든 정상/오류 응답에는 `X-Correlation-ID`가 설정된다. 유효한 입력 ID는 `request.state.correlation_id`와 응답에 그대로 전파되고, 유효하지 않은 값은 새 UUID로 교체된다. HTTP/validation/unhandled 오류와 위 custom mapper 오류는 `application/problem+json` 응답을 사용한다.
+모든 정상/오류 응답에는 `X-Correlation-ID`가 설정된다. 유효한 입력 ID는 `request.state.correlation_id`와 응답에 그대로 전파되고, 유효하지 않은 값은 새 UUID로 교체된다. custom renderer는 HTTP/validation/unhandled 오류와 위 domain mapper에 공통 적용되며, renderer 호출 전 `detail` 마스킹이 완료된다. `error_renderer`를 생략하면 기본 `application/problem+json` 응답을 사용한다.
 
 ## 15. 예제 선택 가이드
 

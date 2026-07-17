@@ -15,8 +15,10 @@ from fastapi_core.factory import create_app
 
 ROOT_EXPORTS = {
     "ErrorMapping",
+    "ErrorRenderer",
     "ManagedResource",
     "ReadinessCheckSpec",
+    "ResourceKey",
     "create_app",
     "register_error_mapper",
     "register_readiness_check",
@@ -86,6 +88,7 @@ def test_create_app_signature_is_stable():
         ("lifespan", Parameter.POSITIONAL_OR_KEYWORD, None),
         ("include_auth_router", Parameter.POSITIONAL_OR_KEYWORD, True),
         ("resources", Parameter.POSITIONAL_OR_KEYWORD, ()),
+        ("error_renderer", Parameter.POSITIONAL_OR_KEYWORD, None),
     ]
 
 
@@ -126,11 +129,15 @@ def test_runtime_extension_contracts_are_stable():
         "title",
         "type_uri",
         "headers",
+        "code",
+        "extensions",
     ]
     assert _field_defaults(fastapi_core.ErrorMapping) == {
         "title": None,
         "type_uri": "about:blank",
         "headers": None,
+        "code": None,
+        "extensions": None,
     }
 
 

@@ -14,12 +14,12 @@
 - `create_app(...)`
 - auth router (`/token`, `/user`)
 - health router (`/health/liveness`, `/health/readiness`)
-- dependency (`get_current_user`, `require_permissions`, service_clients 기반 `get_auth_provider` 경로, `get_service_client(service_name)`, 서비스별 전용 `get_*` dependency)
+- dependency (`get_current_user`, `require_permissions`, service_clients 기반 `get_auth_provider` 경로, `get_service_client(service_name)`, 서비스별 전용 `get_*` dependency, `ResourceKey[T]`)
 - schema (`TokenResponse`, `UserInfo`, `HealthResponse`, `HealthServiceDetail`)
 - config / settings loader
 - custom lifespan 연계
-- typed readiness 및 managed resource lifecycle
-- 앱별 OAuth2, 선언적 authorization, correlation ID 및 problem-details 오류 처리
+- bool/구조화 반환을 지원하는 typed readiness 및 managed resource lifecycle
+- 앱별 OAuth2, 선언적 authorization, correlation ID 및 교체 가능한 오류 renderer
 - 구조화 로깅
 - curated package export, app factory/runtime extension signature, legacy readiness state 부재 계약
 
@@ -72,9 +72,9 @@ uv run pytest -q -m integration
 ```
 
 최근 실제 실행 결과:
-- `uv run pytest -q -m 'not integration'` → `90 passed, 11 deselected, 2 warnings`
-- `uv run pytest -q` → `101 passed, 2 warnings`
-- `uv run pytest -q -m integration` → `11 passed, 90 deselected, 2 warnings`
+- `uv run pytest -q -m 'not integration'` → `98 passed, 11 deselected, 2 warnings`
+- `uv run pytest -q` → `109 passed, 3 warnings`
+- `uv run pytest -q -m integration` → `11 passed, 98 deselected, 3 warnings`
 
 테스트 러너/환경 특성:
 - `pytest` 사용
@@ -278,6 +278,9 @@ PostgreSQL 통합 테스트 env:
 - custom lifespan과 managed resource의 실행 순서
 - `get_resource(name)`의 동일 lifecycle 객체 주입
 - resource healthcheck의 readiness 자동 등록
+- required resource healthcheck의 `False` 반환이 `503 + error`로 판정됨
+- `HealthCheckResult` 하위 상태가 namespace, latency, required, redaction을 보존함
+- `ResourceKey[T]` 하나를 managed resource 등록과 typed dependency에 함께 사용함
 - 후속 factory 실패 시 startup rollback
 - required startup healthcheck 실패 시 async close rollback
 - 빈 이름과 framework 예약 이름 거부
@@ -296,6 +299,8 @@ PostgreSQL 통합 테스트 env:
 - 민감한 오류 detail 마스킹과 미처리 예외 원문 비노출
 - 비표준 HTTP status의 안정된 title
 - custom domain error mapper와 package-root export
+- sync custom renderer가 domain error의 media type/envelope를 교체하고 `code`/`extensions`, 마스킹된 detail, correlation ID를 받음
+- async custom renderer가 validation error에도 공통 적용됨
 
 ## 5.6 schema 테스트
 
@@ -450,6 +455,9 @@ PostgreSQL 통합 테스트 env:
 - [x] `pytest-asyncio` 기반 native async check 테스트가 있다.
 - [x] typed readiness 등록, check별 timeout과 오류 redaction 테스트가 있다.
 - [x] managed resource startup/shutdown/rollback 및 dependency 주입 테스트가 있다.
+- [x] `False` 및 구조화 `HealthCheckResult` 반환 판정과 namespaced details가 검증되었다.
+- [x] 앱 단위 sync/async 오류 renderer와 `ErrorMapping.code/extensions` 전달이 검증되었다.
+- [x] `ResourceKey[T]`의 등록/typed dependency 공용 사용이 검증되었다.
 - [x] required/enabled 교차 검증과 빈 CSV 환경변수 의미 테스트가 있다.
 - [x] multi-app OAuth2 OpenAPI 격리 테스트가 있다.
 - [x] role/scope/permission authorization dependency 테스트가 있다.

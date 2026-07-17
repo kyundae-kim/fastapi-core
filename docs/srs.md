@@ -61,7 +61,7 @@ PRD가 capability 중심 문서라면, 이 문서는 그 capability를 실제 �
 ### 3.2 문서화 대상 공개 표면
 
 - app factory: `create_app(...)`
-- runtime extension: `ManagedResource`, `ReadinessCheckSpec`, `register_readiness_check(...)`, `ErrorMapping`, `register_error_mapper(...)`
+- runtime extension: `ManagedResource`, `ResourceKey[T]`, `ReadinessCheckSpec`, `register_readiness_check(...)`, `ErrorMapping`, `ErrorRenderer`, `register_error_mapper(...)`
 - dependency: `get_config()`, `get_settings()`, `get_auth_provider()`, `get_resource(name)`, `get_service_client(service_name)`, `get_keycloak_auth_service()`, `get_postgres_engine()`, `get_sqlite_engine()`, `get_minio_client()`, `get_milvus_client()`, `get_ollama_client()`, `get_langfuse_client()`, `get_nats_connection_builder()`, `get_current_user()`, `require_roles(...)`, `require_scopes(...)`, `require_permissions(...)`
 - schema: `TokenResponse`, `UserInfo`, `HealthResponse`, `ProblemDetail`
 - endpoint: `/token`, `/user`, `/health/liveness`, `/health/readiness`
@@ -86,7 +86,7 @@ class ReadinessCheckSpec:
 
 @dataclass(frozen=True)
 class ManagedResource(Generic[T]):
-    name: str
+    name: str | ResourceKey[T]
     factory: Callable[[FastAPI], T | Awaitable[T]]
     healthcheck: Callable[[T], object | Awaitable[object]] | None = None
     close: Callable[[T], None | Awaitable[None]] | None = None
@@ -106,6 +106,13 @@ def register_readiness_check(
 ) -> None: ...
 
 
+@dataclass(frozen=True)
+class ResourceKey(Generic[T]):
+    name: str
+
+    def dependency(self, request: Request) -> T: ...
+
+
 def get_resource(name: str) -> Callable[[Request], Any]: ...
 
 
@@ -116,6 +123,14 @@ class ErrorMapping:
     title: str | None = None
     type_uri: str = "about:blank"
     headers: dict[str, str] | None = None
+    code: str | None = None
+    extensions: dict[str, object] | None = None
+
+
+ErrorRenderer = Callable[
+    [Request, ErrorMapping],
+    Response | Awaitable[Response],
+]
 
 
 def register_error_mapper(
@@ -130,13 +145,13 @@ def require_scopes(*scopes: str) -> Callable[..., UserInfo]: ...
 def require_permissions(*permissions: str) -> Callable[..., UserInfo]: ...
 ```
 
-`create_app(..., resources=())`는 `ManagedResource` 목록을 받아 공통 lifecycle과 readiness registry에 연결한다. 반환 객체는 plain `FastAPI` 계약을 유지하므로, 런타임에 동적으로 `app.register_readiness_check` 메서드를 추가하는 방식은 공개 계약으로 사용하지 않는다.
+`create_app(..., resources=(), error_renderer=None)`는 `ManagedResource` 목록을 공통 lifecycle/readiness registry에 연결하고 선택적 앱 단위 오류 renderer를 설치한다. 반환 객체는 plain `FastAPI` 계약을 유지하므로, 런타임에 동적으로 `app.register_readiness_check` 메서드를 추가하는 방식은 공개 계약으로 사용하지 않는다.
 
 ### 3.4 리팩토링 보호 계약
 
 코드 크기 축소 리팩토링은 다음 공개 표면을 보호해야 한다.
 
-- package root `fastapi_core`: `ErrorMapping`, `ManagedResource`, `ReadinessCheckSpec`, `create_app`, `register_error_mapper`, `register_readiness_check`
+- package root `fastapi_core`: `ErrorMapping`, `ErrorRenderer`, `ManagedResource`, `ReadinessCheckSpec`, `ResourceKey`, `create_app`, `register_error_mapper`, `register_readiness_check`
 - `fastapi_core.dependencies`: 3.2에 열거한 config/auth/resource/service/authorization dependency
 - `fastapi_core.schemas`: `HealthResponse`, `HealthServiceDetail`, `ProblemDetail`, `TokenResponse`, `UserInfo`
 - endpoint: `POST /token`, `GET /user`, `GET /health/liveness`, `GET /health/readiness`
@@ -152,7 +167,7 @@ readiness 확장은 `app.state.readiness_registry`를 단일 source of truth로 
 
 ### 4.1 App factory
 
-- SR-001. 시스템은 `create_app(config=None, settings=None, lifespan=None, include_auth_router=True, resources=()) -> FastAPI`를 제공해야 한다.
+- SR-001. 시스템은 `create_app(config=None, settings=None, lifespan=None, include_auth_router=True, resources=(), error_renderer=None) -> FastAPI`를 제공해야 한다.
 - SR-002. `config is None`이면 기본 환경 설정 객체를 생성해야 한다.
 - SR-003. `settings is None`이면 환경기반 서비스 설정을 로딩해야 한다.
 - SR-004. 생성된 앱은 `root_path`를 설정할 수 있어야 한다.
@@ -170,13 +185,16 @@ readiness 확장은 `app.state.readiness_registry`를 단일 source of truth로 
 - SR-010. 시스템은 CORS middleware를 등록해야 한다.
 - SR-011. CORS 설정은 앱 설정 객체에서 읽어야 한다.
 - SR-012. 인증 관련 오류는 일관된 HTTP 예외 정책으로 반환되어야 한다.
-- SR-013. `HTTPException`, `RequestValidationError`, 미처리 `Exception`은 `ProblemDetail` 응답으로 변환해야 한다.
+- SR-013. 기본 renderer에서 `HTTPException`, `RequestValidationError`, 미처리 `Exception`은 `ProblemDetail` 응답으로 변환해야 한다.
 - SR-014. 모든 HTTP 요청은 `X-Correlation-ID`를 요청 상태와 응답 헤더에서 사용할 수 있어야 한다.
 - SR-015. correlation ID는 `[A-Za-z0-9._:-]{1,128}`을 만족하는 입력만 신뢰하고 나머지는 32자리 hexadecimal UUID로 교체해야 한다.
-- SR-016. 문제 상세 응답은 `application/problem+json` media type을 사용해야 한다.
+- SR-016. 기본 문제 상세 renderer는 `application/problem+json` media type을 사용해야 한다.
 - SR-017. HTTP 예외의 응답 header는 문제 상세 변환 후에도 보존해야 한다.
 - SR-018. 외부 오류 detail은 `mask_sensitive_value(...)` 정책을 적용하고 미처리 예외 원문은 응답에 포함하지 않아야 한다.
 - SR-019. `register_error_mapper(...)`는 서비스별 예외를 같은 문제 상세 응답으로 변환하는 sync/async mapper를 등록할 수 있어야 한다.
+- SR-019A. `create_app(..., error_renderer=...)`는 HTTP, validation, domain, 미처리 오류의 최종 media type과 envelope를 앱 단위로 교체할 수 있어야 한다.
+- SR-019B. custom renderer 호출 전 오류 detail 마스킹과 correlation ID 설정은 공통 계층에서 완료되어야 한다.
+- SR-019C. `ErrorMapping`은 서비스 오류 code와 안전한 확장 metadata를 renderer에 전달할 수 있어야 한다.
 
 ### 4.3 Router registration
 
@@ -210,6 +228,9 @@ readiness 확장은 `app.state.readiness_registry`를 단일 source of truth로 
 - SR-047. check별 `required`, `timeout_seconds`, `redact_errors` 정책을 표현할 수 있어야 한다.
 - SR-048. check별 timeout이 생략되면 `AppConfig.readiness_timeout_seconds`를 사용해야 한다.
 - SR-049. 등록 이름이 중복되면 마지막 값으로 조용히 덮어쓰지 않고 명시적 설정 오류를 발생시켜야 한다.
+- SR-049A. readiness check 반환값 `None`과 `True`는 성공, `False`는 실패로 판정해야 한다.
+- SR-049B. readiness check가 `HealthCheckResult`를 반환하면 `ok`와 서비스별 결과를 판정에 반영해야 한다.
+- SR-049C. 구조화 결과의 서비스 이름은 `<등록 이름>.<서비스 이름>`으로 namespace하여 응답에 보존해야 한다.
 
 ---
 
@@ -242,6 +263,7 @@ readiness 확장은 `app.state.readiness_registry`를 단일 source of truth로 
 - SR-068B. `get_resource(name)`는 동일 앱 lifecycle에서 생성된 객체와 동일한 참조를 반환해야 한다.
 - SR-068C. 요청한 resource가 등록되지 않았거나 아직 사용할 수 없으면 문서화된 명시적 오류를 반환해야 한다.
 - SR-068D. route 코드는 managed resource를 조회하기 위해 `app.state.<resource_name>` 또는 내부 registry dict를 직접 읽을 필요가 없어야 한다.
+- SR-068E. `ResourceKey[T]`는 같은 typed key를 managed resource 등록과 route dependency에 재사용할 수 있어야 한다.
 
 ### 6.4 Current user dependency
 
@@ -311,6 +333,7 @@ readiness 확장은 `app.state.readiness_registry`를 단일 source of truth로 
 - SR-138. 등록된 check에서 발생한 예외는 readiness 응답 상태로 정규화되어야 하며 endpoint 밖으로 원문 예외가 누출되면 안 된다.
 - SR-139. `redact_errors=True`인 check의 외부 응답에는 민감한 원문 오류를 노출하지 않아야 하며, 구조화 로그에도 공통 마스킹 정책을 적용해야 한다.
 - SR-139A. 선택 check만 실패하면 `200 + degraded`, 필수 check가 실패하면 `503 + error`라는 기존 정책을 사용자 정의 check에도 동일하게 적용해야 한다.
+- SR-139B. 구조화 check 결과의 하위 서비스는 부모 check의 required/redaction 정책을 상속해야 한다.
 
 ---
 
@@ -333,7 +356,7 @@ readiness 확장은 `app.state.readiness_registry`를 단일 source of truth로 
 
 ### 10.1 Managed resource lifecycle
 
-- SR-154. `ManagedResource[T]`는 최소 `name`, `factory`, 선택적 `healthcheck`, 선택적 `close`, `required`, 선택적 readiness timeout과 오류 마스킹 정책을 표현해야 한다.
+- SR-154. `ManagedResource[T]`는 최소 `str | ResourceKey[T]` 이름, `factory`, 선택적 `healthcheck`, 선택적 `close`, `required`, 선택적 readiness timeout과 오류 마스킹 정책을 표현해야 한다.
 - SR-155. `factory`는 `FastAPI`를 입력으로 받아 `T` 또는 `Awaitable[T]`를 반환할 수 있어야 한다.
 - SR-156. 명시적 `close`는 생성된 resource를 입력으로 받아 sync/async 정리를 모두 지원해야 한다.
 - SR-157. 명시적 `close`가 없으면 구현은 `aclose()` 후 `close()` 순서로 지원 프로토콜을 탐색하고, 어느 것도 없으면 정리가 필요 없는 resource로 취급해야 한다.
@@ -388,6 +411,10 @@ readiness 확장은 `app.state.readiness_registry`를 단일 source of truth로 
 - 유효/무효 correlation ID의 request state와 response header 전파를 검증
 - HTTP, validation, 미처리 예외의 `ProblemDetail` 변환과 민감정보 마스킹을 검증
 - custom sync/async error mapper가 표준 문제 상세 응답을 생성하는지 검증
+- `False` 및 실패 `HealthCheckResult` 반환이 required readiness 실패로 판정되는지 검증
+- 구조화 readiness 서비스 상태가 namespace와 부모 required/redaction 정책을 보존하는지 검증
+- custom sync/async error renderer가 domain/validation 오류 envelope를 교체하면서 detail 마스킹과 correlation ID를 유지하는지 검증
+- `ResourceKey[T]` 하나를 등록과 typed dependency에 함께 사용하는 경로를 검증
 
 ---
 

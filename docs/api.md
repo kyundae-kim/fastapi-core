@@ -39,8 +39,10 @@ entrypoint = "fastapi_core.factory:create_app"
 ```python
 from fastapi_core import (
     ErrorMapping,
+    ErrorRenderer,
     ManagedResource,
     ReadinessCheckSpec,
+    ResourceKey,
     create_app,
     register_error_mapper,
     register_readiness_check,
@@ -63,7 +65,7 @@ readiness state의 단일 통합 지점은 `app.state.readiness_registry`다. �
 
 ## 3. App factory API
 
-### 3.1 `create_app(config=None, settings=None, lifespan=None, include_auth_router=True, resources=()) -> FastAPI`
+### 3.1 `create_app(config=None, settings=None, lifespan=None, include_auth_router=True, resources=(), error_renderer=None) -> FastAPI`
 
 공통 FastAPI 애플리케이션을 생성한다.
 
@@ -73,6 +75,7 @@ readiness state의 단일 통합 지점은 `app.state.readiness_registry`다. �
 - `lifespan: Callable | None`
 - `include_auth_router: bool = True`
 - `resources: Sequence[ManagedResource[Any]] = ()`
+- `error_renderer: ErrorRenderer | None = None`
 
 #### 현재 구현 동작
 - `config is None`이면 `load_app_config()`를 사용한다.
@@ -93,7 +96,7 @@ readiness state의 단일 통합 지점은 `app.state.readiness_registry`다. �
   - `resource_registry`
 - `config.token_url`로 앱 전용 OAuth2 scheme을 만들고 dependency override와 OpenAPI password flow에 반영한다. module-global scheme model은 변경하지 않는다.
 - CORS middleware를 등록한다.
-- correlation ID middleware와 표준 problem-details exception handler를 등록한다.
+- correlation ID middleware와 exception handler를 등록한다. `error_renderer`가 없으면 표준 problem-details renderer를 사용한다.
 - health router를 기본 포함한다.
 - `include_auth_router=True`일 때 auth router를 포함한다.
 - managed resource를 선언 순서로 생성하고 생성의 역순으로 정리한다.
@@ -131,7 +134,7 @@ app = create_app(include_auth_router=False)
 서비스 SDK나 연결 객체의 생성, readiness, 종료 정책을 하나로 선언한다.
 
 주요 필드:
-- `name`
+- `name: str | ResourceKey[T]`
 - `factory(app)` — sync/async 반환 지원
 - `healthcheck(resource)` — 선택, sync/async 지원
 - `close(resource)` — 선택, sync/async 지원
@@ -139,7 +142,9 @@ app = create_app(include_auth_router=False)
 - `readiness_timeout_seconds=None`
 - `redact_errors=True`
 
-명시적 `close`가 없으면 `aclose()`, `close()` 순서로 자동 정리 프로토콜을 찾는다. 여러 resource는 선언 순서로 생성되고 역순으로 정리된다.
+명시적 `close`가 없으면 `aclose()`, `close()` 순서로 자동 정리 프로토콜을 찾는다. 여러 resource는 선언 순서로 생성되고 역순으로 정리된다. healthcheck 반환 계약은 `None`/`True` 성공, `False` 실패이며, `HealthCheckResult`는 `ok`와 서비스별 상태를 모두 반영한다.
+
+구조화 결과의 각 서비스는 `<managed-resource 이름>.<하위 서비스 이름>`으로 namespace된다. 하위 상태는 부모 resource의 `required`와 `redact_errors` 정책을 상속한다.
 
 #### `register_readiness_check(app, name, check, *, required=True, timeout_seconds=None, redact_errors=True)`
 
@@ -154,6 +159,10 @@ registry가 보관하는 typed readiness 선언이다. 현재 public helper는 �
 정의 위치: `fastapi_core.dependencies`
 
 managed resource를 route에 주입하는 dependency factory다. lifecycle 안에서는 생성된 동일 객체를 반환하며, 등록되지 않았거나 사용할 수 없으면 `503`을 반환한다.
+
+#### `ResourceKey[T]`
+
+typed resource 등록/조회 key다. 하나의 `ResourceKey[T]`를 `ManagedResource`의 이름과 `Depends(key.dependency)`에 함께 사용하면 문자열 중복과 `Any` 반환을 피할 수 있다. 기존 `get_resource(name)`은 호환 경로로 유지된다.
 
 ---
 
@@ -172,17 +181,23 @@ package root에서 import할 수 있는 immutable 오류 매핑 선언이다.
 - `title: str | None = None`
 - `type_uri: str = "about:blank"`
 - `headers: dict[str, str] | None = None`
+- `code: str | None = None`
+- `extensions: dict[str, object] | None = None`
+
+#### `ErrorRenderer`
+
+`(Request, ErrorMapping) -> Response | Awaitable[Response]` callable 계약이다. `create_app(error_renderer=...)`에 전달하면 HTTP, validation, domain mapper, 미처리 오류의 최종 envelope와 media type을 앱 단위로 교체한다. renderer 호출 전에 `detail` 민감정보 마스킹이 적용되고 correlation ID는 `request.state.correlation_id`에 준비된다.
 
 #### `register_error_mapper(app, exception_type, mapper)`
 
-서비스별 domain 예외를 공통 problem-details 응답으로 변환한다. mapper는 `(Request, Exception)`을 받고 `ErrorMapping` 또는 awaitable을 반환한다. detail은 응답 전에 공통 민감정보 마스킹을 거친다.
+서비스별 domain 예외를 `ErrorMapping`으로 변환한다. mapper는 `(Request, Exception)`을 받고 `ErrorMapping` 또는 awaitable을 반환한다. 최종 응답은 앱 renderer가 만들며 detail은 renderer 호출 전에 공통 민감정보 마스킹을 거친다.
 
 #### 기본 오류 변환
 
 - `HTTPException`: 기존 status/detail/header를 유지하고 problem-details envelope로 변환
 - `RequestValidationError`: `422`, `Request validation failed`
 - 미처리 `Exception`: `500`, `Internal Server Error`; 원문 예외는 응답에 포함하지 않음
-- media type: `application/problem+json`
+- 기본 renderer media type: `application/problem+json`
 
 ## 4. Router API
 
@@ -285,6 +300,8 @@ package root에서 import할 수 있는 immutable 오류 매핑 선언이다.
 - 필수 서비스 실패 시 `503 + status="error"`를 반환한다.
 - 선택 서비스만 실패 시 `200 + status="degraded"`를 반환한다.
 - 모두 성공 시 `200 + status="ok"`를 반환한다.
+- check가 `False`를 반환하면 예외 발생과 동일한 실패로 처리한다.
+- check가 `HealthCheckResult`를 반환하면 하위 서비스 상태와 latency/error를 `<check>.<service>` details로 보존한다.
 
 ##### 세부 응답 형식
 성공/실패 공통으로 `details`는 서비스별 `HealthServiceDetail` 구조를 가진다.

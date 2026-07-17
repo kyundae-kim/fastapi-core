@@ -8,8 +8,15 @@ from functools import partial
 from typing import Any, Generic, TypeVar
 
 from docmesh_py_core.function_logging import log_function_boundary
-from docmesh_py_core import HealthCheckResult, async_check_all_services
+from docmesh_py_core import (
+    HealthCheckError,
+    HealthCheckResult,
+    ServiceHealthStatus,
+    async_check_all_services,
+)
 from fastapi import FastAPI
+
+from fastapi_core.resources import ResourceKey
 
 T = TypeVar("T")
 Check = Callable[[], object | Awaitable[object]]
@@ -40,7 +47,7 @@ class ReadinessCheckSpec:
 
 @dataclass(frozen=True)
 class ManagedResource(Generic[T]):
-    name: str
+    name: str | ResourceKey[T]
     factory: Callable[[FastAPI], T | Awaitable[T]]
     healthcheck: Callable[[T], object | Awaitable[object]] | None = None
     close: Callable[[T], None | Awaitable[None]] | None = None
@@ -50,17 +57,62 @@ class ManagedResource(Generic[T]):
 
 
 @log_function_boundary()
-async def _invoke_check(check: Check, timeout_seconds: float | None) -> None:
+async def _invoke_check(check: Check, timeout_seconds: float | None) -> object:
     @log_function_boundary()
-    async def invoke() -> None:
+    async def invoke() -> object:
         if inspect.iscoroutinefunction(check):
-            await check()
-            return
+            return await check()
         result = await asyncio.to_thread(check)
         if inspect.isawaitable(result):
-            await result
+            return await result
+        return result
 
-    await asyncio.wait_for(invoke(), timeout=timeout_seconds)
+    return await asyncio.wait_for(invoke(), timeout=timeout_seconds)
+
+
+@log_function_boundary()
+def _structured_result(
+    parent: str,
+    result: HealthCheckResult,
+    *,
+    required: bool,
+) -> HealthCheckResult:
+    services = [
+        ServiceHealthStatus(
+            service=f"{parent}.{service.service}",
+            ok=service.ok,
+            latency_ms=service.latency_ms,
+            required=required,
+            error=service.error,
+            error_type=service.error_type,
+        )
+        for service in result.services
+    ]
+    return HealthCheckResult(
+        ok=result.ok and all(service.ok for service in services),
+        services=services,
+    )
+
+
+@log_function_boundary()
+def _merge_structured_results(
+    result: HealthCheckResult,
+    structured: dict[str, HealthCheckResult],
+) -> HealthCheckResult:
+    services: list[ServiceHealthStatus] = []
+    for service in result.services:
+        nested = structured.get(service.service)
+        if nested is None or not nested.services:
+            services.append(service)
+            continue
+        if not nested.ok and all(child.ok for child in nested.services):
+            services.append(service)
+            continue
+        services.extend(nested.services)
+    return HealthCheckResult(
+        ok=all(service.ok for service in services),
+        services=services,
+    )
 
 
 class ReadinessRegistry:
@@ -97,6 +149,7 @@ class ReadinessRegistry:
             if names is None or name in names
         }
         checks: dict[str, Check] = {}
+        structured: dict[str, HealthCheckResult] = {}
         for name, spec in selected.items():
             timeout_seconds = (
                 spec.timeout_seconds
@@ -106,20 +159,37 @@ class ReadinessRegistry:
 
             @log_function_boundary()
             async def run(
+                name: str = name,
                 check: Check = spec.check,
+                required: bool = spec.required,
                 timeout: float | None = timeout_seconds,
             ) -> None:
-                await _invoke_check(check, timeout)
+                result = await _invoke_check(check, timeout)
+                if result is False:
+                    raise RuntimeError("readiness check returned False")
+                if isinstance(result, HealthCheckResult):
+                    nested = _structured_result(name, result, required=required)
+                    structured[name] = nested
+                    if not nested.ok:
+                        raise RuntimeError("structured readiness check failed")
 
             checks[name] = run
-        return await async_check_all_services(
-            checks,
-            required_services={
-                name for name, spec in selected.items() if spec.required
-            },
-            parallel=parallel,
-            overall_timeout_seconds=overall_timeout_seconds,
-        )
+        try:
+            result = await async_check_all_services(
+                checks,
+                required_services={
+                    name for name, spec in selected.items() if spec.required
+                },
+                parallel=parallel,
+                overall_timeout_seconds=overall_timeout_seconds,
+            )
+        except HealthCheckError as exc:
+            result = _merge_structured_results(exc.result, structured)
+            failure = next(
+                service for service in result.services if service.required and not service.ok
+            )
+            raise HealthCheckError(failure, result=result) from exc
+        return _merge_structured_results(result, structured)
 
 
 class ResourceRegistry:
@@ -141,12 +211,13 @@ class ResourceRegistry:
     def _validate(self, reserved_names: set[str] | frozenset[str]) -> None:
         names: set[str] = set()
         for resource in self.resources:
-            if not resource.name.strip():
+            name = self._name(resource.name)
+            if not name.strip():
                 raise ValueError("resource name must not be empty")
-            if resource.name in reserved_names:
-                raise ValueError(f"resource name '{resource.name}' is reserved")
-            if resource.name in names:
-                raise ValueError(f"resource name '{resource.name}' is already registered")
+            if name in reserved_names:
+                raise ValueError(f"resource name '{name}' is reserved")
+            if name in names:
+                raise ValueError(f"resource name '{name}' is already registered")
             if (
                 resource.readiness_timeout_seconds is not None
                 and resource.readiness_timeout_seconds <= 0
@@ -154,28 +225,34 @@ class ResourceRegistry:
                 raise ValueError(
                     "managed resource readiness_timeout_seconds must be greater than zero"
                 )
-            names.add(resource.name)
+            names.add(name)
+
+    @staticmethod
+    @log_function_boundary()
+    def _name(name: str | ResourceKey[Any]) -> str:
+        return name.name if isinstance(name, ResourceKey) else name
 
     @log_function_boundary()
     async def start(self, app: FastAPI) -> None:
         try:
             for resource in self.resources:
+                name = self._name(resource.name)
                 value = resource.factory(app)
                 if inspect.isawaitable(value):
                     value = await value
-                self.instances[resource.name] = value
+                self.instances[name] = value
                 if resource.healthcheck is not None:
                     check = partial(resource.healthcheck, value)
                     self.readiness.register(
                         ReadinessCheckSpec(
-                            name=resource.name,
+                            name=name,
                             check=check,
                             required=resource.required,
                             timeout_seconds=resource.readiness_timeout_seconds,
                             redact_errors=resource.redact_errors,
                         )
                     )
-                    self._healthcheck_names.add(resource.name)
+                    self._healthcheck_names.add(name)
         except BaseException as exc:
             try:
                 await self.close()
@@ -191,7 +268,7 @@ class ResourceRegistry:
         overall_timeout_seconds: float | None,
     ) -> None:
         required_names = {
-            resource.name
+            self._name(resource.name)
             for resource in self.resources
             if resource.healthcheck is not None and resource.required
         }
@@ -213,17 +290,18 @@ class ResourceRegistry:
     async def close(self) -> None:
         failures: list[BaseException] = []
         for resource in reversed(self.resources):
-            if resource.name not in self.instances:
+            name = self._name(resource.name)
+            if name not in self.instances:
                 continue
-            value = self.instances.pop(resource.name)
+            value = self.instances.pop(name)
             try:
                 await self._close_resource(resource, value)
             except BaseException as exc:
                 failures.append(exc)
             finally:
-                if resource.name in self._healthcheck_names:
-                    self.readiness.unregister(resource.name)
-                    self._healthcheck_names.discard(resource.name)
+                if name in self._healthcheck_names:
+                    self.readiness.unregister(name)
+                    self._healthcheck_names.discard(name)
         if failures:
             raise BaseExceptionGroup("managed resource shutdown failed", failures)
 

@@ -24,7 +24,9 @@ def _readiness_error(
 ) -> str | None:
     if ok:
         return error
-    spec = registry.specs[service_name]
+    spec = registry.specs.get(service_name)
+    if spec is None:
+        spec = registry.specs[service_name.split(".", 1)[0]]
     if spec.redact_errors:
         return "readiness check failed"
     if error:
@@ -102,7 +104,9 @@ async def readiness(request: Request) -> HealthResponse | JSONResponse:
     details: dict[str, HealthServiceDetail] = {}
     failures: list[tuple[str, HealthServiceDetail]] = []
     for service in result.services:
-        spec = registry.specs[service.service]
+        spec = registry.specs.get(service.service)
+        if spec is None:
+            spec = registry.specs[service.service.split(".", 1)[0]]
         detail = HealthServiceDetail(
             ok=service.ok,
             latency_ms=service.latency_ms,

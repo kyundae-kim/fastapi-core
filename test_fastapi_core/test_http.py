@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from fastapi_core import ErrorMapping, register_error_mapper
@@ -169,3 +170,90 @@ def test_custom_error_mapper_accepts_async_mappers():
 
     assert response.status_code == 503
     assert response.json()["detail"] == "temporarily unavailable"
+
+
+def test_custom_error_renderer_controls_domain_envelope_and_media_type():
+    class DomainError(Exception):
+        pass
+
+    def render_error(request: Request, mapping: ErrorMapping) -> JSONResponse:
+        return JSONResponse(
+            status_code=mapping.status_code,
+            content={
+                "error": {
+                    "code": mapping.code,
+                    "message": mapping.detail,
+                    "correlation_id": request.state.correlation_id,
+                    "metadata": mapping.extensions,
+                }
+            },
+            media_type="application/json",
+        )
+
+    app = create_app(
+        config=AppConfig(enabled_services=[], required_services=[]),
+        include_auth_router=False,
+        error_renderer=render_error,
+    )
+    register_error_mapper(
+        app,
+        DomainError,
+        lambda _request, exc: ErrorMapping(
+            status_code=404,
+            detail=str(exc),
+            code="DOCUMENT_NOT_FOUND",
+            extensions={"resource": "document"},
+        ),
+    )
+
+    @app.get("/domain-envelope")
+    async def domain_envelope():
+        raise DomainError("token=domain-secret")
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get(
+            "/domain-envelope",
+            headers={"X-Correlation-ID": "domain-123"},
+        )
+
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json() == {
+        "error": {
+            "code": "DOCUMENT_NOT_FOUND",
+            "message": "token=***",
+            "correlation_id": "domain-123",
+            "metadata": {"resource": "document"},
+        }
+    }
+
+
+def test_custom_error_renderer_applies_to_validation_errors():
+    async def render_error(request: Request, mapping: ErrorMapping) -> JSONResponse:
+        return JSONResponse(
+            status_code=mapping.status_code,
+            content={
+                "error": {
+                    "status": mapping.status_code,
+                    "message": mapping.detail,
+                    "correlation_id": request.state.correlation_id,
+                }
+            },
+        )
+
+    app = create_app(
+        config=AppConfig(enabled_services=[], required_services=[]),
+        include_auth_router=False,
+        error_renderer=render_error,
+    )
+
+    @app.get("/custom-validation")
+    async def custom_validation(count: int):
+        return {"count": count}
+
+    with TestClient(app) as client:
+        response = client.get("/custom-validation?count=invalid")
+
+    assert response.status_code == 422
+    assert response.json()["error"]["message"] == "Request validation failed"
+    assert response.json()["error"]["correlation_id"]
