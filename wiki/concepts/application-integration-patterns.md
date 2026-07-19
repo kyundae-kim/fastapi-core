@@ -1,10 +1,10 @@
 ---
 title: Application integration patterns
 created: 2026-06-29
-updated: 2026-07-17
+updated: 2026-07-19
 type: concept
 tags: [integration, workflow, implementation, observability]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-api-reference-v0.4.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-v0.4.0.md]
 confidence: medium
 ---
 
@@ -14,15 +14,15 @@ confidence: medium
 
 ## Canonical lifecycle
 
-v0.3.0 API 레퍼런스는 일반 애플리케이션에 assembly-first, direct-api-when-needed 정책을 권장한다. 즉 동기 서비스는 `assemble_services()`, NATS 또는 비동기 lifecycle은 `await assemble_service_runtime()`을 우선 고려하고, 단일 서비스·테스트·특수 factory 제어 시 direct API를 사용한다.^[raw/articles/docmesh-py-core-api-reference-v0.3.0.md]
+v0.4.0 API 레퍼런스는 일반 애플리케이션에 assembly-first, direct-api-when-needed 정책을 권장한다. 일반 bootstrap에는 `RuntimePlan`과 `await assemble_service_runtime()`을, 동기 CLI·배치 통합에는 `assemble_services()`를 우선 고려하며, 단일 SDK·특수 factory 제어 시 direct API를 사용한다.^[raw/articles/docmesh-py-core-api-reference-v0.4.0.md]
 
-- 동기 `assemble_services()`는 `required`, `one_of`, `check_on_startup`으로 구성 및 startup 정책을 선언한다. 새 async 조립 코드는 `RuntimePlan`을 `plan=`으로 전달하며, 문자열 기반 `services`/`required`/`one_of`와 개별 health 인자는 deprecated다.
-- 반환된 `ServiceBundle` 또는 `ServiceRuntime` context manager가 생성 실패·startup healthcheck 실패 시 cleanup을 수행한다.
+- `RuntimePlan`은 서비스 선택, one-of, `HealthcheckPolicy`를 immutable하게 선언하며 빈 선택·중복·모순 plan을 거부한다. async 조립은 이를 `plan=`으로 전달한다.
+- `assemble_service_runtime()`은 factory 또는 startup check 실패 시 생성된 자원을 정리한다. 동기 `assemble_services()`는 NATS를 지원하지 않는다.^[raw/articles/docmesh-py-core-api-reference-v0.4.0.md]
 - direct 경로에서는 `load_service_configs()` 또는 개별 `*Config()`으로 설정을 준비하고, 필요한 `create_*_client()`와 `close_service_clients()`를 호출한다.^[raw/articles/docmesh-py-core-api-reference-v0.2.0.md]
 
-`DOCMESH_HEALTHCHECK_ENABLED`는 설정 객체에 로드될 뿐 `check_on_startup`을 자동 변경하지 않는다. 따라서 애플리케이션은 이 값을 읽어 assembly API의 startup 정책에 명시적으로 연결해야 한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md]
+배포는 application `RuntimePlan`에서 선택한 서비스의 환경변수만 제공하고, 네트워크 연결 전 `diagnose_services(plan=...)`가 성공한 뒤 assembly를 시작해야 한다. production에서는 TLS와 placeholder 검증 오류를 먼저 해결해야 한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md]
 
-v0.3.0 예시는 FastAPI lifespan 안에서 `assemble_services()`의 `ServiceBundle`을 `app.state.services`에 보관하고, 필요한 client를 `bundle.clients[...]`로 노출한 뒤 `with bundle:`로 정리한다. NATS를 포함한 async lifecycle에서는 `RuntimePlan`, `await assemble_service_runtime(..., plan=plan)`, `async with runtime:`, `runtime.require(Service.NATS)`를 사용한다.^[raw/articles/docmesh-py-core-examples-guide-v0.3.0.md]
+v0.4.0 예제는 `diagnose_services(plan=...)`를 네트워크 연결 전에 실행한 뒤 `async with await assemble_service_runtime(plan=plan)`으로 lifecycle을 소유한다. NATS는 runtime에서 optional builder를 얻어 `connect()`가 반환한 연결을 application이 `drain()`으로 정리한다.^[raw/articles/docmesh-py-core-examples-guide-v0.4.0.md]
 
 ## Direct config and auth flows
 
@@ -38,7 +38,7 @@ v0.3.0 예시 문서는 aggregate `ServiceConfigs` 전체 없이도 `CommonConfi
 
 ## HTTP and messaging integration
 
-readiness/liveness 용도에서는 `check_all_services()` 결과를 `{ok, services[]}` 형태로 변환해 API 응답에 노출하는 패턴이 제시된다. 비동기 메시징 쪽에서는 `nats`가 일반 wrapper가 아니라 `NatsConnectionBuilder`라는 점을 받아들여, `check()`로 연결 가능성만 검사하거나 `connect()` 결과를 애플리케이션이 직접 장기 관리해야 한다. NATS는 인증이 필요하면 user/password, token, creds file 중 최대 하나의 모드만 허용한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md]
+readiness/liveness 용도에서는 `check_all_services()` 결과를 `{ok, services[]}` 형태로 변환해 API 응답에 노출하는 패턴이 제시된다. 비동기 메시징 쪽에서는 `nats`가 일반 wrapper가 아니라 `NatsConnectionBuilder`라는 점을 받아들여, `check()`로 연결 가능성만 검사하거나 `connect()` 결과를 애플리케이션이 직접 장기 관리해야 한다. NATS 인증은 없음, user/password 쌍, token, creds file 중 하나여야 하며 user/password의 한쪽만 설정하면 오류다.^[raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md]
 
 즉 동기 서비스 클라이언트와 비동기 연결 빌더를 동일 인터페이스로 가정하면 안 되며, [[service-health-check-aggregation]]와 [[service-factory-registry]]를 함께 읽고 통합해야 한다.
 
