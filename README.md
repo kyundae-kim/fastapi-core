@@ -71,7 +71,7 @@ uv add "fastapi-core @ git+https://github.com/kyundae-kim/fastapi-core.git"
 재현 가능한 배포에서는 기본 브랜치 대신 tag 또는 commit을 고정합니다.
 
 ```bash
-uv add "git+https://github.com/kyundae-kim/fastapi-core.git@v0.4.0"
+uv add "git+https://github.com/kyundae-kim/fastapi-core.git@v0.5.0"
 ```
 
 앱 설정은 `.env` 파일을 자동으로 읽지 않고 프로세스 환경변수에서 읽습니다. `.env.example`은 설정 키의 예시이며, 컨테이너 환경·배포 플랫폼·실행 도구를 통해 필요한 값을 환경변수로 주입해야 합니다. 상세 계약은 `docs/config.md`를 참고하세요.
@@ -227,6 +227,7 @@ async def me(
 ## 문서
 
 - 제품 요구사항: `docs/prd.md`
+- 소프트웨어 요구사항: `docs/srs.md`
 - API Reference: `docs/api.md`
 - 설정 정의: `docs/config.md`
 - 예제: `docs/examples.md`
