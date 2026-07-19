@@ -10,7 +10,7 @@ from docmesh_py_core import (
     ServiceHealthStatus,
     async_check_all_services,
 )
-from docmesh_py_core.function_logging import log_function_boundary
+from fastapi_core.function_logging import log_function_boundary
 from fastapi import FastAPI
 
 Check = Callable[[], object | Awaitable[object]]

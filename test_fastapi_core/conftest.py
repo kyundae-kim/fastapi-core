@@ -17,7 +17,6 @@ if str(ROOT) not in sys.path:
 
 
 def build_test_settings(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.delenv("POSTGRES_DSN", raising=False)
     env = {
         "KEYCLOAK_URL": "http://keycloak.test",
         "KEYCLOAK_REALM": "docmesh",

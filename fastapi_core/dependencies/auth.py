@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import OAuth2PasswordBearer
-from docmesh_py_core.function_logging import log_function_boundary
+from fastapi_core.function_logging import log_function_boundary
 from docmesh_py_core import AuthenticatedUser, KeycloakAuthService, TokenValidationError
 
 from fastapi_core.dependencies.services import get_keycloak_auth_service

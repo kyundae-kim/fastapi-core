@@ -108,10 +108,6 @@ def _parse_milvus_uri(uri: str) -> tuple[str | None, int | None]:
 
 
 def _postgres_target() -> tuple[str | None, int | None]:
-    dsn = os.getenv("POSTGRES_DSN")
-    if dsn:
-        parsed = urlparse(dsn)
-        return parsed.hostname, parsed.port or 5432
     _require_env(POSTGRES_CONNECTION_ENV, label="postgres")
     return os.getenv("POSTGRES_HOST"), int(os.getenv("POSTGRES_PORT", "5432"))
 

@@ -4,7 +4,7 @@ import logging
 
 from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse
-from docmesh_py_core.function_logging import log_function_boundary
+from fastapi_core.function_logging import log_function_boundary
 from docmesh_py_core import HealthCheckError, build_service_log_event
 
 from fastapi_core.readiness import ReadinessRegistry

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any, Generic, TypeVar, cast
 
-from docmesh_py_core.function_logging import log_function_boundary
+from fastapi_core.function_logging import log_function_boundary
 from fastapi import FastAPI, HTTPException, Request, status
 
 from fastapi_core.readiness import ReadinessCheckSpec, ReadinessRegistry

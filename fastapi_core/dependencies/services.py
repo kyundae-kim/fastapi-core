@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any, TypeVar
 
-from docmesh_py_core.function_logging import log_function_boundary
+from fastapi_core.function_logging import log_function_boundary
 from docmesh_py_core import (
     KeycloakAuthService,
     NatsConnectionBuilder,
@@ -22,6 +22,7 @@ from fastapi_core.resources import ResourceKey
 
 ServiceClientDependency = Callable[[Request], Any]
 ResourceDependency = Callable[[Request], Any]
+ClientT = TypeVar("ClientT")
 
 
 @log_function_boundary()
@@ -57,8 +58,15 @@ def _resolve_wrapped_service_client(request: Request, service_name: str) -> Serv
 
 
 @log_function_boundary()
-def _unwrap_service_client(request: Request, service_name: str) -> Any:
-    return _resolve_wrapped_service_client(request, service_name).client
+def _unwrap_service_client(
+    request: Request,
+    service_name: str,
+    expected_type: type[ClientT],
+) -> ClientT:
+    client = _resolve_wrapped_service_client(request, service_name).unwrap()
+    if not isinstance(client, expected_type):
+        raise _service_type_mismatch(service_name, expected_type.__name__)
+    return client
 
 
 @log_function_boundary()
@@ -88,37 +96,37 @@ def get_resource(name: str) -> ResourceDependency:
 
 @log_function_boundary()
 def get_keycloak_auth_service(request: Request) -> KeycloakAuthService:
-    return cast(KeycloakAuthService, _unwrap_service_client(request, "keycloak"))
+    return _unwrap_service_client(request, "keycloak", KeycloakAuthService)
 
 
 @log_function_boundary()
 def get_postgres_engine(request: Request) -> Engine:
-    return cast(Engine, _unwrap_service_client(request, "postgres"))
+    return _unwrap_service_client(request, "postgres", Engine)
 
 
 @log_function_boundary()
 def get_sqlite_engine(request: Request) -> Engine:
-    return cast(Engine, _unwrap_service_client(request, "sqlite"))
+    return _unwrap_service_client(request, "sqlite", Engine)
 
 
 @log_function_boundary()
 def get_minio_client(request: Request) -> Minio:
-    return cast(Minio, _unwrap_service_client(request, "minio"))
+    return _unwrap_service_client(request, "minio", Minio)
 
 
 @log_function_boundary()
 def get_milvus_client(request: Request) -> MilvusClient:
-    return cast(MilvusClient, _unwrap_service_client(request, "milvus"))
+    return _unwrap_service_client(request, "milvus", MilvusClient)
 
 
 @log_function_boundary()
 def get_ollama_client(request: Request) -> OllamaClient:
-    return cast(OllamaClient, _unwrap_service_client(request, "ollama"))
+    return _unwrap_service_client(request, "ollama", OllamaClient)
 
 
 @log_function_boundary()
 def get_langfuse_client(request: Request) -> Langfuse:
-    return cast(Langfuse, _unwrap_service_client(request, "langfuse"))
+    return _unwrap_service_client(request, "langfuse", Langfuse)
 
 
 @log_function_boundary()

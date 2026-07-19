@@ -4,6 +4,7 @@ import os
 
 from docmesh_py_core import (
     HealthcheckPolicy,
+    KeycloakAuthService,
     RuntimePlan,
     Service,
     ServiceClientWrapper,
@@ -11,11 +12,10 @@ from docmesh_py_core import (
     assemble_service_runtime,
     load_service_configs,
 )
-from docmesh_py_core.function_logging import log_function_boundary
+from fastapi_core.function_logging import log_function_boundary
 from fastapi import FastAPI
 
 from fastapi_core.config import AppConfig
-from fastapi_core.docmesh_settings import build_docmesh_env_overlay
 from fastapi_core.readiness import ReadinessCheckSpec, ReadinessRegistry
 
 
@@ -38,6 +38,9 @@ def build_runtime_plan(config: AppConfig) -> RuntimePlan:
             parallel=config.readiness_parallel,
             timeout_seconds=config.readiness_timeout_seconds,
             overall_timeout_seconds=config.readiness_overall_timeout_seconds,
+            failure_mode=config.startup_failure_mode,
+            attempts=config.startup_healthcheck_attempts,
+            retry_delay_seconds=config.startup_healthcheck_retry_delay_seconds,
         ),
     )
 
@@ -53,23 +56,16 @@ def build_keycloak_check_kwargs() -> dict[str, str]:
 
 
 @log_function_boundary()
-def configure_keycloak_provider(client: ServiceClientWrapper) -> None:
-    provider = getattr(client, "client", None)
-    if provider is None or not hasattr(provider, "allowed_algorithms"):
-        return
+def configure_keycloak_provider(provider: KeycloakAuthService) -> None:
     provider.allowed_algorithms = ["RS256"]
 
 
 @log_function_boundary()
 async def assemble_runtime(config: AppConfig) -> ServiceRuntime:
-    env = build_docmesh_env_overlay()
     if config.enabled_services:
-        return await assemble_service_runtime(
-            env,
-            plan=build_runtime_plan(config),
-        )
+        return await assemble_service_runtime(plan=build_runtime_plan(config))
     return ServiceRuntime(
-        configs=load_service_configs(env, services=set()),
+        configs=load_service_configs(services=set()),
         clients={},
         selected_services=frozenset(),
     )
@@ -103,10 +99,11 @@ def configure_service_runtime(app: FastAPI, runtime: ServiceRuntime) -> None:
             )
         )
     keycloak_client = runtime.clients.get(Service.KEYCLOAK)
-    if keycloak_client is not None:
-        configure_keycloak_provider(keycloak_client)
-        if hasattr(keycloak_client, "client"):
-            app.state.auth_provider = keycloak_client.client
+    if isinstance(keycloak_client, ServiceClientWrapper):
+        provider = keycloak_client.unwrap()
+        if isinstance(provider, KeycloakAuthService):
+            configure_keycloak_provider(provider)
+            app.state.auth_provider = provider
 
 
 __all__ = [

@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import ast
 from dataclasses import MISSING, fields
 from importlib import import_module
 from inspect import Parameter, signature
+from pathlib import Path
 
 import fastapi_core
 import fastapi_core.dependencies as dependencies
 import fastapi_core.factory as factory_module
 import fastapi_core.routers.health as health_module
 import fastapi_core.schemas as schemas
+import docmesh_py_core
 from fastapi_core.config import AppConfig
 from fastapi_core.extensions import ResourceRegistry
 from fastapi_core.factory import create_app
@@ -222,3 +225,30 @@ def test_factory_collaborators_have_explicit_module_owners():
     assert application_logging.JsonLogFormatter.__module__ == "fastapi_core.logging"
     assert lifecycle.build_lifespan.__module__ == "fastapi_core.lifecycle"
     assert runtime.configure_service_runtime.__module__ == "fastapi_core.runtime"
+
+
+def test_production_code_imports_docmesh_py_core_only_from_package_root():
+    package_root = Path(__file__).parents[1] / "fastapi_core"
+    private_imports: list[str] = []
+    root_imports: set[str] = set()
+
+    for path in sorted(package_root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                if module.startswith("docmesh_py_core."):
+                    private_imports.append(
+                        f"{path.relative_to(package_root)}:{node.lineno}:{module}"
+                    )
+                elif module == "docmesh_py_core":
+                    root_imports.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.startswith("docmesh_py_core."):
+                        private_imports.append(
+                            f"{path.relative_to(package_root)}:{node.lineno}:{alias.name}"
+                        )
+
+    assert private_imports == []
+    assert root_imports <= set(docmesh_py_core.__all__)

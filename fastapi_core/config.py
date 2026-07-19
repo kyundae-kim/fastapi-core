@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any
 
-from docmesh_py_core.function_logging import log_function_boundary
+from docmesh_py_core import StartupFailureMode
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
@@ -11,6 +11,8 @@ from pydantic_settings import (
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
+
+from fastapi_core.function_logging import log_function_boundary
 
 
 _CSV_LIST_FIELDS = frozenset(
@@ -82,6 +84,29 @@ class AppConfig(BaseSettings):
         validation_alias=AliasChoices(
             "startup_healthcheck",
             "DOCMESH_HEALTHCHECK_ENABLED",
+        ),
+    )
+    startup_failure_mode: StartupFailureMode = Field(
+        default=StartupFailureMode.FAIL,
+        validation_alias=AliasChoices(
+            "startup_failure_mode",
+            "DOCMESH_STARTUP_FAILURE_MODE",
+        ),
+    )
+    startup_healthcheck_attempts: int = Field(
+        default=1,
+        ge=1,
+        validation_alias=AliasChoices(
+            "startup_healthcheck_attempts",
+            "DOCMESH_STARTUP_HEALTHCHECK_ATTEMPTS",
+        ),
+    )
+    startup_healthcheck_retry_delay_seconds: float = Field(
+        default=0,
+        ge=0,
+        validation_alias=AliasChoices(
+            "startup_healthcheck_retry_delay_seconds",
+            "DOCMESH_STARTUP_HEALTHCHECK_RETRY_DELAY_SECONDS",
         ),
     )
     log_level: str | None = Field(

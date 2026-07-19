@@ -10,6 +10,7 @@ from docmesh_py_core import (
     KeycloakAuthService,
     NatsConnectionBuilder,
     Service,
+    ServiceClientWrapper,
     ServiceRuntime,
     create_keycloak_client,
     create_nats_client,
@@ -17,6 +18,10 @@ from docmesh_py_core import (
 )
 from fastapi import Depends, HTTPException, Request
 from fastapi.testclient import TestClient
+from langfuse import Langfuse
+from minio import Minio
+from ollama import Client as OllamaClient
+from pymilvus import MilvusClient
 from sqlalchemy.engine import Engine
 
 from fastapi_core.config import AppConfig
@@ -53,12 +58,6 @@ class FakeAuthProvider:
     def extract_user_info(self, token: str):
         self.token = token
         return FakeAuthenticatedUser()
-
-
-class FakeServiceClient:
-    def __init__(self, provider: FakeAuthProvider):
-        self.client = provider
-
 
 
 def test_dependency_package_exports_declarative_authorization_helpers():
@@ -250,10 +249,20 @@ def test_require_roles_and_scopes_are_declarative_dependencies(auth_app_factory)
     assert {"OAuth2PasswordBearer": ["openid"]} in security
 
 
-def test_get_current_user_uses_service_client_backed_auth_provider(runtime_factory):
-    provider = FakeAuthProvider()
-    wrapper = FakeServiceClient(provider)
-    wrapper.check = lambda: None
+def test_get_current_user_uses_service_client_backed_auth_provider(
+    monkeypatch,
+    settings,
+    runtime_factory,
+):
+    wrapper = create_keycloak_client(settings.keycloak)
+    provider = wrapper.unwrap()
+    tokens: list[str] = []
+
+    def extract_user_info(token: str):
+        tokens.append(token)
+        return FakeAuthenticatedUser()
+
+    monkeypatch.setattr(provider, "extract_user_info", extract_user_info)
     app = create_app(
         config=AppConfig(enabled_services=[], required_services=[]),
         runtime=runtime_factory(clients={"keycloak": wrapper}),
@@ -269,7 +278,7 @@ def test_get_current_user_uses_service_client_backed_auth_provider(runtime_facto
 
     assert response.status_code == 200
     assert response.json()["preferred_username"] == "bob"
-    assert provider.token == "demo-token"
+    assert tokens == ["demo-token"]
 
 
 def test_get_service_client_returns_initialized_service_client(
@@ -345,6 +354,85 @@ def test_get_service_specific_dependencies_return_concrete_clients(
         "keycloak_has_extract_user_info": True,
         "nats_has_connect": True,
     }
+
+
+@pytest.mark.parametrize(
+    ("service_name", "dependency", "client_type"),
+    [
+        ("postgres", services_module.get_postgres_engine, Engine),
+        ("minio", services_module.get_minio_client, Minio),
+        ("milvus", services_module.get_milvus_client, MilvusClient),
+        ("ollama", services_module.get_ollama_client, OllamaClient),
+        ("langfuse", services_module.get_langfuse_client, Langfuse),
+    ],
+)
+def test_remaining_typed_service_dependencies_return_expected_client_types(
+    settings,
+    runtime_factory,
+    service_name,
+    dependency,
+    client_type,
+):
+    if client_type is Engine:
+        client = create_sqlite_client(settings.sqlite).unwrap()
+    else:
+        client = object.__new__(client_type)
+    wrapper = ServiceClientWrapper(
+        client=client,
+        healthcheck=lambda: None,
+        service_name=service_name,
+    )
+    app = create_app(
+        config=AppConfig(enabled_services=[], required_services=[]),
+        runtime=runtime_factory(clients={service_name: wrapper}),
+        include_auth_router=False,
+    )
+    request = Request({"type": "http", "app": app})
+
+    try:
+        assert dependency(request) is client
+    finally:
+        if isinstance(client, Engine):
+            client.dispose()
+
+
+@pytest.mark.parametrize(
+    ("service_name", "dependency", "expected_type"),
+    [
+        ("keycloak", services_module.get_keycloak_auth_service, "KeycloakAuthService"),
+        ("postgres", services_module.get_postgres_engine, "Engine"),
+        ("sqlite", services_module.get_sqlite_engine, "Engine"),
+        ("minio", services_module.get_minio_client, "Minio"),
+        ("milvus", services_module.get_milvus_client, "MilvusClient"),
+        ("ollama", services_module.get_ollama_client, "Client"),
+        ("langfuse", services_module.get_langfuse_client, "Langfuse"),
+    ],
+)
+def test_typed_service_dependency_rejects_wrong_unwrapped_client(
+    runtime_factory,
+    service_name,
+    dependency,
+    expected_type,
+):
+    wrapper = ServiceClientWrapper(
+        client=object(),
+        healthcheck=lambda: None,
+        service_name=service_name,
+    )
+    app = create_app(
+        config=AppConfig(enabled_services=[], required_services=[]),
+        runtime=runtime_factory(clients={service_name: wrapper}),
+        include_auth_router=False,
+    )
+    request = Request({"type": "http", "app": app})
+
+    with pytest.raises(HTTPException) as exc_info:
+        dependency(request)
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == (
+        f"Service client '{service_name}' is not a {expected_type}"
+    )
 
 
 @pytest.mark.parametrize(

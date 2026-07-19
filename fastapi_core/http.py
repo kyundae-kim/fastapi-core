@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from http import HTTPStatus
 from uuid import uuid4
 
-from docmesh_py_core.function_logging import log_function_boundary
+from fastapi_core.function_logging import log_function_boundary
 from docmesh_py_core import mask_sensitive_value
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError

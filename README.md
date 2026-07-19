@@ -128,6 +128,7 @@ async def me(
 - `config is None`이면 `load_app_config()`를 사용합니다.
 - `runtime is None`이면 lifespan startup에서 환경 기반 `ServiceRuntime`을 조립합니다.
 - 명시적 `runtime`을 전달하면 완성된 `ServiceRuntime`을 재조립하지 않고 동일한 lifecycle과 app state에 연결합니다.
+- startup healthcheck의 failure mode, 재시도 횟수와 재시도 간격은 자동 조립 runtime과 명시적으로 주입한 runtime에 동일하게 적용됩니다.
 - 앱 로깅을 먼저 초기화합니다.
 - `FastAPI(root_path=..., lifespan=...)`를 생성하고 framework lifespan이 runtime과 managed resource의 정리를 소유합니다.
 - `app.state.config`, `app.state.root_logger`, `app.state.service_runtime`, `app.state.readiness_registry`, `app.state.resource_registry`를 저장합니다. Keycloak client가 구성되면 `app.state.auth_provider`도 저장합니다.
@@ -169,6 +170,9 @@ async def me(
 - `readiness_overall_timeout_seconds: float | None = None`
 - `service_alternatives: list[list[str]] = []`
 - `startup_healthcheck: bool = False`
+- `startup_failure_mode: StartupFailureMode = StartupFailureMode.FAIL`
+- `startup_healthcheck_attempts: int = 1`
+- `startup_healthcheck_retry_delay_seconds: float = 0`
 - `log_level: str | None = "WARNING"`
 - `log_path: str | None = None`
 - `log_json: bool = True`
@@ -186,6 +190,9 @@ async def me(
 - `READINESS_OVERALL_TIMEOUT_SECONDS`
 - `DOCMESH_SERVICE_ALTERNATIVES`
 - `DOCMESH_HEALTHCHECK_ENABLED`
+- `DOCMESH_STARTUP_FAILURE_MODE`
+- `DOCMESH_STARTUP_HEALTHCHECK_ATTEMPTS`
+- `DOCMESH_STARTUP_HEALTHCHECK_RETRY_DELAY_SECONDS`
 - `DOCMESH_LOG_LEVEL`
 - `APP_LOG_PATH`
 - `APP_LOG_JSON`

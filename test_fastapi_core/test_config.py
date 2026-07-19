@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-import os
+from pathlib import Path
 
 import pytest
+from docmesh_py_core import StartupFailureMode
 from pydantic import ValidationError
 
 import fastapi_core.docmesh_settings as docmesh_settings_module
 from fastapi_core.config import AppConfig, load_app_config
-from fastapi_core.docmesh_settings import build_docmesh_env_overlay, load_docmesh_settings
+from fastapi_core.docmesh_settings import load_docmesh_settings
 
 
 
@@ -42,6 +43,24 @@ def test_app_config_reads_env_fields_from_settings(monkeypatch):
             [["postgres", "sqlite"], ["minio", "milvus"]],
         ),
         ("DOCMESH_HEALTHCHECK_ENABLED", "true", "startup_healthcheck", True),
+        (
+            "DOCMESH_STARTUP_FAILURE_MODE",
+            "report",
+            "startup_failure_mode",
+            StartupFailureMode.REPORT,
+        ),
+        (
+            "DOCMESH_STARTUP_HEALTHCHECK_ATTEMPTS",
+            "3",
+            "startup_healthcheck_attempts",
+            3,
+        ),
+        (
+            "DOCMESH_STARTUP_HEALTHCHECK_RETRY_DELAY_SECONDS",
+            "0.25",
+            "startup_healthcheck_retry_delay_seconds",
+            0.25,
+        ),
         ("DOCMESH_LOG_LEVEL", "INFO", "log_level", "INFO"),
         ("APP_LOG_PATH", "/tmp/app.log", "log_path", "/tmp/app.log"),
         ("APP_LOG_JSON", "false", "log_json", False),
@@ -77,6 +96,9 @@ def test_app_config_defaults_match_existing_behavior(monkeypatch):
         "READINESS_OVERALL_TIMEOUT_SECONDS",
         "DOCMESH_SERVICE_ALTERNATIVES",
         "DOCMESH_HEALTHCHECK_ENABLED",
+        "DOCMESH_STARTUP_FAILURE_MODE",
+        "DOCMESH_STARTUP_HEALTHCHECK_ATTEMPTS",
+        "DOCMESH_STARTUP_HEALTHCHECK_RETRY_DELAY_SECONDS",
         "DOCMESH_LOG_LEVEL",
         "APP_LOG_PATH",
         "APP_LOG_JSON",
@@ -130,6 +152,29 @@ def test_app_config_rejects_required_service_that_is_not_enabled():
         )
 
 
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("startup_healthcheck_attempts", 0),
+        ("startup_healthcheck_retry_delay_seconds", -0.1),
+    ],
+)
+def test_app_config_rejects_invalid_startup_healthcheck_retry_policy(
+    field_name,
+    value,
+):
+    with pytest.raises(ValidationError, match=field_name):
+        AppConfig(**{field_name: value})
+
+
+def test_env_example_does_not_advertise_removed_postgres_dsn():
+    env_example = Path(__file__).parents[1].joinpath(".env.example").read_text(
+        encoding="utf-8"
+    )
+
+    assert "POSTGRES_DSN" not in env_example
+
+
 def test_app_config_prefers_field_name_over_environment_alias():
     config = AppConfig(log_level="INFO", DOCMESH_LOG_LEVEL="DEBUG")
 
@@ -150,52 +195,6 @@ def test_app_config_prefers_field_name_over_environment_alias():
 def test_app_config_preserves_field_name_and_alias_precedence(values, expected):
     assert AppConfig(**values).log_level == expected
 
-
-
-def test_build_docmesh_env_overlay_copies_environment_without_development_defaults(
-    monkeypatch,
-):
-    monkeypatch.setenv("KEYCLOAK_URL", "http://override.test")
-    monkeypatch.setenv("NATS_TOKEN", "custom-token")
-    for key in (
-        "KEYCLOAK_REALM",
-        "KEYCLOAK_CLIENT_SECRET",
-        "POSTGRES_HOST",
-        "POSTGRES_PASSWORD",
-        "SQLITE_PATH",
-        "LANGFUSE_HOST",
-    ):
-        monkeypatch.delenv(key, raising=False)
-
-    env = build_docmesh_env_overlay()
-
-    assert env["KEYCLOAK_URL"] == "http://override.test"
-    assert env["NATS_TOKEN"] == "custom-token"
-    assert "KEYCLOAK_REALM" not in env
-    assert "KEYCLOAK_CLIENT_SECRET" not in env
-    assert "POSTGRES_HOST" not in env
-    assert "POSTGRES_PASSWORD" not in env
-    assert "SQLITE_PATH" not in env
-    assert "LANGFUSE_HOST" not in env
-
-
-def test_build_docmesh_env_overlay_preserves_legacy_postgres_dsn(monkeypatch):
-    dsn = "postgresql+psycopg://docmesh:secret@postgres.test:5432/docmesh"
-    monkeypatch.setenv("POSTGRES_DSN", dsn)
-    for key in (
-        "POSTGRES_HOST",
-        "POSTGRES_PORT",
-        "POSTGRES_DB",
-        "POSTGRES_USER",
-        "POSTGRES_PASSWORD",
-    ):
-        monkeypatch.delenv(key, raising=False)
-
-    env = build_docmesh_env_overlay()
-
-    assert env["POSTGRES_DSN"] == dsn
-    assert "POSTGRES_HOST" not in env
-    assert "POSTGRES_PASSWORD" not in env
 
 
 def test_load_docmesh_settings_uses_selected_services():
@@ -223,14 +222,11 @@ def test_load_docmesh_settings_preserves_explicitly_empty_selection():
     )
 
 
-def test_load_docmesh_settings_passes_environment_without_mutating_it(monkeypatch):
+def test_load_docmesh_settings_uses_v04_keyword_only_loader(monkeypatch):
     captured: dict[str, object] = {}
     sentinel = object()
-    monkeypatch.delenv("SQLITE_PATH", raising=False)
-    original_environment = dict(os.environ)
 
-    def fake_load_service_configs(env, *, services):
-        captured["env"] = env
+    def fake_load_service_configs(*, services):
         captured["services"] = services
         return sentinel
 
@@ -245,6 +241,4 @@ def test_load_docmesh_settings_passes_environment_without_mutating_it(monkeypatc
 
     assert result is sentinel
     assert captured["services"] == {"sqlite"}
-    assert "SQLITE_PATH" not in captured["env"]
-    assert dict(os.environ) == original_environment
     load_docmesh_settings.cache_clear()

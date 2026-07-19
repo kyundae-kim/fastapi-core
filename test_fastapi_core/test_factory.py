@@ -11,8 +11,9 @@ from docmesh_py_core import (
     RuntimePlan,
     Service,
     ServiceCloseError,
+    ServiceClientWrapper,
     ServiceRuntime,
-    assemble_service_runtime,
+    StartupFailureMode,
     create_keycloak_client,
     create_sqlite_client,
 )
@@ -345,6 +346,32 @@ def test_create_app_uses_rs256_for_keycloak_auth_provider(settings, runtime_fact
     assert app.state.auth_provider.allowed_algorithms == ["RS256"]
 
 
+def test_configure_service_runtime_does_not_bind_invalid_keycloak_provider(
+    settings,
+    empty_runtime,
+):
+    app = create_app(
+        config=AppConfig(enabled_services=[], required_services=[]),
+        runtime=empty_runtime,
+        include_auth_router=False,
+    )
+    runtime = ServiceRuntime(
+        configs=settings,
+        clients={
+            Service.KEYCLOAK: ServiceClientWrapper(
+                client=object(),
+                healthcheck=lambda: None,
+                service_name="keycloak",
+            )
+        },
+        selected_services=frozenset({Service.KEYCLOAK}),
+    )
+
+    configure_service_runtime(app, runtime)
+
+    assert not hasattr(app.state, "auth_provider")
+
+
 def test_create_app_assembles_default_runtime_during_lifespan(monkeypatch):
     calls: dict[str, object] = {}
     events: list[str] = []
@@ -364,9 +391,8 @@ def test_create_app_assembles_default_runtime_during_lifespan(monkeypatch):
         required_services=frozenset({Service.SQLITE}),
     )
 
-    async def fake_assemble_service_runtime(env, **kwargs):
-        calls["env"] = env
-        calls.update(kwargs)
+    async def fake_assemble_service_runtime(*, plan):
+        calls["plan"] = plan
         return runtime
 
     monkeypatch.setattr(
@@ -383,6 +409,9 @@ def test_create_app_assembles_default_runtime_during_lifespan(monkeypatch):
         readiness_timeout_seconds=0.25,
         readiness_overall_timeout_seconds=1.5,
         service_alternatives=[["sqlite", "postgres"]],
+        startup_failure_mode=StartupFailureMode.REPORT,
+        startup_healthcheck_attempts=3,
+        startup_healthcheck_retry_delay_seconds=0.25,
     )
     app = create_app(config=config, include_auth_router=False)
 
@@ -400,10 +429,12 @@ def test_create_app_assembles_default_runtime_during_lifespan(monkeypatch):
             parallel=True,
             timeout_seconds=0.25,
             overall_timeout_seconds=1.5,
+            failure_mode=StartupFailureMode.REPORT,
+            attempts=3,
+            retry_delay_seconds=0.25,
         ),
     )
-    assert set(calls) == {"env", "plan"}
-    assert calls["env"]["SQLITE_PATH"] == ":memory:"
+    assert set(calls) == {"plan"}
     assert events == ["closed"]
 
 
@@ -434,7 +465,73 @@ def test_create_app_checks_injected_runtime_on_startup(runtime_factory):
     assert events == ["checked", "closed"]
 
 
-def test_create_app_rolls_back_runtime_when_startup_healthcheck_fails(monkeypatch):
+def test_create_app_retries_injected_runtime_startup_check(runtime_factory):
+    events: list[str] = []
+
+    class Client:
+        def check(self):
+            events.append("checked")
+            if events.count("checked") < 3:
+                raise RuntimeError("temporarily unavailable")
+
+        def close(self):
+            events.append("closed")
+
+    runtime = runtime_factory(
+        clients={"keycloak": Client()},
+        required=("keycloak",),
+    )
+    app = create_app(
+        config=AppConfig(
+            startup_healthcheck=True,
+            startup_healthcheck_attempts=3,
+        ),
+        runtime=runtime,
+        include_auth_router=False,
+    )
+
+    with TestClient(app):
+        assert events == ["checked", "checked", "checked"]
+        assert runtime.startup_healthcheck_result is not None
+        assert runtime.startup_healthcheck_result.ok is True
+
+    assert events == ["checked", "checked", "checked", "closed"]
+
+
+def test_create_app_reports_injected_runtime_startup_failure(runtime_factory):
+    events: list[str] = []
+
+    class Client:
+        def check(self):
+            events.append("checked")
+            raise RuntimeError("still unavailable")
+
+        def close(self):
+            events.append("closed")
+
+    runtime = runtime_factory(
+        clients={"keycloak": Client()},
+        required=("keycloak",),
+    )
+    app = create_app(
+        config=AppConfig(
+            startup_healthcheck=True,
+            startup_failure_mode=StartupFailureMode.REPORT,
+            startup_healthcheck_attempts=2,
+        ),
+        runtime=runtime,
+        include_auth_router=False,
+    )
+
+    with TestClient(app):
+        assert events == ["checked", "checked"]
+        assert runtime.startup_healthcheck_result is not None
+        assert runtime.startup_healthcheck_result.ok is False
+
+    assert events == ["checked", "checked", "closed"]
+
+
+def test_create_app_closes_injected_runtime_when_startup_healthcheck_fails(settings):
     events: list[str] = []
 
     class Client:
@@ -445,30 +542,20 @@ def test_create_app_rolls_back_runtime_when_startup_healthcheck_fails(monkeypatc
         async def close(self):
             events.append("closed")
 
-    async def assemble_with_failing_client(env, **kwargs):
-        return await assemble_service_runtime(
-            env,
-            factory_overrides={"sqlite": lambda _config: Client()},
-            **kwargs,
-        )
-
-    @asynccontextmanager
-    async def lifespan(_app):
-        events.append("custom-startup")
-        yield
-
-    monkeypatch.setattr(
-        runtime_module,
-        "assemble_service_runtime",
-        assemble_with_failing_client,
+    runtime = ServiceRuntime(
+        configs=settings,
+        clients={Service.SQLITE: Client()},
+        selected_services=frozenset({Service.SQLITE}),
+        required_services=frozenset({Service.SQLITE}),
     )
+
     app = create_app(
         config=AppConfig(
             enabled_services=["sqlite"],
             required_services=["sqlite"],
             startup_healthcheck=True,
         ),
-        lifespan=lifespan,
+        runtime=runtime,
         include_auth_router=False,
     )
 

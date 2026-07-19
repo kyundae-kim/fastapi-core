@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 
-from docmesh_py_core import ServiceCloseError, ServiceRuntime
-from docmesh_py_core.function_logging import log_function_boundary
+from docmesh_py_core import (
+    HealthCheckError,
+    ServiceCloseError,
+    ServiceRuntime,
+    StartupFailureMode,
+)
+from fastapi_core.function_logging import log_function_boundary
 from fastapi import FastAPI
 
 from fastapi_core.config import AppConfig
@@ -13,6 +19,32 @@ from fastapi_core.resources import ResourceRegistry
 from fastapi_core.runtime import assemble_runtime, configure_service_runtime
 
 logger = logging.getLogger(__name__)
+
+
+@log_function_boundary()
+async def _check_runtime_on_startup(
+    runtime: ServiceRuntime,
+    config: AppConfig,
+) -> None:
+    for attempt in range(config.startup_healthcheck_attempts):
+        try:
+            runtime.startup_healthcheck_result = await runtime.check(
+                parallel=config.readiness_parallel,
+                timeout_seconds=config.readiness_timeout_seconds,
+                overall_timeout_seconds=config.readiness_overall_timeout_seconds,
+            )
+            return
+        except HealthCheckError as exc:
+            runtime.startup_healthcheck_result = exc.result
+            if attempt + 1 < config.startup_healthcheck_attempts:
+                if config.startup_healthcheck_retry_delay_seconds:
+                    await asyncio.sleep(
+                        config.startup_healthcheck_retry_delay_seconds
+                    )
+                continue
+            if config.startup_failure_mode == StartupFailureMode.REPORT:
+                return
+            raise
 
 
 @log_function_boundary()
@@ -31,11 +63,7 @@ def build_lifespan(
                 app_runtime = await assemble_runtime(config)
                 configure_service_runtime(app, app_runtime)
             elif config.startup_healthcheck:
-                await app_runtime.check(
-                    parallel=config.readiness_parallel,
-                    timeout_seconds=config.readiness_timeout_seconds,
-                    overall_timeout_seconds=config.readiness_overall_timeout_seconds,
-                )
+                await _check_runtime_on_startup(app_runtime, config)
             await resources.start(app)
             if config.startup_healthcheck:
                 await resources.check_startup(
