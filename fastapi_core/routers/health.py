@@ -35,9 +35,7 @@ def _readiness_error(
     if error:
         return error
     timeout_seconds = spec.timeout_seconds or registry.default_timeout_seconds
-    if timeout_seconds is not None:
-        return "health check timed out"
-    return None
+    return "health check timed out" if timeout_seconds is not None else None
 
 
 @log_function_boundary()
@@ -126,18 +124,18 @@ async def readiness(request: Request) -> HealthResponse | JSONResponse:
     status_text: HealthStatus
     if any(detail.required for _, detail in failures):
         status_text = "error"
-        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     elif failures:
         status_text = "degraded"
-        status_code = status.HTTP_200_OK
     else:
         status_text = "ok"
-        status_code = status.HTTP_200_OK
 
     for service_name, detail in failures:
         _log_readiness_failure(service_name, detail, outcome=status_text)
 
     response = HealthResponse(status=status_text, details=details)
-    if status_code != status.HTTP_200_OK:
-        return JSONResponse(status_code=status_code, content=response.model_dump())
+    if status_text == "error":
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content=response.model_dump(),
+        )
     return response

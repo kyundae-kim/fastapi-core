@@ -48,12 +48,9 @@ def _structured_result(
 ) -> HealthCheckResult:
     services = [
         ServiceHealthStatus(
-            service=f"{parent}.{service.service}",
-            ok=service.ok,
-            latency_ms=service.latency_ms,
-            required=required,
-            error=service.error,
-            error_type=service.error_type,
+            service=f"{parent}.{service.service}", ok=service.ok,
+            latency_ms=service.latency_ms, required=required,
+            error=service.error, error_type=service.error_type,
         )
         for service in result.services
     ]
@@ -71,13 +68,14 @@ def _merge_structured_results(
     services: list[ServiceHealthStatus] = []
     for service in result.services:
         nested = structured.get(service.service)
-        if nested is None or not nested.services:
+        if (
+            nested is None
+            or not nested.services
+            or (not nested.ok and all(child.ok for child in nested.services))
+        ):
             services.append(service)
-            continue
-        if not nested.ok and all(child.ok for child in nested.services):
-            services.append(service)
-            continue
-        services.extend(nested.services)
+        else:
+            services.extend(nested.services)
     return HealthCheckResult(
         ok=all(service.ok for service in services),
         services=services,
@@ -106,10 +104,7 @@ class ReadinessRegistry:
 
     @log_function_boundary()
     def resolve_spec(self, name: str) -> ReadinessCheckSpec:
-        spec = self.specs.get(name)
-        if spec is not None:
-            return spec
-        return self.specs[name.split(".", 1)[0]]
+        return self.specs.get(name) or self.specs[name.split(".", 1)[0]]
 
     @log_function_boundary()
     async def check(
@@ -127,11 +122,7 @@ class ReadinessRegistry:
         checks: dict[str, Check] = {}
         structured: dict[str, HealthCheckResult] = {}
         for name, spec in selected.items():
-            timeout_seconds = (
-                spec.timeout_seconds
-                if spec.timeout_seconds is not None
-                else self.default_timeout_seconds
-            )
+            timeout_seconds = spec.timeout_seconds or self.default_timeout_seconds
 
             @log_function_boundary()
             async def run(
@@ -183,8 +174,7 @@ def register_readiness_check(
     timeout_seconds: float | None = None,
     redact_errors: bool = True,
 ) -> None:
-    registry = get_readiness_registry(app)
-    registry.register(
+    get_readiness_registry(app).register(
         ReadinessCheckSpec(
             name=name,
             check=check,

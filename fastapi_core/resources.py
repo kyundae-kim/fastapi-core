@@ -154,8 +154,6 @@ class ResourceRegistry:
 
     @log_function_boundary()
     def require(self, name: str) -> Any:
-        if name not in self.instances:
-            raise KeyError(name)
         return self.instances[name]
 
     @log_function_boundary()

@@ -86,40 +86,28 @@ class CorrelationIdMiddleware:
 @log_function_boundary()
 def _problem_response(
     request: Request,
-    *,
-    status_code: int,
-    detail: str,
-    title: str | None = None,
-    type_uri: str = "about:blank",
-    headers: dict[str, str] | None = None,
+    mapping: ErrorMapping,
 ) -> JSONResponse:
     correlation_id = getattr(request.state, "correlation_id", uuid4().hex)
     problem = ProblemDetail(
-        type=type_uri,
-        title=title or _status_title(status_code),
-        status=status_code,
-        detail=detail,
+        type=mapping.type_uri,
+        title=mapping.title or _status_title(mapping.status_code),
+        status=mapping.status_code,
+        detail=mapping.detail,
         instance=request.url.path,
         correlation_id=correlation_id,
     )
     return JSONResponse(
-        status_code=status_code,
+        status_code=mapping.status_code,
         content=problem.model_dump(),
-        headers=headers,
+        headers=mapping.headers,
         media_type="application/problem+json",
     )
 
 
 @log_function_boundary()
 def _problem_renderer(request: Request, mapping: ErrorMapping) -> Response:
-    return _problem_response(
-        request,
-        status_code=mapping.status_code,
-        detail=mapping.detail,
-        title=mapping.title,
-        type_uri=mapping.type_uri,
-        headers=mapping.headers,
-    )
+    return _problem_response(request, mapping)
 
 
 @log_function_boundary()
