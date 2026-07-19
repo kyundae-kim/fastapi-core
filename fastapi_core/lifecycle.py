@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from docmesh_py_core import (
     HealthCheckError,
+    RuntimePlan,
     ServiceCloseError,
     ServiceRuntime,
     StartupFailureMode,
@@ -52,6 +53,7 @@ def build_lifespan(
     lifespan: Callable | None,
     config: AppConfig,
     runtime: ServiceRuntime | None,
+    runtime_plan: RuntimePlan | None,
     resources: ResourceRegistry,
 ) -> Callable:
     @asynccontextmanager
@@ -60,7 +62,7 @@ def build_lifespan(
         app_runtime = runtime
         try:
             if app_runtime is None:
-                app_runtime = await assemble_runtime(config)
+                app_runtime = await assemble_runtime(runtime_plan)
                 configure_service_runtime(app, app_runtime)
             elif config.startup_healthcheck:
                 await _check_runtime_on_startup(app_runtime, config)

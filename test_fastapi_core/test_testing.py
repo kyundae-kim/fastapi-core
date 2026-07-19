@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+import fastapi_core.runtime as runtime_module
 import fastapi_core.testing as testing_module
 from fastapi_core import create_app
 from fastapi_core.testing import (
@@ -27,6 +28,10 @@ def test_create_empty_runtime_has_no_selected_or_required_services():
     assert runtime.selected_services == frozenset()
     assert runtime.required_services == frozenset()
     assert runtime.clients == {}
+
+
+def test_testing_empty_runtime_uses_production_canonical_helper():
+    assert testing_module.create_empty_runtime is runtime_module.create_empty_runtime
 
 
 def test_resource_lifecycle_probe_exercises_real_app_lifespan_and_readiness():

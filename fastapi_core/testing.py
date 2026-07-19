@@ -3,23 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar
 
-from docmesh_py_core import ServiceRuntime, load_service_configs
-
 from fastapi_core.function_logging import log_function_boundary
 from fastapi_core.resources import ManagedResource
+from fastapi_core.runtime import create_empty_runtime
 
 T = TypeVar("T")
-
-
-@log_function_boundary()
-def create_empty_runtime() -> ServiceRuntime:
-    """Create a runtime that owns no external service clients."""
-    return ServiceRuntime(
-        configs=load_service_configs(services=set()),
-        clients={},
-        selected_services=frozenset(),
-        required_services=frozenset(),
-    )
 
 
 @dataclass

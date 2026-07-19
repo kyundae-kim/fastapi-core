@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from docmesh_py_core import (
     HealthcheckPolicy,
     KeycloakAuthService,
@@ -46,29 +44,26 @@ def build_runtime_plan(config: AppConfig) -> RuntimePlan:
 
 
 @log_function_boundary()
-def build_keycloak_check_kwargs() -> dict[str, str]:
-    values = {
-        "username": os.getenv("KEYCLOAK_TOKEN_USERNAME"),
-        "password": os.getenv("KEYCLOAK_TOKEN_PASSWORD"),
-        "scope": os.getenv("FASTAPI_CORE_TEST_SCOPE", "").strip(),
-    }
-    return {name: value for name, value in values.items() if value}
-
-
-@log_function_boundary()
 def configure_keycloak_provider(provider: KeycloakAuthService) -> None:
     provider.allowed_algorithms = ["RS256"]
 
 
 @log_function_boundary()
-async def assemble_runtime(config: AppConfig) -> ServiceRuntime:
-    if config.enabled_services:
-        return await assemble_service_runtime(plan=build_runtime_plan(config))
+def create_empty_runtime() -> ServiceRuntime:
+    """Create the canonical runtime that owns no external service clients."""
     return ServiceRuntime(
         configs=load_service_configs(services=set()),
         clients={},
         selected_services=frozenset(),
+        required_services=frozenset(),
     )
+
+
+@log_function_boundary()
+async def assemble_runtime(plan: RuntimePlan | None) -> ServiceRuntime:
+    if plan is not None:
+        return await assemble_service_runtime(plan=plan)
+    return create_empty_runtime()
 
 
 @log_function_boundary()
@@ -78,18 +73,15 @@ def configure_service_runtime(app: FastAPI, runtime: ServiceRuntime) -> None:
     required_services = {
         Service.parse(service).value for service in runtime.required_services
     }
-    for service, client in runtime.clients.items():
+    checks = runtime.checks
+    missing_checks = runtime.selected_services.difference(checks)
+    if missing_checks:
+        names = ", ".join(
+            sorted(Service.parse(service).value for service in missing_checks)
+        )
+        raise AttributeError(f"Runtime services do not expose callable checks: {names}")
+    for service, check in checks.items():
         service_name = Service.parse(service).value
-        check = client.check
-        if service_name == "keycloak":
-            healthcheck = getattr(client, "healthcheck", check)
-            kwargs = build_keycloak_check_kwargs()
-
-            @log_function_boundary()
-            def keycloak_check(healthcheck=healthcheck, kwargs=kwargs) -> object:
-                return healthcheck(**kwargs)
-
-            check = keycloak_check
         readiness_registry.register(
             ReadinessCheckSpec(
                 name=service_name,
@@ -98,7 +90,7 @@ def configure_service_runtime(app: FastAPI, runtime: ServiceRuntime) -> None:
                 redact_errors=True,
             )
         )
-    keycloak_client = runtime.clients.get(Service.KEYCLOAK)
+    keycloak_client = runtime.get(Service.KEYCLOAK)
     if isinstance(keycloak_client, ServiceClientWrapper):
         provider = keycloak_client.unwrap()
         if isinstance(provider, KeycloakAuthService):

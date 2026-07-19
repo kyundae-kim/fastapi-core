@@ -22,7 +22,7 @@ from fastapi_core.readiness import ReadinessRegistry
 from fastapi_core.resources import ManagedResource, ResourceRegistry
 from fastapi_core.routers.auth import router as auth_router
 from fastapi_core.routers.health import router as health_router
-from fastapi_core.runtime import configure_service_runtime
+from fastapi_core.runtime import build_runtime_plan, configure_service_runtime
 
 
 @log_function_boundary()
@@ -61,6 +61,11 @@ def create_app(
     and the configured ``RuntimePlan``.
     """
     app_config = config or load_app_config()
+    runtime_plan = (
+        build_runtime_plan(app_config)
+        if runtime is None and app_config.enabled_services
+        else None
+    )
     root_logger = configure_application_logging(app_config)
 
     readiness_registry = ReadinessRegistry(
@@ -73,6 +78,7 @@ def create_app(
             lifespan,
             app_config,
             runtime,
+            runtime_plan,
             resource_registry,
         ),
     )

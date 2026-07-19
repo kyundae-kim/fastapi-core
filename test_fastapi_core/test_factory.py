@@ -9,17 +9,20 @@ import pytest
 from docmesh_py_core import (
     HealthCheckError,
     HealthcheckPolicy,
+    InvalidRuntimePlanError,
     RuntimePlan,
     Service,
     ServiceCloseError,
     ServiceClientWrapper,
     ServiceRuntime,
     StartupFailureMode,
+    UnknownServiceError,
     create_keycloak_client,
     create_sqlite_client,
 )
 from fastapi.testclient import TestClient
 
+import fastapi_core.factory as factory_module
 import fastapi_core.runtime as runtime_module
 from fastapi_core.config import AppConfig, load_app_config
 from fastapi_core.docmesh_settings import load_docmesh_settings
@@ -141,6 +144,67 @@ def test_create_app_supports_explicitly_empty_service_selection():
     assert app.state.service_runtime.clients == {}
 
 
+@pytest.mark.parametrize(
+    ("config", "error_type"),
+    [
+        (
+            AppConfig(enabled_services=["unknown"], required_services=[]),
+            UnknownServiceError,
+        ),
+        (
+            AppConfig(
+                enabled_services=["sqlite", "sqlite"],
+                required_services=[],
+            ),
+            InvalidRuntimePlanError,
+        ),
+        (
+            AppConfig(
+                enabled_services=["sqlite"],
+                required_services=[],
+                service_alternatives=[["postgres"]],
+            ),
+            InvalidRuntimePlanError,
+        ),
+        (
+            AppConfig(
+                enabled_services=["sqlite"],
+                required_services=[],
+                service_alternatives=[[]],
+            ),
+            InvalidRuntimePlanError,
+        ),
+    ],
+)
+def test_create_app_validates_runtime_plan_before_lifespan(config, error_type):
+    with pytest.raises(error_type):
+        create_app(config=config, include_auth_router=False)
+
+
+def test_create_app_does_not_build_runtime_plan_for_injected_runtime(
+    monkeypatch,
+    empty_runtime,
+):
+    def fail_build_runtime_plan(_config):
+        raise AssertionError("injected runtime must remain authoritative")
+
+    monkeypatch.setattr(
+        factory_module,
+        "build_runtime_plan",
+        fail_build_runtime_plan,
+        raising=False,
+    )
+
+    app = create_app(
+        config=AppConfig(enabled_services=["sqlite"], required_services=[]),
+        runtime=empty_runtime,
+        include_auth_router=False,
+    )
+
+    with TestClient(app):
+        assert app.state.service_runtime is empty_runtime
+
+
 def test_create_app_accepts_prebuilt_service_runtime(settings):
     events: list[str] = []
 
@@ -243,6 +307,43 @@ async def test_configure_service_runtime_preserves_async_checks(settings, empty_
     assert events == ["checked"]
 
 
+def test_configure_service_runtime_uses_runtime_checks_container_surface(
+    monkeypatch,
+    settings,
+    empty_runtime,
+):
+    calls: list[str] = []
+
+    class Client:
+        @property
+        def check(self):
+            raise AssertionError("adapter must not extract checks from runtime.clients")
+
+    def canonical_check():
+        calls.append("checked")
+
+    app = create_app(
+        config=AppConfig(enabled_services=[], required_services=[]),
+        runtime=empty_runtime,
+        include_auth_router=False,
+    )
+    monkeypatch.setattr(
+        ServiceRuntime,
+        "checks",
+        property(lambda _runtime: {Service.SQLITE: canonical_check}),
+    )
+    runtime = ServiceRuntime(
+        configs=settings,
+        clients={Service.SQLITE: Client()},
+        selected_services=frozenset({Service.SQLITE}),
+    )
+
+    configure_service_runtime(app, runtime)
+    app.state.readiness_registry.specs["sqlite"].check()
+
+    assert calls == ["checked"]
+
+
 def test_configure_service_runtime_redacts_service_check_errors_by_default(
     settings,
     empty_runtime,
@@ -337,19 +438,15 @@ def test_create_app_closes_service_clients_when_custom_shutdown_fails(
     assert events == ["closed"]
 
 
-def test_configure_service_runtime_passes_keycloak_healthcheck_credentials(
+def test_configure_service_runtime_uses_canonical_keycloak_wrapper_check(
     monkeypatch,
     settings,
     empty_runtime,
 ):
-    calls: list[tuple[str | None, str | None, str | None]] = []
+    calls: list[str] = []
 
-    class KeycloakClient:
-        def check(self):
-            raise AssertionError("keycloak readiness should call healthcheck directly")
-
-        def healthcheck(self, *, username=None, password=None, scope=None):
-            calls.append((username, password, scope))
+    def healthcheck():
+        calls.append("checked")
 
     monkeypatch.setenv("KEYCLOAK_TOKEN_USERNAME", "tester")
     monkeypatch.setenv("KEYCLOAK_TOKEN_PASSWORD", "secret")
@@ -360,9 +457,14 @@ def test_configure_service_runtime_passes_keycloak_healthcheck_credentials(
         runtime=empty_runtime,
         include_auth_router=False,
     )
+    wrapper = ServiceClientWrapper(
+        client=object(),
+        healthcheck=healthcheck,
+        service_name="keycloak",
+    )
     runtime = ServiceRuntime(
         configs=settings,
-        clients={Service.KEYCLOAK: KeycloakClient()},
+        clients={Service.KEYCLOAK: wrapper},
         selected_services=frozenset({Service.KEYCLOAK}),
     )
     configure_service_runtime(app, runtime)
@@ -370,8 +472,9 @@ def test_configure_service_runtime_passes_keycloak_healthcheck_credentials(
     check = app.state.readiness_registry.specs["keycloak"].check
     check()
 
-    assert calls == [("tester", "secret", "openid profile")]
-    assert "secret" not in repr(check)
+    assert calls == ["checked"]
+    assert check.__self__ is wrapper
+    assert check.__func__ is ServiceClientWrapper.check
 
 
 def test_create_app_uses_rs256_for_keycloak_auth_provider(settings, runtime_factory):
@@ -382,6 +485,27 @@ def test_create_app_uses_rs256_for_keycloak_auth_provider(settings, runtime_fact
     app = create_app(runtime=runtime, include_auth_router=False)
 
     assert app.state.auth_provider.allowed_algorithms == ["RS256"]
+
+
+def test_configure_service_runtime_uses_runtime_lookup_for_keycloak_provider(
+    settings,
+    runtime_factory,
+):
+    wrapper = create_keycloak_client(settings.keycloak)
+    runtime = runtime_factory(clients={"keycloak": wrapper})
+    calls: list[Service] = []
+    original_get = runtime.get
+
+    def tracked_get(service):
+        calls.append(service)
+        return original_get(service)
+
+    runtime.get = tracked_get
+
+    app = create_app(runtime=runtime, include_auth_router=False)
+
+    assert calls == [Service.KEYCLOAK]
+    assert app.state.auth_provider is wrapper.unwrap()
 
 
 def test_configure_service_runtime_does_not_bind_invalid_keycloak_provider(
@@ -429,6 +553,24 @@ def test_create_app_assembles_default_runtime_during_lifespan(monkeypatch):
         required_services=frozenset({Service.SQLITE}),
     )
 
+    expected_plan = RuntimePlan(
+        services=(Service.SQLITE.required(), Service.POSTGRES.optional()),
+        one_of=((Service.SQLITE, Service.POSTGRES),),
+        healthcheck=HealthcheckPolicy(
+            on_startup=True,
+            parallel=True,
+            timeout_seconds=0.25,
+            overall_timeout_seconds=1.5,
+            failure_mode=StartupFailureMode.REPORT,
+            attempts=3,
+            retry_delay_seconds=0.25,
+        ),
+    )
+
+    def fake_build_runtime_plan(_config):
+        calls["build_count"] = int(calls.get("build_count", 0)) + 1
+        return expected_plan
+
     async def fake_assemble_service_runtime(*, plan):
         calls["plan"] = plan
         return runtime
@@ -437,6 +579,12 @@ def test_create_app_assembles_default_runtime_during_lifespan(monkeypatch):
         runtime_module,
         "assemble_service_runtime",
         fake_assemble_service_runtime,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        factory_module,
+        "build_runtime_plan",
+        fake_build_runtime_plan,
         raising=False,
     )
     config = AppConfig(
@@ -459,20 +607,9 @@ def test_create_app_assembles_default_runtime_during_lifespan(monkeypatch):
         assert app.state.service_runtime.clients is runtime.clients
         assert sorted(app.state.readiness_registry.specs) == ["sqlite"]
 
-    assert calls["plan"] == RuntimePlan(
-        services=(Service.SQLITE.required(), Service.POSTGRES.optional()),
-        one_of=((Service.SQLITE, Service.POSTGRES),),
-        healthcheck=HealthcheckPolicy(
-            on_startup=True,
-            parallel=True,
-            timeout_seconds=0.25,
-            overall_timeout_seconds=1.5,
-            failure_mode=StartupFailureMode.REPORT,
-            attempts=3,
-            retry_delay_seconds=0.25,
-        ),
-    )
-    assert set(calls) == {"plan"}
+    assert calls["plan"] is expected_plan
+    assert calls["build_count"] == 1
+    assert set(calls) == {"build_count", "plan"}
     assert events == ["closed"]
 
 
