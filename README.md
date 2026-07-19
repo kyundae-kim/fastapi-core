@@ -71,7 +71,7 @@ uv add "fastapi-core @ git+https://github.com/kyundae-kim/fastapi-core.git"
 재현 가능한 배포에서는 기본 브랜치 대신 tag 또는 commit을 고정합니다.
 
 ```bash
-uv add "git+https://github.com/kyundae-kim/fastapi-core.git@v0.4.0"
+uv add "git+https://github.com/kyundae-kim/fastapi-core.git@v0.5.0"
 ```
 
 앱 설정은 `.env` 파일을 자동으로 읽지 않고 프로세스 환경변수에서 읽습니다. `.env.example`은 설정 키의 예시이며, 컨테이너 환경·배포 플랫폼·실행 도구를 통해 필요한 값을 환경변수로 주입해야 합니다. 상세 계약은 `docs/config.md`를 참고하세요.
@@ -98,10 +98,18 @@ curl -i http://127.0.0.1:8000/health/liveness
 curl -i http://127.0.0.1:8000/health/readiness
 ```
 
-기본 설정은 Keycloak을 활성·필수 서비스로 사용합니다. 기본 `create_app()`을 실행하려면 `.env.example`과 `docs/config.md`를 참고해 Keycloak 환경변수를 프로세스에 주입해야 합니다. 인증 router만 제외하려면 다음과 같이 구성합니다.
+기본 앱은 외부 서비스를 활성화하지 않고 health router만 포함합니다. DocMesh 서비스는 `AppConfig.enabled_services`로, 인증 router는 명시적으로 opt-in합니다.
 
 ```python
-app = create_app(include_auth_router=False)
+from fastapi_core.config import AppConfig
+
+app = create_app(
+    config=AppConfig(
+        enabled_services=["keycloak"],
+        required_services=["keycloak"],
+    ),
+    include_auth_router=True,
+)
 ```
 
 ### 현재 사용자 주입
@@ -128,6 +136,7 @@ async def me(
 - `config is None`이면 `load_app_config()`를 사용합니다.
 - `runtime is None`이면 lifespan startup에서 환경 기반 `ServiceRuntime`을 조립합니다.
 - 명시적 `runtime`을 전달하면 완성된 `ServiceRuntime`을 재조립하지 않고 동일한 lifecycle과 app state에 연결합니다.
+- startup healthcheck의 failure mode, 재시도 횟수와 재시도 간격은 자동 조립 runtime과 명시적으로 주입한 runtime에 동일하게 적용됩니다.
 - 앱 로깅을 먼저 초기화합니다.
 - `FastAPI(root_path=..., lifespan=...)`를 생성하고 framework lifespan이 runtime과 managed resource의 정리를 소유합니다.
 - `app.state.config`, `app.state.root_logger`, `app.state.service_runtime`, `app.state.readiness_registry`, `app.state.resource_registry`를 저장합니다. Keycloak client가 구성되면 `app.state.auth_provider`도 저장합니다.
@@ -137,7 +146,7 @@ async def me(
 - `service_alternatives`가 있으면 각 그룹에서 최소 한 서비스가 구성됐는지 `one_of` 정책으로 검증합니다.
 - 앱별 OAuth2 password flow에 `config.token_url`을 반영합니다.
 - CORS, correlation ID middleware와 problem detail handler를 등록합니다.
-- health router를 기본 포함하고, `include_auth_router=True`일 때 auth router를 포함합니다.
+- health router를 기본 포함하고, `include_auth_router=True`로 명시한 경우에만 auth router를 포함합니다.
 
 ### 인증
 - `/token`은 `OAuth2PasswordRequestForm`을 받습니다.
@@ -169,12 +178,15 @@ async def me(
 - `readiness_overall_timeout_seconds: float | None = None`
 - `service_alternatives: list[list[str]] = []`
 - `startup_healthcheck: bool = False`
+- `startup_failure_mode: StartupFailureMode = StartupFailureMode.FAIL`
+- `startup_healthcheck_attempts: int = 1`
+- `startup_healthcheck_retry_delay_seconds: float = 0`
 - `log_level: str | None = "WARNING"`
 - `log_path: str | None = None`
 - `log_json: bool = True`
 - `log_force: bool = False`
-- `enabled_services: list[str] = ["keycloak"]`
-- `required_services: list[str] = ["keycloak"]`
+- `enabled_services: list[str] = []`
+- `required_services: list[str] = []`
 
 주요 환경변수:
 - `ROOT_PATH`
@@ -186,6 +198,9 @@ async def me(
 - `READINESS_OVERALL_TIMEOUT_SECONDS`
 - `DOCMESH_SERVICE_ALTERNATIVES`
 - `DOCMESH_HEALTHCHECK_ENABLED`
+- `DOCMESH_STARTUP_FAILURE_MODE`
+- `DOCMESH_STARTUP_HEALTHCHECK_ATTEMPTS`
+- `DOCMESH_STARTUP_HEALTHCHECK_RETRY_DELAY_SECONDS`
 - `DOCMESH_LOG_LEVEL`
 - `APP_LOG_PATH`
 - `APP_LOG_JSON`
@@ -203,6 +218,8 @@ async def me(
 - 예상 wrapper/client 타입 불일치: `500 Internal Server Error`
 
 폐기된 `app.state.settings`나 `app.state.service_clients`에 직접 의존하지 않습니다. 서비스별 사용 예제는 `docs/examples.md`를 참고하세요.
+
+소비사 contract test에는 `fastapi_core.testing`의 빈 runtime, managed-resource lifecycle probe, health/auth contract assertion helper를 사용할 수 있습니다.
 
 ## 운영 시 주의사항
 

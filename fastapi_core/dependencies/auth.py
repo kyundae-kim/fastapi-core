@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from itertools import chain
 
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import OAuth2PasswordBearer
-from docmesh_py_core.function_logging import log_function_boundary
+from fastapi_core.function_logging import log_function_boundary
 from docmesh_py_core import AuthenticatedUser, KeycloakAuthService, TokenValidationError
 
 from fastapi_core.dependencies.services import get_keycloak_auth_service
@@ -14,13 +15,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token", auto_error=False)
 
 @log_function_boundary()
 def _get_roles(user: AuthenticatedUser) -> list[str]:
-    return list(
-        dict.fromkeys(
-            role
-            for roles in (user.realm_roles, *user.client_roles.values())
-            for role in roles
-        )
-    )
+    return list(dict.fromkeys(chain(user.realm_roles, *user.client_roles.values())))
 
 
 @log_function_boundary()

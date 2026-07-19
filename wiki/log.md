@@ -219,3 +219,21 @@
 - Captured immutable source: raw/articles/docmesh-py-core-env-example-v0.3.0.md
 - Updated concepts/service-configuration-contracts.md with template-consumption guidance.
 - Recorded that the template contains placeholders, should be narrowed to selected services, and direct factory consumers should pass matching names to `load_service_configs(services={...})`.
+
+## [2026-07-19] ingest | docmesh-py-core v0.4.0 API Reference
+- Captured immutable source: raw/articles/docmesh-py-core-api-reference-v0.4.0.md
+- Refreshed entity and concept pages: entities/docmesh-py-core.md, concepts/application-integration-patterns.md, concepts/service-configuration-contracts.md, concepts/service-health-check-aggregation.md, concepts/keycloak-authentication-api.md, concepts/operational-logging-and-retry-utilities.md, concepts/service-factory-registry.md
+- Recorded the package-root `__all__` public-contract boundary, env-only configuration framing, RuntimePlan-first async assembly, sync NATS exclusion, and updated health aggregation semantics.
+- Updated index.md navigation date; no new page was needed because this source refreshed existing central topics.
+
+## [2026-07-19] ingest | docmesh-py-core v0.4.0 Configuration Guide
+- Captured immutable source: raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md
+- Refreshed entity and concept pages: entities/docmesh-py-core.md, concepts/service-configuration-contracts.md, concepts/keycloak-authentication-api.md, concepts/application-integration-patterns.md, concepts/operational-logging-and-retry-utilities.md
+- Corrected configuration guidance: config constructor injection is unsupported, service names are case-insensitive, `POSTGRES_DSN` is unsupported, and production diagnostics reject placeholder credentials/endpoints without exposing secrets.
+- No new page was needed because this source refreshed existing central topics; index.md remains current at 9 pages.
+
+## [2026-07-19] ingest | docmesh-py-core v0.4.0 Examples
+- Captured immutable source: raw/articles/docmesh-py-core-examples-guide-v0.4.0.md
+- Refreshed entity and concept pages: entities/docmesh-py-core.md, concepts/application-integration-patterns.md, concepts/service-health-check-aggregation.md, concepts/keycloak-authentication-api.md, concepts/operational-logging-and-retry-utilities.md
+- Recorded the canonical preflight-to-async-runtime flow, NATS connection ownership/drain, direct SQLite scope, health/close error handling, Keycloak JWKS usage, and safe structured logging/retry examples.
+- No new page was needed because this source refreshed existing central topics; index.md remains current at 9 pages.

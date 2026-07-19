@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import Request
-from docmesh_py_core.function_logging import log_function_boundary
+from fastapi_core.function_logging import log_function_boundary
 from docmesh_py_core import ServiceConfigs
 
 from fastapi_core.config import AppConfig, load_app_config

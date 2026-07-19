@@ -163,13 +163,18 @@ def test_custom_error_mapper_accepts_async_mappers():
 
     @app.get("/async-domain")
     async def async_domain():
-        raise DomainError("temporarily unavailable")
+        raise DomainError("token=async-secret")
 
     with TestClient(app, raise_server_exceptions=False) as client:
-        response = client.get("/async-domain")
+        response = client.get(
+            "/async-domain",
+            headers={"X-Correlation-ID": "async-mapper-123"},
+        )
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "temporarily unavailable"
+    assert response.json()["detail"] == "token=***"
+    assert response.json()["correlation_id"] == "async-mapper-123"
+    assert response.headers["X-Correlation-ID"] == "async-mapper-123"
 
 
 def test_custom_error_renderer_controls_domain_envelope_and_media_type():

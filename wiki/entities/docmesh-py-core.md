@@ -1,10 +1,10 @@
 ---
 title: docmesh-py-core
 created: 2026-06-25
-updated: 2026-07-17
+updated: 2026-07-19
 type: entity
 tags: [module, api, integration, implementation]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-api-reference-v0.4.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-v0.4.0.md]
 confidence: medium
 ---
 
@@ -14,20 +14,20 @@ confidence: medium
 
 ## What it exposes
 
-v0.3.0 API 레퍼런스는 패키지 루트 `__all__`을 direct config·client factory와 assembly API를 함께 제공하는 표면으로 설명한다. 핵심 공개 축은 `CommonConfig`, 서비스별 `*Config`, aggregate `ServiceConfigs`, `load_service_configs`, 서비스별 `create_*_client`, `assemble_services`, `assemble_service_runtime`, `ServiceBundle`, `ServiceRuntime`, `ServiceClientWrapper`, `NatsConnectionBuilder`, `KeycloakAuthService`, `KeycloakProvisioner`, health/cleanup 및 운영 helper다.^[raw/articles/docmesh-py-core-api-reference-v0.3.0.md]
+v0.4.0 API 레퍼런스는 패키지 루트 `__all__`을 공개 계약으로 삼고, 구현 모듈의 비공개 심볼과 `config`·`factories` facade 전용 심볼을 신규 코드의 import 대상으로 삼지 않는다. 핵심 공개 축은 `CommonConfig`, 서비스별 `*Config`, aggregate `ServiceConfigs`, `load_service_configs`/`diagnose_services`, `RuntimePlan`, 서비스별 `create_*_client`, `assemble_services`, `assemble_service_runtime`, `ServiceBundle`, `ServiceRuntime`, `ServiceClientWrapper`, `NatsConnectionBuilder`, `KeycloakAuthService`, `KeycloakProvisioner`, health/cleanup 및 운영 helper다.^[raw/articles/docmesh-py-core-api-reference-v0.4.0.md]
 
-v0.3.0에서는 `HealthCheckResult`, `ServiceHealthStatus`, `ProvisioningResult`도 루트 공개 import 목록에 포함된다. 따라서 이 타입들을 하위 모듈 전용으로 취급하던 이전 문서 상태는 더 이상 최신 공개 표면을 반영하지 않는다.^[raw/articles/docmesh-py-core-api-reference-v0.3.0.md]
+`HealthCheckResult`, `ServiceHealthStatus`, `ProvisioningResult`와 structured configuration diagnosis 결과도 루트 공개 import 목록에 포함된다. 따라서 이 타입들을 하위 모듈 전용으로 취급하던 이전 문서 상태는 최신 공개 표면을 반영하지 않는다.^[raw/articles/docmesh-py-core-api-reference-v0.4.0.md]
 
 ## Recommended consumption flow
 
-v0.3.0 API·예제 문서는 일반 애플리케이션 lifecycle에 assembly-first를 권장한다. 기본 흐름은 `환경변수 준비 → assemble_services()` 또는 `await assemble_service_runtime()` → `RuntimePlan`/health 정책 선언 → bundle/runtime context manager로 종료`이며, direct config와 `create_*_client()`는 CLI·배치·테스트·SDK hook 제어처럼 필요한 경우에 쓴다.^[raw/articles/docmesh-py-core-api-reference-v0.3.0.md]^[raw/articles/docmesh-py-core-examples-guide-v0.3.0.md]
+v0.4.0 API 문서는 일반 애플리케이션 lifecycle에 `RuntimePlan` + `assemble_service_runtime()` assembly-first 경로를 권장한다. 동기 CLI·배치에는 `assemble_services()`를 쓰고, direct config와 `create_*_client()`는 특정 SDK를 직접 제어할 때만 쓴다.^[raw/articles/docmesh-py-core-api-reference-v0.4.0.md]
 
-이전 위키에서 과도기 신호로 보았던 registry 중심 examples는 v0.3.0 examples에서 사실상 사라졌다. 현재 canonical lifecycle은 assembly-first지만, direct config/direct client factory는 단일 서비스·CLI·배치·테스트·hook 제어를 위한 명시적 public 경로로 남는다.^[raw/articles/docmesh-py-core-examples-guide-v0.3.0.md]
+v0.4.0 예제는 `RuntimePlan` 기반 async bootstrap을 표준 경로로 재확인하고, 동기 direct API는 NATS를 쓰지 않는 CLI·배치·단위 테스트에 한정한다. direct config/direct client factory는 단일 서비스와 명시적 SDK 제어를 위한 public 경로로 남는다.^[raw/articles/docmesh-py-core-examples-guide-v0.4.0.md]
 
 ## Main responsibilities
 
-- 환경변수 기반 config 객체를 직접 생성하거나 선택 서비스 묶음으로 로드한다.
-- startup 전에 `diagnose_services(env, plan=...)`로 complete/partial/invalid 상태와 production placeholder를 secret-safe하게 확인할 수 있다.^[raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md]
+- 모든 config 객체는 프로세스 환경변수에서만 읽으며, 생성자 인자 주입은 허용하지 않는다. 선택 서비스 묶음은 `load_service_configs()` 또는 `load_available_service_configs()`로 로드한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md]
+- startup 전에 `diagnose_services(plan=...)`로 complete/partial/invalid 상태와 production placeholder를 secret-safe하게 확인할 수 있다.^[raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md]
 - 서비스별 direct client factory와 동기 `ServiceBundle`·비동기 `ServiceRuntime` assembly 진입점을 제공한다.
 - 공통 헬스체크 집계와 오류 표준화를 지원한다.
 - Keycloak 토큰 발급/검증과 프로비저닝을 담당한다.

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any, Generic, TypeVar, cast
 
-from docmesh_py_core.function_logging import log_function_boundary
+from fastapi_core.function_logging import log_function_boundary
 from fastapi import FastAPI, HTTPException, Request, status
 
 from fastapi_core.readiness import ReadinessCheckSpec, ReadinessRegistry
@@ -154,8 +154,6 @@ class ResourceRegistry:
 
     @log_function_boundary()
     def require(self, name: str) -> Any:
-        if name not in self.instances:
-            raise KeyError(name)
         return self.instances[name]
 
     @log_function_boundary()
