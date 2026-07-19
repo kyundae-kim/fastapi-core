@@ -215,7 +215,7 @@ async def me(
 
 폐기된 `app.state.settings`나 `app.state.service_clients`에 직접 의존하지 않습니다. 서비스별 사용 예제는 `docs/examples.md`를 참고하세요.
 
-소비사 contract test에는 `fastapi_core.testing`의 빈 runtime, managed-resource lifecycle probe, health/auth contract assertion helper를 사용할 수 있습니다. DMS SDK adapter의 lifecycle, readiness, stream close, 공개 metadata, 오류 매핑 패턴은 `examples/dms_service/app.py`에 실행 가능한 예제로 제공합니다.
+소비사 contract test에는 `fastapi_core.testing`의 빈 runtime, managed-resource lifecycle probe, health/auth contract assertion helper를 사용할 수 있습니다.
 
 ## 운영 시 주의사항
 
