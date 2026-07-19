@@ -126,11 +126,11 @@ class AppConfig(BaseSettings):
         validation_alias=AliasChoices("log_force", "APP_LOG_FORCE"),
     )
     enabled_services: list[str] = Field(
-        default_factory=lambda: ["keycloak"],
+        default_factory=list,
         validation_alias=AliasChoices("enabled_services", "DOCMESH_SERVICES"),
     )
     required_services: list[str] = Field(
-        default_factory=lambda: ["keycloak"],
+        default_factory=list,
         validation_alias=AliasChoices("required_services", "READINESS_REQUIRED_SERVICES"),
     )
 

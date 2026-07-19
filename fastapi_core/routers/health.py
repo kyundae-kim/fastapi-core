@@ -7,8 +7,13 @@ from fastapi.responses import JSONResponse
 from fastapi_core.function_logging import log_function_boundary
 from docmesh_py_core import HealthCheckError, build_service_log_event
 
-from fastapi_core.readiness import ReadinessRegistry
-from fastapi_core.schemas.health import HealthResponse, HealthServiceDetail, HealthStatus
+from fastapi_core.dependencies.config import get_config
+from fastapi_core.readiness import ReadinessRegistry, get_readiness_registry
+from fastapi_core.schemas.health import (
+    HealthResponse,
+    HealthServiceDetail,
+    HealthStatus,
+)
 
 router = APIRouter(prefix="/health", tags=["health"])
 logger = logging.getLogger(__name__)
@@ -69,9 +74,8 @@ async def liveness() -> HealthResponse:
 @router.get("/readiness", response_model=HealthResponse)
 @log_function_boundary()
 async def readiness(request: Request) -> HealthResponse | JSONResponse:
-    state = request.app.state
-    registry: ReadinessRegistry = state.readiness_registry
-    config = state.config
+    registry = get_readiness_registry(request.app)
+    config = get_config(request)
     if not registry.specs:
         return HealthResponse(status="ok")
 

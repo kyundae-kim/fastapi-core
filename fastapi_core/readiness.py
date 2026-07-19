@@ -169,6 +169,11 @@ class ReadinessRegistry:
 
 
 @log_function_boundary()
+def get_readiness_registry(app: FastAPI) -> ReadinessRegistry:
+    return app.state.readiness_registry
+
+
+@log_function_boundary()
 def register_readiness_check(
     app: FastAPI,
     name: str,
@@ -178,7 +183,7 @@ def register_readiness_check(
     timeout_seconds: float | None = None,
     redact_errors: bool = True,
 ) -> None:
-    registry: ReadinessRegistry = app.state.readiness_registry
+    registry = get_readiness_registry(app)
     registry.register(
         ReadinessCheckSpec(
             name=name,

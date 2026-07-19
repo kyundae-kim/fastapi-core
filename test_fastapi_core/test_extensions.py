@@ -224,6 +224,7 @@ def test_managed_resource_healthcheck_is_registered_for_readiness(empty_app_fact
     assert response.status_code == 200
     assert response.json()["details"]["sdk"]["required"] is True
     assert checks == ["checked"]
+    assert "sdk" not in app.state.readiness_registry.specs
 
 
 def test_required_managed_resource_false_healthcheck_fails_readiness(empty_app_factory):
@@ -542,3 +543,137 @@ def test_managed_resource_rejects_invalid_or_reserved_name(empty_app_factory, na
         empty_app_factory(
             resources=[ManagedResource(name, factory=lambda _app: object())],
         )
+
+
+def test_managed_resource_supports_async_factory_and_awaits_sync_close_result(
+    empty_app_factory,
+):
+    events: list[str] = []
+
+    async def factory(_app):
+        events.append("created")
+        return object()
+
+    def close(_resource):
+        async def finish():
+            events.append("closed")
+
+        return finish()
+
+    app = empty_app_factory(
+        resources=[ManagedResource("sdk", factory=factory, close=close)]
+    )
+
+    with TestClient(app):
+        assert events == ["created"]
+
+    assert events == ["created", "closed"]
+
+
+def test_managed_resource_explicit_close_takes_precedence_over_resource_closers(
+    empty_app_factory,
+):
+    events: list[str] = []
+
+    class Resource:
+        async def aclose(self):
+            events.append("aclose")
+
+        def close(self):
+            events.append("close")
+
+    def explicit_close(_resource):
+        events.append("explicit")
+
+    app = empty_app_factory(
+        resources=[
+            ManagedResource(
+                "sdk",
+                factory=lambda _app: Resource(),
+                close=explicit_close,
+            )
+        ]
+    )
+
+    with TestClient(app):
+        pass
+
+    assert events == ["explicit"]
+
+
+def test_managed_resource_prefers_aclose_over_close(empty_app_factory):
+    events: list[str] = []
+
+    class Resource:
+        async def aclose(self):
+            events.append("aclose")
+
+        def close(self):
+            events.append("close")
+
+    app = empty_app_factory(
+        resources=[ManagedResource("sdk", factory=lambda _app: Resource())]
+    )
+
+    with TestClient(app):
+        pass
+
+    assert events == ["aclose"]
+
+
+def test_optional_managed_resource_failure_does_not_block_startup_healthcheck(
+    empty_app_factory,
+):
+    app = empty_app_factory(
+        startup_healthcheck=True,
+        resources=[
+            ManagedResource(
+                "sdk",
+                factory=lambda _app: object(),
+                healthcheck=lambda _resource: False,
+                required=False,
+            )
+        ],
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/health/readiness")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "degraded"
+
+
+def test_managed_resource_structured_children_inherit_optional_unredacted_policy(
+    empty_app_factory,
+):
+    result = HealthCheckResult(
+        ok=False,
+        services=[
+            ServiceHealthStatus(
+                service="child",
+                ok=False,
+                latency_ms=None,
+                error="backend unavailable",
+            )
+        ],
+    )
+    app = empty_app_factory(
+        resources=[
+            ManagedResource(
+                "dms",
+                factory=lambda _app: object(),
+                healthcheck=lambda _resource: result,
+                required=False,
+                redact_errors=False,
+            )
+        ]
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/health/readiness")
+
+    detail = response.json()["details"]["dms.child"]
+    assert response.status_code == 200
+    assert response.json()["status"] == "degraded"
+    assert detail["required"] is False
+    assert detail["error"] == "backend unavailable"

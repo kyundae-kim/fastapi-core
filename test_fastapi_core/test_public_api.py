@@ -15,6 +15,7 @@ import docmesh_py_core
 from fastapi_core.config import AppConfig
 from fastapi_core.extensions import ResourceRegistry
 from fastapi_core.factory import create_app
+from fastapi_core.readiness import get_readiness_registry
 
 
 ROOT_EXPORTS = {
@@ -91,7 +92,7 @@ def test_create_app_signature_is_stable():
         ("config", Parameter.POSITIONAL_OR_KEYWORD, None),
         ("runtime", Parameter.KEYWORD_ONLY, None),
         ("lifespan", Parameter.KEYWORD_ONLY, None),
-        ("include_auth_router", Parameter.KEYWORD_ONLY, True),
+        ("include_auth_router", Parameter.KEYWORD_ONLY, False),
         ("resources", Parameter.KEYWORD_ONLY, ()),
         ("error_renderer", Parameter.KEYWORD_ONLY, None),
     ]
@@ -194,6 +195,12 @@ def test_readiness_state_exposes_only_typed_registry(runtime_factory):
     assert not hasattr(registry, "required_services")
     assert not hasattr(registry, "owns_legacy_state")
     assert not hasattr(app.state.resource_registry, "_healthcheck_names")
+
+
+def test_readiness_registry_state_lookup_is_owned_by_readiness_module(empty_runtime):
+    app = create_app(runtime=empty_runtime)
+
+    assert get_readiness_registry(app) is app.state.readiness_registry
 
 
 def test_obsolete_refactoring_helpers_are_not_reintroduced():

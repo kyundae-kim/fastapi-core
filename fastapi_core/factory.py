@@ -50,7 +50,7 @@ def create_app(
     *,
     runtime: ServiceRuntime | None = None,
     lifespan: Callable | None = None,
-    include_auth_router: bool = True,
+    include_auth_router: bool = False,
     resources: Sequence[ManagedResource[Any]] = (),
     error_renderer: ErrorRenderer | None = None,
 ) -> FastAPI:

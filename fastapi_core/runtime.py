@@ -16,7 +16,7 @@ from fastapi_core.function_logging import log_function_boundary
 from fastapi import FastAPI
 
 from fastapi_core.config import AppConfig
-from fastapi_core.readiness import ReadinessCheckSpec, ReadinessRegistry
+from fastapi_core.readiness import ReadinessCheckSpec, get_readiness_registry
 
 
 @log_function_boundary()
@@ -74,7 +74,7 @@ async def assemble_runtime(config: AppConfig) -> ServiceRuntime:
 @log_function_boundary()
 def configure_service_runtime(app: FastAPI, runtime: ServiceRuntime) -> None:
     app.state.service_runtime = runtime
-    readiness_registry: ReadinessRegistry = app.state.readiness_registry
+    readiness_registry = get_readiness_registry(app)
     required_services = {
         Service.parse(service).value for service in runtime.required_services
     }

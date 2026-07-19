@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 import json
 import logging
+import os
 
 import pytest
 from docmesh_py_core import (
@@ -20,18 +21,49 @@ from docmesh_py_core import (
 from fastapi.testclient import TestClient
 
 import fastapi_core.runtime as runtime_module
-from fastapi_core.config import AppConfig
+from fastapi_core.config import AppConfig, load_app_config
 from fastapi_core.docmesh_settings import load_docmesh_settings
 from fastapi_core.factory import create_app
 from fastapi_core.runtime import configure_service_runtime
 
 
-def test_create_app_includes_default_routes(empty_runtime):
+def test_create_app_defaults_to_service_free_health_only_app(monkeypatch):
+    for name in tuple(os.environ):
+        if name.startswith(
+            ("DOCMESH_", "KEYCLOAK_", "POSTGRES_", "NATS_", "READINESS_")
+        ):
+            monkeypatch.delenv(name, raising=False)
+    load_app_config.cache_clear()
+
+    app = create_app()
+
+    with TestClient(app) as client:
+        liveness = client.get("/health/liveness")
+        readiness = client.get("/health/readiness")
+        user = client.get("/user")
+        token = client.post("/token")
+
+    assert liveness.status_code == 200
+    assert readiness.status_code == 200
+    assert readiness.json() == {"status": "ok", "details": None}
+    assert user.status_code == 404
+    assert token.status_code == 404
+    assert app.state.service_runtime.selected_services == frozenset()
+    assert app.state.service_runtime.required_services == frozenset()
+    assert app.state.service_runtime.clients == {}
+    load_app_config.cache_clear()
+
+
+def test_create_app_includes_auth_routes_when_enabled(empty_runtime):
     config = AppConfig(
         enabled_services=["keycloak"],
         required_services=["keycloak"],
     )
-    app = create_app(config=config, runtime=empty_runtime)
+    app = create_app(
+        config=config,
+        runtime=empty_runtime,
+        include_auth_router=True,
+    )
 
     with TestClient(app) as client:
         response = client.get("/health/liveness")
@@ -52,7 +84,11 @@ def test_create_app_includes_default_routes(empty_runtime):
 def test_create_app_applies_configured_token_url_to_openapi(empty_runtime):
     config = AppConfig(token_url="/api/v1/auth/token")
 
-    app = create_app(config=config, runtime=empty_runtime)
+    app = create_app(
+        config=config,
+        runtime=empty_runtime,
+        include_auth_router=True,
+    )
 
     security_scheme = app.openapi()["components"]["securitySchemes"]["OAuth2PasswordBearer"]
     assert security_scheme["flows"]["password"]["tokenUrl"] == "/api/v1/auth/token"
@@ -62,10 +98,12 @@ def test_create_app_keeps_oauth2_scheme_isolated_per_app(runtime_factory):
     first_app = create_app(
         config=AppConfig(token_url="/first/token"),
         runtime=runtime_factory(),
+        include_auth_router=True,
     )
     second_app = create_app(
         config=AppConfig(token_url="/second/token"),
         runtime=runtime_factory(),
+        include_auth_router=True,
     )
 
     first_scheme = first_app.openapi()["components"]["securitySchemes"]["OAuth2PasswordBearer"]

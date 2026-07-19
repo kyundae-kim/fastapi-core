@@ -82,12 +82,8 @@ uv add "git+https://github.com/kyundae-kim/fastapi-core.git@v0.4.0"
 
 ```python
 from fastapi_core import create_app
-from fastapi_core.config import AppConfig
 
-app = create_app(
-    config=AppConfig(enabled_services=[], required_services=[]),
-    include_auth_router=False,
-)
+app = create_app()
 ```
 
 실행:
@@ -98,10 +94,18 @@ curl -i http://127.0.0.1:8000/health/liveness
 curl -i http://127.0.0.1:8000/health/readiness
 ```
 
-기본 설정은 Keycloak을 활성·필수 서비스로 사용합니다. 기본 `create_app()`을 실행하려면 `.env.example`과 `docs/config.md`를 참고해 Keycloak 환경변수를 프로세스에 주입해야 합니다. 인증 router만 제외하려면 다음과 같이 구성합니다.
+기본 앱은 외부 서비스를 활성화하지 않고 health router만 포함합니다. DocMesh 서비스는 `AppConfig.enabled_services`로, 인증 router는 명시적으로 opt-in합니다.
 
 ```python
-app = create_app(include_auth_router=False)
+from fastapi_core.config import AppConfig
+
+app = create_app(
+    config=AppConfig(
+        enabled_services=["keycloak"],
+        required_services=["keycloak"],
+    ),
+    include_auth_router=True,
+)
 ```
 
 ### 현재 사용자 주입
@@ -138,7 +142,7 @@ async def me(
 - `service_alternatives`가 있으면 각 그룹에서 최소 한 서비스가 구성됐는지 `one_of` 정책으로 검증합니다.
 - 앱별 OAuth2 password flow에 `config.token_url`을 반영합니다.
 - CORS, correlation ID middleware와 problem detail handler를 등록합니다.
-- health router를 기본 포함하고, `include_auth_router=True`일 때 auth router를 포함합니다.
+- health router를 기본 포함하고, `include_auth_router=True`로 명시한 경우에만 auth router를 포함합니다.
 
 ### 인증
 - `/token`은 `OAuth2PasswordRequestForm`을 받습니다.
@@ -177,8 +181,8 @@ async def me(
 - `log_path: str | None = None`
 - `log_json: bool = True`
 - `log_force: bool = False`
-- `enabled_services: list[str] = ["keycloak"]`
-- `required_services: list[str] = ["keycloak"]`
+- `enabled_services: list[str] = []`
+- `required_services: list[str] = []`
 
 주요 환경변수:
 - `ROOT_PATH`
@@ -210,6 +214,8 @@ async def me(
 - 예상 wrapper/client 타입 불일치: `500 Internal Server Error`
 
 폐기된 `app.state.settings`나 `app.state.service_clients`에 직접 의존하지 않습니다. 서비스별 사용 예제는 `docs/examples.md`를 참고하세요.
+
+소비사 contract test에는 `fastapi_core.testing`의 빈 runtime, managed-resource lifecycle probe, health/auth contract assertion helper를 사용할 수 있습니다. DMS SDK adapter의 lifecycle, readiness, stream close, 공개 metadata, 오류 매핑 패턴은 `examples/dms_service/app.py`에 실행 가능한 예제로 제공합니다.
 
 ## 운영 시 주의사항
 
