@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 
 from fastapi_core import (
     ManagedResource,
+    ReadinessCheckSpec,
     ResourceKey,
     create_app,
     register_readiness_check,
@@ -99,6 +100,20 @@ def test_readiness_registry_resolves_structured_child_to_parent_spec(
 
     assert spec.name == "search"
     assert spec.required is False
+
+
+def test_readiness_registry_prefers_exact_falsey_spec(empty_app_factory):
+    class FalseySpec(ReadinessCheckSpec):
+        def __bool__(self) -> bool:
+            return False
+
+    app = empty_app_factory()
+    registry = app.state.readiness_registry
+    registry.register(ReadinessCheckSpec(name="search", check=lambda: None))
+    exact = FalseySpec(name="search.postgres", check=lambda: None, required=False)
+    registry.register(exact)
+
+    assert registry.resolve_spec("search.postgres") is exact
 
 
 def test_managed_resources_follow_lifecycle_order(empty_app_factory):

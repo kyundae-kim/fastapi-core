@@ -104,7 +104,9 @@ class ReadinessRegistry:
 
     @log_function_boundary()
     def resolve_spec(self, name: str) -> ReadinessCheckSpec:
-        return self.specs.get(name) or self.specs[name.split(".", 1)[0]]
+        if (spec := self.specs.get(name)) is not None:
+            return spec
+        return self.specs[name.split(".", 1)[0]]
 
     @log_function_boundary()
     async def check(
