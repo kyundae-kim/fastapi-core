@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from itertools import chain
 from typing import Any
 
 from docmesh_py_core import RuntimePlan, Service, ServiceRuntime, diagnose_services
@@ -106,15 +107,13 @@ def _validate_extension_names(
     runtime_plan: RuntimePlan | None,
 ) -> None:
     names: set[str] = set()
-    for resource in resources:
-        name = _resource_name(resource)
+    for name in chain(
+        (_resource_name(resource) for resource in resources),
+        (spec.name for spec in checks),
+    ):
         if name in names:
             raise ValueError(f"extension name '{name}' is already registered")
         names.add(name)
-    for spec in checks:
-        if spec.name in names:
-            raise ValueError(f"extension name '{spec.name}' is already registered")
-        names.add(spec.name)
     if runtime is not None:
         for service in runtime.checks:
             name = Service.parse(service).value

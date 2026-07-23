@@ -71,25 +71,18 @@ class ResourceLifecycleProbe(Generic[T]):
 @log_function_boundary()
 def assert_health_contract(client: Any) -> None:
     """Assert the built-in liveness and readiness success contract."""
-    liveness = client.get("/health/liveness")
-    readiness = client.get("/health/readiness")
-    assert liveness.status_code == 200
-    assert liveness.json()["status"] == "ok"
-    assert readiness.status_code == 200
-    assert readiness.json()["status"] == "ok"
+    responses = client.get("/health/liveness"), client.get("/health/readiness")
+    for response in responses:
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
 
 
 @log_function_boundary()
 def assert_auth_router_contract(client: Any, *, included: bool) -> None:
     """Assert whether the built-in authentication routes are installed."""
-    user = client.get("/user")
-    token = client.post("/token")
-    if included:
-        assert user.status_code != 404
-        assert token.status_code != 404
-    else:
-        assert user.status_code == 404
-        assert token.status_code == 404
+    responses = client.get("/user"), client.post("/token")
+    for response in responses:
+        assert (response.status_code != 404) == included
 
 
 @contextmanager
