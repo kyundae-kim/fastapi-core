@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 
 from docmesh_py_core import (
     HealthCheckError,
@@ -76,11 +76,8 @@ def build_lifespan(
                     parallel=config.readiness_parallel,
                     overall_timeout_seconds=config.readiness_overall_timeout_seconds,
                 )
-            if lifespan is None:
+            async with lifespan(app) if lifespan is not None else nullcontext():
                 yield
-            else:
-                async with lifespan(app):
-                    yield
         finally:
             try:
                 await resources.close()
