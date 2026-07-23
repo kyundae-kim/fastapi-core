@@ -140,6 +140,8 @@ Keycloak provider가 구성된 뒤에는 `app.state.auth_provider`를 제공해�
 
 **SRS-RUN-005** runtime 설정 후 각 서비스 check를 앱별 readiness registry에 등록하고 runtime의 required 집합을 반영해야 한다. Keycloak wrapper가 실제 `KeycloakAuthService`를 보유하면 허용 알고리즘을 `RS256`으로 제한하고 인증 provider로 연결해야 한다.
 
+**SRS-RUN-006** runtime 연결은 원자적으로 수행해야 한다. 선택 서비스의 callable check가 누락되거나 기존 readiness 이름과 충돌하면 현재 `app.state.service_runtime`과 readiness registry를 변경하지 않고 오류를 발생시켜야 한다.
+
 ---
 
 ## 4. Lifespan 및 관리 자원

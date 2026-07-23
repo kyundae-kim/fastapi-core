@@ -27,6 +27,7 @@ import fastapi_core.runtime as runtime_module
 from fastapi_core.config import AppConfig, load_app_config
 from fastapi_core.docmesh_settings import load_docmesh_settings
 from fastapi_core.factory import create_app
+from fastapi_core.readiness import register_readiness_check
 from fastapi_core.runtime import configure_service_runtime
 
 
@@ -386,6 +387,38 @@ def test_configure_service_runtime_rejects_client_without_check(
 
     with pytest.raises(AttributeError):
         configure_service_runtime(app, runtime)
+
+    assert app.state.service_runtime is empty_runtime
+
+
+def test_configure_service_runtime_is_atomic_on_readiness_name_collision(
+    settings,
+    empty_runtime,
+):
+    class Client:
+        def check(self):
+            return None
+
+    app = create_app(
+        config=AppConfig(enabled_services=[], required_services=[]),
+        runtime=empty_runtime,
+        include_auth_router=False,
+    )
+    register_readiness_check(app, "postgres", lambda: True)
+    runtime = ServiceRuntime(
+        configs=settings,
+        clients={
+            Service.SQLITE: Client(),
+            Service.POSTGRES: Client(),
+        },
+        selected_services=frozenset({Service.SQLITE, Service.POSTGRES}),
+    )
+
+    with pytest.raises(ValueError, match="postgres.*already registered"):
+        configure_service_runtime(app, runtime)
+
+    assert app.state.service_runtime is empty_runtime
+    assert set(app.state.readiness_registry.specs) == {"postgres"}
 
 
 def test_create_app_awaits_async_service_client_close(runtime_factory):
