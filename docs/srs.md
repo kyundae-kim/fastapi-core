@@ -2,9 +2,7 @@
 
 > 문서 리비전: 2026-07-23
 >
-> 기준 릴리스: `fastapi-core 0.5.0`
->
-> 설계 대상: 차기 릴리스 (버전 미정)
+> 기준 릴리스: `fastapi-core 0.6.0`
 >
 > 상태: current-implementation
 >
@@ -251,7 +249,7 @@ ManagedResource(
 - `POST /token`: `OAuth2PasswordRequestForm` 입력, `TokenResponse` 출력
 - `GET /user`: bearer token 입력, `UserInfo` 출력
 
-**SRS-AUTH-002** token 발급은 form의 username, password 및 공백 구분 scope를 provider에 전달하고 token type을 소문자로 정규화해야 한다.
+**SRS-AUTH-002** token 발급은 form의 username, password 및 공백 구분 scope를 provider에 전달하고 token type을 소문자로 정규화해야 한다. 동기 provider 호출은 worker thread로 위임하여 event loop를 차단하지 않아야 한다.
 
 **SRS-AUTH-003** token 발급 실패는 다음과 같이 매핑하고 `WWW-Authenticate: Bearer`를 포함해야 한다.
 
@@ -380,16 +378,16 @@ ManagedResource(
 
 ### 11.2 구현 상태
 
-- 1~11절은 `fastapi-core 0.5.0` 기준 구현을, 12절은 기준 릴리스 이후 현재 소스에 추가된 구현 계약을 기술한다.
-- 12절의 공개 API와 동작은 현재 회귀 테스트로 검증되며 차기 배포 릴리스에 포함될 대상이다.
+- 1~12절은 모두 `fastapi-core 0.6.0` 현재 구현 계약을 기술한다.
+- 12절은 0.6.0에서 확장된 도메인 조립, 기동 진단, access logging 및 소비사 검증 계약을 상세화한다.
 - 구체 API가 변경되면 소스·공개 API 테스트와 이 문서를 같은 변경에서 갱신해야 한다.
 - `docs/prd.md`는 제품 capability와 결과를, 이 문서는 구현 가능한 계약과 검증 기준을 소유한다.
 
 ---
 
-## 12. 추가 구현 요구사항
+## 12. 0.6.0 확장 구현 계약
 
-이 절은 `0.5.0` 기준 구현 이후 현재 소스에 추가된 계약이다. 우선순위와 아래 절의 순서는 구현·검증 순서를 의미한다.
+이 절은 0.6.0에서 추가된 계약을 기능 영역별로 상세화한다. 모든 항목은 현재 소스에 구현되어 있으며 회귀 테스트의 검증 대상이다.
 
 ### 12.1 P0-1 — auth router와 서비스 설정의 startup 진단
 
@@ -530,4 +528,4 @@ assert_openapi_contract(
 6. test environment 정상·예외·중첩 복원과 cache 격리 테스트
 7. module 및 생성 OpenAPI 의미 계약 assertion 테스트
 
-각 단계의 공개 계약과 회귀 테스트는 현재 구현에서 함께 검증한다. 배포 릴리스가 확정되면 문서의 대상 릴리스를 실제 버전에 맞게 갱신한다.
+각 단계의 공개 계약과 회귀 테스트는 0.6.0 현재 구현에서 함께 검증한다.
