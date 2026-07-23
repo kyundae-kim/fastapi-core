@@ -1,10 +1,10 @@
 ---
 title: Keycloak authentication API
 created: 2026-06-25
-updated: 2026-07-19
+updated: 2026-07-23
 type: concept
 tags: [service, api, security, integration, implementation]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-api-reference-v0.4.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-v0.4.0.md, fastapi_core/factory.py, fastapi_core/dependencies/auth.py, fastapi_core/routers/auth.py]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-api-reference-v0.4.0.md, raw/articles/docmesh-py-core-api-reference-v0.5.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-v0.4.0.md, raw/articles/docmesh-py-core-examples-guide-v0.5.0.md, fastapi_core/factory.py, fastapi_core/dependencies/auth.py, fastapi_core/routers/auth.py]
 confidence: medium
 ---
 
@@ -14,16 +14,16 @@ confidence: medium
 
 ## Discovery and base config
 
-v0.4.0 설정 가이드는 `KeycloakDiscoveryConfig`와 `KeycloakConfig`를 구분하며, 두 타입 모두 프로세스 환경변수만 읽는다.
+v0.5.0 설정 가이드는 `KeycloakDiscoveryConfig`와 `KeycloakConfig`를 구분하며, 두 타입 모두 프로세스 환경변수만 읽는다.
 
 - `KeycloakDiscoveryConfig`는 `KEYCLOAK_URL`, `KEYCLOAK_REALM`만 읽는다.
 - `KeycloakConfig`는 discovery 설정을 확장하고 `KEYCLOAK_CLIENT_ID`를 추가로 요구한다.
 - `KEYCLOAK_CLIENT_PUBLIC=false`가 기본값이므로, public client가 아니라면 `KEYCLOAK_CLIENT_SECRET`가 필요하다.
-- 운영 환경에서는 `KEYCLOAK_VERIFY_SSL=false`를 허용하지 않는다. `KEYCLOAK_PROVISIONING_ENABLED=true`일 때 admin service-account secret 또는 admin username/password 중 정확히 하나의 인증 방식을 구성해야 한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md]
+- 운영 환경에서는 `KEYCLOAK_VERIFY_SSL=false`를 허용하지 않는다. `KEYCLOAK_PROVISIONING_ENABLED=true`일 때 admin service-account secret 또는 admin username/password 중 정확히 하나의 인증 방식을 구성해야 한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md]
 
 ## Token acquisition
 
-`fetch_access_token(*, scope=None, username=None, password=None) -> AccessTokenResult`의 기본 grant type은 `password`이며, `client_credentials`도 명시적으로 선택할 수 있다. 함수 인자를 우선 사용하되, 생략된 username/password는 환경 설정 자격증명에서 가져온다.^[raw/articles/docmesh-py-core-api-reference-v0.4.0.md]
+`fetch_access_token(*, scope=None, username=None, password=None) -> AccessTokenResult`는 `password` grant에서 함수 인자를 환경 설정 자격증명보다 우선한다. 설정·인증·일시·기타 오류는 서로 다른 공개 오류로 구분하며, 일시 오류만 `KEYCLOAK_MAX_RETRIES + 1`회 시도한다.^[raw/articles/docmesh-py-core-api-reference-v0.5.0.md]
 
 대표 반환 필드는 `access_token`, `token_type`, `expires_in`, `refresh_token`, `scope`다.
 
@@ -68,4 +68,4 @@ v0.4.0 설정 가이드는 `KeycloakDiscoveryConfig`와 `KeycloakConfig`를 구�
 
 fastapi-core는 현재 이 API를 채택해 Keycloak client/provider를 구성한다. `/token`은 `fetch_access_token()`으로 토큰을 발급하고 예외 유형을 HTTP 오류로 매핑하며, `/user`와 `get_current_user()`는 bearer token을 검증해 역할과 scope를 `UserInfo`로 변환한다.
 
-v0.4.0 예제는 `KeycloakConfig()` 환경 설정으로 `KeycloakAuthService`를 만들고, password grant 호출 인자는 환경 credential보다 우선함을 보인다. RS256은 explicit verification key 대신 JWKS endpoint와 cache/rotation 경로를 사용한다.^[raw/articles/docmesh-py-core-examples-guide-v0.4.0.md]
+v0.5.0 예제는 `KeycloakConfig()` 환경 설정으로 `KeycloakAuthService`를 만들고, password grant 호출 인자는 환경 credential보다 우선함을 보인다. `client_credentials`는 `KEYCLOAK_TOKEN_GRANT_TYPE=client_credentials`로 선택하며 username/password를 사용하지 않는다. RS256은 JWKS endpoint와 cache/rotation 경로를 사용한다.^[raw/articles/docmesh-py-core-examples-guide-v0.5.0.md]
