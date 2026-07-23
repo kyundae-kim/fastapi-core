@@ -62,7 +62,6 @@ class CorrelationIdMiddleware:
         self.app = app
         self.header_name = header_name
 
-    @log_function_boundary()
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
@@ -76,7 +75,6 @@ class CorrelationIdMiddleware:
         )
         scope.setdefault("state", {})["correlation_id"] = correlation_id
 
-        @log_function_boundary()
         async def send_with_correlation_id(message: Message) -> None:
             if message["type"] == "http.response.start":
                 MutableHeaders(scope=message)[self.header_name] = correlation_id
@@ -92,7 +90,6 @@ class AccessLogMiddleware:
         self.log_health = log_health
         access_logger.setLevel(logging.INFO)
 
-    @log_function_boundary()
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
@@ -103,7 +100,7 @@ class AccessLogMiddleware:
         logged = False
 
         @log_function_boundary()
-        def write_log() -> None:
+        def write_log(*, failed: bool = False) -> None:
             nonlocal logged
             if logged:
                 return
@@ -119,7 +116,9 @@ class AccessLogMiddleware:
                         "route": route,
                         "status_code": status_code,
                         "duration_ms": round((perf_counter() - started) * 1000, 3),
-                        "outcome": "success" if status_code < 400 else "error",
+                        "outcome": (
+                            "error" if failed or status_code >= 400 else "success"
+                        ),
                         "correlation_id": scope.get("state", {}).get(
                             "correlation_id"
                         ),
@@ -127,7 +126,6 @@ class AccessLogMiddleware:
                 },
             )
 
-        @log_function_boundary()
         async def send_with_access_log(message: Message) -> None:
             nonlocal status_code
             if message["type"] == "http.response.start":
@@ -142,7 +140,7 @@ class AccessLogMiddleware:
         try:
             await self.app(scope, receive, send_with_access_log)
         except BaseException:
-            write_log()
+            write_log(failed=True)
             raise
 
 

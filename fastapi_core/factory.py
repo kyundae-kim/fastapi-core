@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from docmesh_py_core import Service, ServiceRuntime, diagnose_services
+from docmesh_py_core import RuntimePlan, Service, ServiceRuntime, diagnose_services
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
@@ -91,12 +91,11 @@ def _validate_routes(routers: Sequence[APIRouter]) -> None:
                 if contract in contracts:
                     raise ValueError(f"route '{method} {route.path}' is already registered")
                 contracts.add(contract)
-            if route.operation_id is not None:
-                if route.operation_id in operation_ids:
-                    raise ValueError(
-                        f"operation ID '{route.operation_id}' is already registered"
-                    )
-                operation_ids.add(route.operation_id)
+            if route.unique_id in operation_ids:
+                raise ValueError(
+                    f"operation ID '{route.unique_id}' is already registered"
+                )
+            operation_ids.add(route.unique_id)
 
 
 @log_function_boundary()
@@ -104,6 +103,7 @@ def _validate_extension_names(
     resources: Sequence[ManagedResource[Any]],
     checks: Sequence[ReadinessCheckSpec],
     runtime: ServiceRuntime | None,
+    runtime_plan: RuntimePlan | None,
 ) -> None:
     names: set[str] = set()
     for resource in resources:
@@ -121,6 +121,20 @@ def _validate_extension_names(
             if name in names:
                 raise ValueError(f"extension name '{name}' is already registered")
             names.add(name)
+    if runtime_plan is not None:
+        planned_services = {
+            Service.parse(selection.service).value
+            for selection in runtime_plan.services
+        }
+        planned_services.update(
+            Service.parse(service).value
+            for group in runtime_plan.one_of
+            for service in group
+        )
+        duplicate_names = names.intersection(planned_services)
+        if duplicate_names:
+            name = sorted(duplicate_names)[0]
+            raise ValueError(f"extension name '{name}' is already registered")
 
 
 @log_function_boundary()
@@ -190,7 +204,7 @@ def create_app(
         + tuple(router for module in modules for router in module.routers)
     )
     _validate_routes(all_routers)
-    _validate_extension_names(all_resources, module_checks, runtime)
+    _validate_extension_names(all_resources, module_checks, runtime, runtime_plan)
     _validate_error_mappers(all_mappers)
 
     root_logger = configure_application_logging(app_config)

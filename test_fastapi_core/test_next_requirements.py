@@ -187,6 +187,39 @@ def test_duplicate_route_contract_is_rejected():
         create_app(runtime=create_empty_runtime(), routers=[first, second])
 
 
+def test_generated_operation_id_collision_is_rejected_before_openapi():
+    def duplicate_operation_id(_route):
+        return "duplicate_operation"
+
+    first = APIRouter(generate_unique_id_function=duplicate_operation_id)
+    second = APIRouter(generate_unique_id_function=duplicate_operation_id)
+
+    @first.get("/first")
+    async def first_route():
+        return None
+
+    @second.get("/second")
+    async def second_route():
+        return None
+
+    with pytest.raises(ValueError, match="duplicate_operation"):
+        create_app(runtime=create_empty_runtime(), routers=[first, second])
+
+
+def test_automatic_runtime_name_collision_is_rejected_during_app_creation():
+    module = DomainModule(
+        name="auth-domain",
+        readiness_checks=(ReadinessCheckSpec("keycloak", lambda: True),),
+    )
+    config = AppConfig(
+        enabled_services=["keycloak"],
+        required_services=["keycloak"],
+    )
+
+    with pytest.raises(ValueError, match="keycloak"):
+        create_app(config=config, modules=[module])
+
+
 def test_access_log_records_safe_request_completion(caplog):
     router = APIRouter()
 
@@ -262,6 +295,51 @@ def test_access_log_records_stream_completion_once(caplog):
     assert len(records) == 1
 
 
+def test_access_log_marks_stream_failure_as_error(caplog):
+    router = APIRouter()
+
+    @router.get("/failing-stream")
+    async def failing_stream():
+        async def chunks():
+            yield b"one"
+            raise RuntimeError("stream failed")
+
+        return StreamingResponse(chunks())
+
+    app = create_app(runtime=create_empty_runtime(), routers=[router])
+
+    with caplog.at_level(logging.INFO, logger="fastapi_core.access"):
+        with TestClient(app, raise_server_exceptions=False) as client:
+            client.get("/failing-stream")
+
+    records = [record for record in caplog.records if record.getMessage() == "http_access"]
+    assert len(records) == 1
+    assert records[0].event["status_code"] == 200
+    assert records[0].event["outcome"] == "error"
+
+
+def test_request_pipeline_does_not_log_sensitive_unhandled_exception(caplog):
+    router = APIRouter()
+
+    @router.get("/sensitive-crash")
+    async def sensitive_crash():
+        raise RuntimeError("token=SUPERSECRET")
+
+    app = create_app(runtime=create_empty_runtime(), routers=[router])
+
+    with caplog.at_level(logging.INFO):
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get("/sensitive-crash")
+
+    assert response.status_code == 500
+    logged = "\n".join(
+        record.getMessage()
+        + (f" {record.exc_info[1]}" if record.exc_info is not None else "")
+        for record in caplog.records
+    )
+    assert "SUPERSECRET" not in logged
+
+
 def test_test_environment_restores_environment_and_configuration_caches(monkeypatch):
     monkeypatch.setenv("ROOT_PATH", "/before")
     load_app_config.cache_clear()
@@ -279,6 +357,21 @@ def test_test_environment_restores_environment_and_configuration_caches(monkeypa
         assert os.environ["ROOT_PATH"] == "/inside"
         assert load_app_config().root_path == "/inside"
         assert load_docmesh_settings(()) is not before_settings
+
+    assert os.environ["ROOT_PATH"] == "/before"
+    assert load_app_config().root_path == "/before"
+
+
+def test_test_environment_restores_nested_and_exception_scopes(monkeypatch):
+    monkeypatch.setenv("ROOT_PATH", "/before")
+
+    with pytest.raises(RuntimeError, match="expected"):
+        with test_environment({"ROOT_PATH": "/outer"}):
+            assert os.environ["ROOT_PATH"] == "/outer"
+            with test_environment({"ROOT_PATH": "/inner"}):
+                assert os.environ["ROOT_PATH"] == "/inner"
+            assert os.environ["ROOT_PATH"] == "/outer"
+            raise RuntimeError("expected")
 
     assert os.environ["ROOT_PATH"] == "/before"
     assert load_app_config().root_path == "/before"

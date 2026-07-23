@@ -11,7 +11,13 @@ from fastapi_core.function_logging import log_function_boundary
 
 _PACKAGE_ROOT = Path(__file__).parents[1] / "fastapi_core"
 _EXCLUDED_MODULES = {"function_logging.py"}
-_EXCLUDED_FUNCTIONS = {("logging.py", "JsonLogFormatter.format")}
+_EXCLUDED_FUNCTIONS = {
+    ("logging.py", "JsonLogFormatter.format"),
+    ("http.py", "AccessLogMiddleware.__call__"),
+    ("http.py", "AccessLogMiddleware.__call__.send_with_access_log"),
+    ("http.py", "CorrelationIdMiddleware.__call__"),
+    ("http.py", "CorrelationIdMiddleware.__call__.send_with_correlation_id"),
+}
 
 
 def _function_names(tree: ast.AST) -> list[tuple[ast.FunctionDef | ast.AsyncFunctionDef, str]]:
