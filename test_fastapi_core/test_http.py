@@ -3,9 +3,11 @@ from __future__ import annotations
 import re
 from unittest.mock import patch
 
+import pytest
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from fastapi_core import ErrorMapping, register_error_mapper
 from fastapi_core.config import AppConfig
@@ -28,6 +30,21 @@ def _app():
         raise HTTPException(status_code=409, detail="Conflict")
 
     return app
+
+
+def _request(app) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "app": app,
+            "method": "GET",
+            "path": "/failure",
+            "headers": [],
+            "query_string": b"",
+            "scheme": "http",
+            "server": ("testserver", 80),
+        }
+    )
 
 
 def test_correlation_id_is_propagated_to_request_and_response():
@@ -64,18 +81,7 @@ def test_invalid_correlation_id_is_replaced():
 
 def test_problem_response_reuses_existing_correlation_id_without_generating_one():
     app = _app()
-    request = Request(
-        {
-            "type": "http",
-            "app": app,
-            "method": "GET",
-            "path": "/failure",
-            "headers": [],
-            "query_string": b"",
-            "scheme": "http",
-            "server": ("testserver", 80),
-        }
-    )
+    request = _request(app)
     request.state.correlation_id = "existing-id"
 
     with patch("fastapi_core.http.uuid4") as generate_uuid:
@@ -86,6 +92,36 @@ def test_problem_response_reuses_existing_correlation_id_without_generating_one(
 
     generate_uuid.assert_not_called()
     assert b'"correlation_id":"existing-id"' in response.body
+
+
+def test_problem_response_generates_one_correlation_id_when_state_is_missing():
+    request = _request(_app())
+
+    with patch("fastapi_core.http.uuid4") as generate_uuid:
+        generate_uuid.return_value.hex = "generated-id"
+        response = _problem_response(
+            request,
+            ErrorMapping(status_code=400, detail="Bad request"),
+        )
+
+    generate_uuid.assert_called_once_with()
+    assert b'"correlation_id":"generated-id"' in response.body
+
+
+def test_problem_response_preserves_explicit_none_correlation_id_failure():
+    request = _request(_app())
+    request.state.correlation_id = None
+
+    with (
+        patch("fastapi_core.http.uuid4") as generate_uuid,
+        pytest.raises(ValidationError),
+    ):
+        _problem_response(
+            request,
+            ErrorMapping(status_code=400, detail="Bad request"),
+        )
+
+    generate_uuid.assert_not_called()
 
 
 def test_http_errors_use_problem_details_and_mask_sensitive_values():

@@ -13,6 +13,7 @@ from docmesh_py_core import (
     KeycloakTokenTemporaryError,
     build_service_log_event,
 )
+from starlette.concurrency import run_in_threadpool
 
 from fastapi_core.dependencies.auth import (
     _get_roles,
@@ -100,10 +101,12 @@ async def issue_token(
 ) -> TokenResponse:
     scope = " ".join(form_data.scopes) or None
     try:
-        token = provider.fetch_access_token(
-            scope=scope,
-            username=form_data.username,
-            password=form_data.password,
+        token = await run_in_threadpool(
+            lambda: provider.fetch_access_token(
+                scope=scope,
+                username=form_data.username,
+                password=form_data.password,
+            )
         )
     except Exception as exc:
         _raise_token_issue_error(exc, scope)

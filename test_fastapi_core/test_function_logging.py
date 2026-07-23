@@ -106,6 +106,23 @@ def test_log_function_boundary_skips_info_calls_when_info_is_disabled(caplog):
     info.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_async_log_boundary_skips_info_calls_when_info_is_disabled(caplog):
+    logger = logging.getLogger(__name__)
+
+    @log_function_boundary("disabled-async-info-example")
+    async def example() -> str:
+        return "result"
+
+    with (
+        caplog.at_level(logging.WARNING, logger=__name__),
+        patch.object(logger, "info") as info,
+    ):
+        assert await example() == "result"
+
+    info.assert_not_called()
+
+
 def test_log_function_boundary_still_logs_errors_when_info_is_disabled(caplog):
     @log_function_boundary("disabled-info-error-example")
     def example() -> None:
