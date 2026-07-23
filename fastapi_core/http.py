@@ -6,12 +6,13 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from http import HTTPStatus
+from time import perf_counter
 from uuid import uuid4
 
-from fastapi_core.function_logging import log_function_boundary
 from docmesh_py_core import mask_sensitive_value
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi_core.function_logging import log_function_boundary
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse, Response
@@ -22,6 +23,7 @@ from fastapi_core.schemas.error import ProblemDetail
 _CORRELATION_ID_PATTERN = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 _SAFE_ERROR_DETAILS = frozenset({"Invalid token"})
 logger = logging.getLogger(__name__)
+access_logger = logging.getLogger("fastapi_core.access")
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +83,67 @@ class CorrelationIdMiddleware:
             await send(message)
 
         await self.app(scope, receive, send_with_correlation_id)
+
+
+class AccessLogMiddleware:
+    @log_function_boundary()
+    def __init__(self, app: ASGIApp, *, log_health: bool = False) -> None:
+        self.app = app
+        self.log_health = log_health
+        access_logger.setLevel(logging.INFO)
+
+    @log_function_boundary()
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        started = perf_counter()
+        status_code = 500
+        logged = False
+
+        @log_function_boundary()
+        def write_log() -> None:
+            nonlocal logged
+            if logged:
+                return
+            logged = True
+            route = getattr(scope.get("route"), "path", None) or scope.get("path", "")
+            if not self.log_health and route.startswith("/health/"):
+                return
+            access_logger.info(
+                "http_access",
+                extra={
+                    "event": {
+                        "method": scope.get("method"),
+                        "route": route,
+                        "status_code": status_code,
+                        "duration_ms": round((perf_counter() - started) * 1000, 3),
+                        "outcome": "success" if status_code < 400 else "error",
+                        "correlation_id": scope.get("state", {}).get(
+                            "correlation_id"
+                        ),
+                    }
+                },
+            )
+
+        @log_function_boundary()
+        async def send_with_access_log(message: Message) -> None:
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+            await send(message)
+            if (
+                message["type"] == "http.response.body"
+                and not message.get("more_body", False)
+            ):
+                write_log()
+
+        try:
+            await self.app(scope, receive, send_with_access_log)
+        except BaseException:
+            write_log()
+            raise
 
 
 @log_function_boundary()
@@ -172,6 +235,7 @@ def install_problem_handlers(
     error_renderer: ErrorRenderer | None = None,
 ) -> None:
     app.state.error_renderer = error_renderer or _problem_renderer
+    app.state.error_mapper_types = set()
     app.add_exception_handler(HTTPException, _http_exception_handler)
     app.add_exception_handler(RequestValidationError, _validation_exception_handler)
     app.add_exception_handler(Exception, _unhandled_exception_handler)
@@ -183,6 +247,12 @@ def register_error_mapper(
     exception_type: type[Exception],
     mapper: ErrorMapper,
 ) -> None:
+    registered: set[type[Exception]] = app.state.error_mapper_types
+    if exception_type in registered:
+        raise ValueError(
+            f"error mapper for '{exception_type.__name__}' is already registered"
+        )
+
     @log_function_boundary()
     async def mapped_exception_handler(
         request: Request,
@@ -194,3 +264,4 @@ def register_error_mapper(
         return await _render_error(request, mapping)
 
     app.add_exception_handler(exception_type, mapped_exception_handler)
+    registered.add(exception_type)

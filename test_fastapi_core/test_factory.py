@@ -67,6 +67,7 @@ def test_create_app_includes_auth_routes_when_enabled(empty_runtime):
         config=config,
         runtime=empty_runtime,
         include_auth_router=True,
+        auth_provider=object(),
     )
 
     with TestClient(app) as client:
@@ -92,6 +93,7 @@ def test_create_app_applies_configured_token_url_to_openapi(empty_runtime):
         config=config,
         runtime=empty_runtime,
         include_auth_router=True,
+        auth_provider=object(),
     )
 
     security_scheme = app.openapi()["components"]["securitySchemes"]["OAuth2PasswordBearer"]
@@ -103,11 +105,13 @@ def test_create_app_keeps_oauth2_scheme_isolated_per_app(runtime_factory):
         config=AppConfig(token_url="/first/token"),
         runtime=runtime_factory(),
         include_auth_router=True,
+        auth_provider=object(),
     )
     second_app = create_app(
         config=AppConfig(token_url="/second/token"),
         runtime=runtime_factory(),
         include_auth_router=True,
+        auth_provider=object(),
     )
 
     first_scheme = first_app.openapi()["components"]["securitySchemes"]["OAuth2PasswordBearer"]

@@ -94,8 +94,8 @@ def auth_app_factory(runtime_factory):
             config=AppConfig(enabled_services=[], required_services=[]),
             runtime=runtime_factory(),
             include_auth_router=include_auth_router,
+            auth_provider=provider,
         )
-        app.state.auth_provider = provider
         return app
 
     return factory

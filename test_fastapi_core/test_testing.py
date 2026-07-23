@@ -18,7 +18,10 @@ def test_testing_module_exports_only_contract_helpers():
         "ResourceLifecycleProbe",
         "assert_auth_router_contract",
         "assert_health_contract",
+        "assert_module_contract",
+        "assert_openapi_contract",
         "create_empty_runtime",
+        "test_environment",
     }
 
 
@@ -55,6 +58,7 @@ def test_contract_assertions_cover_auth_router_opt_in_and_out():
     enabled_app = create_app(
         runtime=create_empty_runtime(),
         include_auth_router=True,
+        auth_provider=object(),
     )
 
     with TestClient(disabled_app) as client:

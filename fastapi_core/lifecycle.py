@@ -55,6 +55,8 @@ def build_lifespan(
     runtime: ServiceRuntime | None,
     runtime_plan: RuntimePlan | None,
     resources: ResourceRegistry,
+    *,
+    require_auth_provider: bool = False,
 ) -> Callable:
     @asynccontextmanager
     @log_function_boundary()
@@ -66,6 +68,8 @@ def build_lifespan(
                 configure_service_runtime(app, app_runtime)
             elif config.startup_healthcheck:
                 await _check_runtime_on_startup(app_runtime, config)
+            if require_auth_provider and not hasattr(app.state, "auth_provider"):
+                raise ValueError("auth router requires a configured auth provider")
             await resources.start(app)
             if config.startup_healthcheck:
                 await resources.check_startup(

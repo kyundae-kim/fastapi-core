@@ -19,6 +19,8 @@ from fastapi_core.readiness import get_readiness_registry
 
 
 ROOT_EXPORTS = {
+    "DomainModule",
+    "ErrorMapperSpec",
     "ErrorMapping",
     "ErrorRenderer",
     "ManagedResource",
@@ -93,8 +95,12 @@ def test_create_app_signature_is_stable():
         ("runtime", Parameter.KEYWORD_ONLY, None),
         ("lifespan", Parameter.KEYWORD_ONLY, None),
         ("include_auth_router", Parameter.KEYWORD_ONLY, False),
+        ("routers", Parameter.KEYWORD_ONLY, ()),
+        ("modules", Parameter.KEYWORD_ONLY, ()),
         ("resources", Parameter.KEYWORD_ONLY, ()),
+        ("error_mappers", Parameter.KEYWORD_ONLY, ()),
         ("error_renderer", Parameter.KEYWORD_ONLY, None),
+        ("auth_provider", Parameter.KEYWORD_ONLY, None),
     ]
 
 

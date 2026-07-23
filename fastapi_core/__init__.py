@@ -5,9 +5,12 @@ from fastapi_core.extensions import (
 )
 from fastapi_core.factory import create_app
 from fastapi_core.http import ErrorMapping, ErrorRenderer, register_error_mapper
+from fastapi_core.modules import DomainModule, ErrorMapperSpec
 from fastapi_core.resources import ResourceKey
 
 __all__ = [
+    "DomainModule",
+    "ErrorMapperSpec",
     "ManagedResource",
     "ErrorMapping",
     "ErrorRenderer",

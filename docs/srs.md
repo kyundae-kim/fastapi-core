@@ -1,8 +1,10 @@
 # fastapi-core 소프트웨어 요구사항 명세서 (SRS)
 
-> 문서 리비전: 2026-07-19
+> 문서 리비전: 2026-07-23
 >
-> 대상 릴리스: `fastapi-core 0.5.0`
+> 기준 릴리스: `fastapi-core 0.5.0`
+>
+> 설계 대상: 차기 릴리스 (버전 미정)
 >
 > 상태: current-implementation
 >
@@ -37,6 +39,7 @@
 **SRS-API-001** `fastapi_core.__all__`은 다음 심벌을 제공해야 한다.
 
 - `create_app`
+- `DomainModule`, `ErrorMapperSpec`
 - `ManagedResource`, `ResourceKey`
 - `ReadinessCheckSpec`, `register_readiness_check`
 - `ErrorMapping`, `ErrorRenderer`, `register_error_mapper`
@@ -54,8 +57,12 @@ create_app(
     runtime: ServiceRuntime | None = None,
     lifespan: Callable | None = None,
     include_auth_router: bool = False,
+    routers: Sequence[APIRouter] = (),
+    modules: Sequence[DomainModule] = (),
     resources: Sequence[ManagedResource[Any]] = (),
+    error_mappers: Sequence[ErrorMapperSpec] = (),
     error_renderer: ErrorRenderer | None = None,
+    auth_provider: Any | None = None,
 ) -> FastAPI
 ```
 
@@ -86,6 +93,8 @@ create_app(
 - `app.state.resource_registry`
 - `app.state.oauth2_scheme`
 - `app.state.error_renderer`
+- `app.state.error_mapper_types`
+- `app.state.domain_modules`
 
 Keycloak provider가 구성된 뒤에는 `app.state.auth_provider`를 제공해야 한다.
 
@@ -117,6 +126,8 @@ Keycloak provider가 구성된 뒤에는 `app.state.auth_provider`를 제공해�
 | `log_path` | `str \| None` | `None` |
 | `log_json` | `bool` | `True` |
 | `log_force` | `bool` | `False` |
+| `access_log_enabled` | `bool` | `True` |
+| `access_log_health_enabled` | `bool` | `False` |
 | `enabled_services` | `list[str]` | `[]` |
 | `required_services` | `list[str]` | `[]` |
 
@@ -332,6 +343,9 @@ ManagedResource(
 - `ResourceLifecycleProbe`
 - `assert_health_contract`
 - `assert_auth_router_contract`
+- `assert_module_contract`
+- `assert_openapi_contract`
+- `test_environment`
 
 **SRS-TEST-002** `create_empty_runtime()`은 선택·필수 서비스와 client가 없는 canonical `ServiceRuntime`을 반환하고 production runtime helper와 동일 객체를 사용해야 한다.
 
@@ -366,6 +380,154 @@ ManagedResource(
 
 ### 11.2 구현 상태
 
-- 본 문서의 요구사항은 `fastapi-core 0.5.0` 현재 구현을 기술한다.
+- 1~11절은 `fastapi-core 0.5.0` 기준 구현을, 12절은 기준 릴리스 이후 현재 소스에 추가된 구현 계약을 기술한다.
+- 12절의 공개 API와 동작은 현재 회귀 테스트로 검증되며 차기 배포 릴리스에 포함될 대상이다.
 - 구체 API가 변경되면 소스·공개 API 테스트와 이 문서를 같은 변경에서 갱신해야 한다.
 - `docs/prd.md`는 제품 capability와 결과를, 이 문서는 구현 가능한 계약과 검증 기준을 소유한다.
+
+---
+
+## 12. 추가 구현 요구사항
+
+이 절은 `0.5.0` 기준 구현 이후 현재 소스에 추가된 계약이다. 우선순위와 아래 절의 순서는 구현·검증 순서를 의미한다.
+
+### 12.1 P0-1 — auth router와 서비스 설정의 startup 진단
+
+**SRS-AUTH-009** 내장 auth router가 활성화된 자동 runtime 조립 경로는 Keycloak을 선택된 필수 서비스로 요구해야 한다. framework는 선택되지 않은 Keycloak을 암묵적으로 활성화하지 않고 앱 생성 단계에서 구성 오류를 발생시켜야 한다.
+
+**SRS-AUTH-010** framework는 자동 runtime을 조립하기 전에 auth 요구사항을 포함한 동일 `RuntimePlan`으로 `diagnose_services(plan=...)`를 호출해야 한다. 진단의 `ok`가 거짓이면 네트워크 연결을 시도하지 않고 secret-safe한 startup configuration error를 발생시켜야 한다.
+
+**SRS-AUTH-011** 명시적 `runtime`이 주입된 경로에서는 `AppConfig.enabled_services`가 아니라 주입된 runtime이 권위 있어야 한다. 명시적 `auth_provider`가 없고 auth router가 활성화됐지만 runtime에 Keycloak 서비스가 없거나 unwrap한 provider가 `KeycloakAuthService`가 아니면 앱 생성 중 구성 오류를 발생시켜야 한다.
+
+**SRS-AUTH-012** 자동 조립 경로는 runtime 연결 직후 `app.state.auth_provider`가 유효한 `KeycloakAuthService`인지 검증하고, 사용자 lifespan과 request serving 전에 실패해야 한다. 진단 오류는 누락된 서비스·환경변수 key·remediation을 제공할 수 있지만 credential 값과 token을 포함하지 않아야 한다.
+
+**SRS-AUTH-013** auth router가 비활성화된 앱은 Keycloak 설정 또는 provider를 요구하지 않아야 한다. `create_app(auth_provider=...)`는 테스트 또는 명시적 사용자 정의 provider를 위한 조립 seam이며, 단순한 `app.state.auth_provider` 사후 변경은 지원되는 조립 방식으로 간주하지 않는다.
+
+### 12.2 P0-2 — DomainModule 선언과 원자적 등록
+
+**SRS-MOD-001** 패키지 root는 다음 불변 선언 타입을 공개해야 한다.
+
+```python
+@dataclass(frozen=True, slots=True)
+class DomainModule:
+    name: str
+    routers: Sequence[APIRouter] = ()
+    dependencies: Sequence[params.Depends] = ()
+    resources: Sequence[ManagedResource[Any]] = ()
+    readiness_checks: Sequence[ReadinessCheckSpec] = ()
+    error_mappers: Sequence[ErrorMapperSpec] = ()
+```
+
+**SRS-MOD-002** module 이름은 공백일 수 없고 한 앱에서 고유해야 한다. module이 선언한 resource와 readiness 이름은 기존 registry, 다른 module 및 framework 예약 이름과 충돌하지 않아야 한다.
+
+**SRS-MOD-003** framework는 모든 module의 이름, router, dependency, resource, readiness 및 error mapper를 먼저 검증한 뒤 등록해야 한다. 검증 실패 시 router table, exception handler, resource registry 및 readiness registry 중 어느 것도 변경하지 않아야 한다.
+
+**SRS-MOD-004** module resource는 기존 `ResourceRegistry`와 framework lifespan이 소유하고, module readiness는 기존 `ReadinessRegistry`가 소유해야 한다. module은 별도의 lifecycle 또는 runtime container를 만들지 않아야 한다.
+
+**SRS-MOD-005** DocMesh 서비스 client와 그 종료는 `ServiceRuntime`이 계속 소유한다. module resource는 서비스 앱이 직접 생성한 자원에 사용하며, NATS builder로 생성한 지속 연결처럼 runtime이 종료하지 않는 자원은 명시적 close callback으로 `drain()` 등 필요한 정리를 수행해야 한다.
+
+### 12.3 P1-1 — router 직접 등록과 공통 인증 dependency
+
+**SRS-APP-009** 앱 팩토리는 다음 입력을 제공해야 한다.
+
+```python
+create_app(
+    config: AppConfig | None = None,
+    *,
+    runtime: ServiceRuntime | None = None,
+    lifespan: Callable | None = None,
+    include_auth_router: bool = False,
+    routers: Sequence[APIRouter] = (),
+    modules: Sequence[DomainModule] = (),
+    resources: Sequence[ManagedResource[Any]] = (),
+    error_mappers: Sequence[ErrorMapperSpec] = (),
+    error_renderer: ErrorRenderer | None = None,
+    auth_provider: Any | None = None,
+) -> FastAPI
+```
+
+**SRS-APP-010** `routers`는 전달 순서대로 직접 등록하고 각 `APIRouter`가 선언한 prefix, tag, dependency, response 및 OpenAPI metadata를 보존해야 한다. framework는 전달받은 router 객체 자체를 변경하지 않아야 한다.
+
+**SRS-APP-011** 내장 health router는 항상 등록하고 내장 auth router는 opt-in으로 등록한 뒤 사용자 router와 module router를 선언 순서대로 등록해야 한다. 동일 path와 HTTP method 또는 operation ID 충돌은 OpenAPI 생성 전 진단 가능한 구성 오류로 처리해야 한다.
+
+**SRS-AUTH-014** router 수준 공통 인증·인가 정책은 FastAPI `APIRouter`의 dependency 계약을 사용해야 한다. module의 `dependencies`는 해당 module의 모든 router에 추가 적용하되 router 자체 dependency를 대체하지 않아야 한다.
+
+**SRS-AUTH-015** module dependency는 내장 health/auth router와 다른 module에 전파되지 않아야 한다. token 발급 endpoint에 현재 사용자 인증 dependency가 순환 적용되지 않도록 적용 범위를 module 경계로 제한해야 한다.
+
+### 12.4 P1-2 — declarative error mapper 일괄 등록
+
+**SRS-ERR-007** 패키지 root는 다음 불변 선언 타입을 공개해야 한다.
+
+```python
+@dataclass(frozen=True, slots=True)
+class ErrorMapperSpec:
+    exception_type: type[Exception]
+    mapper: ErrorMapper
+```
+
+**SRS-ERR-008** 앱 수준 `error_mappers`와 각 `DomainModule.error_mappers`를 하나의 검증 단계에서 평탄화해야 한다. 같은 예외 타입이 둘 이상 선언되면 등록 순서에 따른 override 없이 구성 오류를 발생시켜야 한다.
+
+**SRS-ERR-009** 선언형 mapper는 기존 `register_error_mapper()`와 같은 동기·비동기 실행, `ErrorMapping` sanitize 및 `ErrorRenderer` 흐름을 사용해야 한다. mapper 등록 실패는 다른 module 요소를 부분 등록하지 않아야 한다.
+
+**SRS-ERR-010** 기존 `register_error_mapper(app, ...)`는 앱 생성 후 명시적으로 확장하는 imperative API로 유지하되, 이미 등록된 예외 타입을 덮어쓰려면 중복 정책을 명시적으로 위반하지 않는 별도 계약이 없는 한 오류를 발생시켜야 한다.
+
+### 12.5 P1-3 — request access logging
+
+**SRS-OBS-001** `AppConfig`는 `access_log_enabled: bool = True`와 `access_log_health_enabled: bool = False`를 제공해야 한다.
+
+**SRS-OBS-002** access logging middleware는 각 HTTP 요청 완료 시 정확히 한 번 구조화 event를 기록해야 하며 최소한 method, route template 또는 안전한 path, status code, duration, outcome 및 correlation ID를 포함해야 한다.
+
+**SRS-OBS-003** access log는 기본적으로 query string, Authorization·Cookie header, request/response body 및 credential·token 원문을 기록하지 않아야 한다. route가 확정되지 않은 404 요청은 query를 제외한 path만 기록할 수 있다.
+
+**SRS-OBS-004** 정상 응답, framework 오류 응답, 미처리 예외 및 streaming 응답에도 동일한 완료 event 계약을 적용해야 한다. streaming 응답은 마지막 body 전송 또는 전송 실패 시점을 완료로 계산해야 한다.
+
+**SRS-OBS-005** health probe access log는 기본 제외하고 `access_log_health_enabled=True`일 때만 기록해야 한다. access logging 비활성화 여부와 관계없이 correlation ID 응답 계약은 유지해야 한다.
+
+### 12.6 P1-4 — 환경 override와 config cache test context
+
+**SRS-TEST-006** `fastapi_core.testing`은 다음 context manager를 공개해야 한다.
+
+```python
+test_environment(
+    overrides: Mapping[str, str | None],
+) -> AbstractContextManager[None]
+```
+
+**SRS-TEST-007** context 진입 시 기존 환경값을 보존하고 `str` 값은 설정하며 `None` 값은 삭제한 뒤 `load_app_config()`와 `load_docmesh_settings()` 관련 cache를 초기화해야 한다.
+
+**SRS-TEST-008** 정상 종료와 예외 종료 모두에서 환경을 정확히 원상복구하고 관련 cache를 다시 초기화해야 한다. 중첩 context는 각 진입 시점의 환경을 복원 기준으로 사용해야 한다.
+
+**SRS-TEST-009** context는 process-global 환경을 변경하므로 여러 thread에서 동시에 사용하는 안전성을 보장하지 않아야 한다. helper의 repr, assertion 및 오류에는 override credential 값을 포함하지 않아야 한다.
+
+### 12.7 P2 — module 및 생성 OpenAPI contract assertion
+
+**SRS-TEST-010** `fastapi_core.testing`은 다음 assertion helper를 공개해야 한다.
+
+```python
+assert_module_contract(app: FastAPI, module: DomainModule) -> None
+
+assert_openapi_contract(
+    app: FastAPI,
+    *,
+    expected_paths: Mapping[str, Collection[str]],
+    expected_security_schemes: Collection[str] = (),
+) -> None
+```
+
+**SRS-TEST-011** module assertion은 module의 router operation, resource, readiness check 및 error mapper가 대상 앱에 등록됐는지 확인해야 하며 실제 resource 생성·종료를 대신 수행하지 않아야 한다.
+
+**SRS-TEST-012** OpenAPI assertion은 schema 생성을 실제 호출하고 요구된 path·HTTP method, operation ID 고유성, security scheme 및 참조 가능한 component schema를 의미 기반으로 검사해야 한다.
+
+**SRS-TEST-013** OpenAPI assertion은 FastAPI 또는 Pydantic의 비계약적 출력 순서·설명 문구까지 고정하는 전체 JSON 문자열 snapshot을 기본 방식으로 사용하지 않아야 한다.
+
+### 12.8 구현 검증 순서
+
+1. auth router의 자동 runtime 진단, 명시적 runtime 진단 및 secret redaction 테스트
+2. module 전체 사전 검증과 등록 원자성 테스트
+3. 직접 router 등록 순서·metadata·module dependency 격리 테스트
+4. 앱/module error mapper 일괄 등록과 중복 거부 테스트
+5. 정상·오류·streaming 요청 access log와 민감 정보 미기록 테스트
+6. test environment 정상·예외·중첩 복원과 cache 격리 테스트
+7. module 및 생성 OpenAPI 의미 계약 assertion 테스트
+
+각 단계의 공개 계약과 회귀 테스트는 현재 구현에서 함께 검증한다. 배포 릴리스가 확정되면 문서의 대상 릴리스를 실제 버전에 맞게 갱신한다.
