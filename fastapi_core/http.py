@@ -149,7 +149,10 @@ def _problem_response(
     request: Request,
     mapping: ErrorMapping,
 ) -> JSONResponse:
-    correlation_id = getattr(request.state, "correlation_id", uuid4().hex)
+    try:
+        correlation_id = request.state.correlation_id
+    except AttributeError:
+        correlation_id = uuid4().hex
     problem = ProblemDetail(
         type=mapping.type_uri,
         title=mapping.title or _status_title(mapping.status_code),

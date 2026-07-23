@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import logging
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -87,3 +88,62 @@ async def test_log_function_boundary_preserves_async_error_and_logs_it(caplog):
         "function_error",
     ]
     assert records[-1].exc_info is not None
+
+
+def test_log_function_boundary_skips_info_calls_when_info_is_disabled(caplog):
+    logger = logging.getLogger(__name__)
+
+    @log_function_boundary("disabled-info-example")
+    def example() -> str:
+        return "result"
+
+    with (
+        caplog.at_level(logging.WARNING, logger=__name__),
+        patch.object(logger, "info") as info,
+    ):
+        assert example() == "result"
+
+    info.assert_not_called()
+
+
+def test_log_function_boundary_still_logs_errors_when_info_is_disabled(caplog):
+    @log_function_boundary("disabled-info-error-example")
+    def example() -> None:
+        raise RuntimeError("expected failure")
+
+    with (
+        caplog.at_level(logging.WARNING, logger=__name__),
+        pytest.raises(RuntimeError, match="expected failure"),
+    ):
+        example()
+
+    records = [
+        record
+        for record in caplog.records
+        if record.function_event == "disabled-info-error-example"
+    ]
+    assert [record.getMessage() for record in records] == ["function_error"]
+    assert records[0].exc_info is not None
+
+
+def test_log_function_boundary_observes_level_changes_during_call(caplog):
+    logger = logging.getLogger(__name__)
+
+    @log_function_boundary("dynamic-level-example")
+    def example() -> None:
+        logger.setLevel(logging.INFO)
+
+    original_level = logger.level
+    try:
+        logger.setLevel(logging.WARNING)
+        with caplog.at_level(logging.INFO, logger=""):
+            example()
+    finally:
+        logger.setLevel(original_level)
+
+    records = [
+        record
+        for record in caplog.records
+        if record.function_event == "dynamic-level-example"
+    ]
+    assert [record.getMessage() for record in records] == ["function_end"]
