@@ -15,9 +15,7 @@ from pydantic_settings import (
 from fastapi_core.function_logging import log_function_boundary
 
 
-_CSV_LIST_FIELDS = frozenset(
-    {"cors_origins", "enabled_services", "required_services"}
-)
+_CSV_LIST_FIELDS = ("cors_origins", "enabled_services", "required_services")
 
 
 class _AppEnvSettingsSource(EnvSettingsSource):
@@ -125,6 +123,17 @@ class AppConfig(BaseSettings):
         default=False,
         validation_alias=AliasChoices("log_force", "APP_LOG_FORCE"),
     )
+    access_log_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("access_log_enabled", "ACCESS_LOG_ENABLED"),
+    )
+    access_log_health_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "access_log_health_enabled",
+            "ACCESS_LOG_HEALTH_ENABLED",
+        ),
+    )
     enabled_services: list[str] = Field(
         default_factory=list,
         validation_alias=AliasChoices("enabled_services", "DOCMESH_SERVICES"),
@@ -152,7 +161,7 @@ class AppConfig(BaseSettings):
             file_secret_settings,
         )
 
-    @field_validator("cors_origins", "enabled_services", "required_services", mode="before")
+    @field_validator(*_CSV_LIST_FIELDS, mode="before")
     @classmethod
     @log_function_boundary()
     def _parse_csv_or_sequence(cls, value: Any) -> Any:

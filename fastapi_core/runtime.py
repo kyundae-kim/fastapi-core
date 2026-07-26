@@ -68,7 +68,6 @@ async def assemble_runtime(plan: RuntimePlan | None) -> ServiceRuntime:
 
 @log_function_boundary()
 def configure_service_runtime(app: FastAPI, runtime: ServiceRuntime) -> None:
-    app.state.service_runtime = runtime
     readiness_registry = get_readiness_registry(app)
     required_services = {
         Service.parse(service).value for service in runtime.required_services
@@ -80,22 +79,32 @@ def configure_service_runtime(app: FastAPI, runtime: ServiceRuntime) -> None:
             sorted(Service.parse(service).value for service in missing_checks)
         )
         raise AttributeError(f"Runtime services do not expose callable checks: {names}")
-    for service, check in checks.items():
-        service_name = Service.parse(service).value
-        readiness_registry.register(
-            ReadinessCheckSpec(
-                name=service_name,
-                check=check,
-                required=service_name in required_services,
-                redact_errors=True,
-            )
+    readiness_specs = tuple(
+        ReadinessCheckSpec(
+            name=Service.parse(service).value,
+            check=check,
+            required=Service.parse(service).value in required_services,
+            redact_errors=True,
         )
+        for service, check in checks.items()
+    )
+    duplicate_names = {
+        spec.name for spec in readiness_specs if spec.name in readiness_registry.specs
+    }
+    if duplicate_names:
+        name = sorted(duplicate_names)[0]
+        raise ValueError(f"readiness check '{name}' is already registered")
+
+    for spec in readiness_specs:
+        readiness_registry.register(spec)
+
     keycloak_client = runtime.get(Service.KEYCLOAK)
     if isinstance(keycloak_client, ServiceClientWrapper):
         provider = keycloak_client.unwrap()
         if isinstance(provider, KeycloakAuthService):
             configure_keycloak_provider(provider)
             app.state.auth_provider = provider
+    app.state.service_runtime = runtime
 
 
 __all__ = [

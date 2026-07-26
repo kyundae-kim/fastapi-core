@@ -121,13 +121,11 @@ async def readiness(request: Request) -> HealthResponse | JSONResponse:
         if not detail.ok:
             failures.append((service.service, detail))
 
-    status_text: HealthStatus
-    if any(detail.required for _, detail in failures):
-        status_text = "error"
-    elif failures:
-        status_text = "degraded"
-    else:
-        status_text = "ok"
+    status_text: HealthStatus = (
+        "error"
+        if any(detail.required for _, detail in failures)
+        else "degraded" if failures else "ok"
+    )
 
     for service_name, detail in failures:
         _log_readiness_failure(service_name, detail, outcome=status_text)

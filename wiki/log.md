@@ -237,3 +237,34 @@
 - Refreshed entity and concept pages: entities/docmesh-py-core.md, concepts/application-integration-patterns.md, concepts/service-health-check-aggregation.md, concepts/keycloak-authentication-api.md, concepts/operational-logging-and-retry-utilities.md
 - Recorded the canonical preflight-to-async-runtime flow, NATS connection ownership/drain, direct SQLite scope, health/close error handling, Keycloak JWKS usage, and safe structured logging/retry examples.
 - No new page was needed because this source refreshed existing central topics; index.md remains current at 9 pages.
+
+## [2026-07-23] ingest | docmesh-py-core v0.5.0 API Reference
+- Captured immutable source: raw/articles/docmesh-py-core-api-reference-v0.5.0.md
+- Refreshed entity and concept pages: entities/docmesh-py-core.md, concepts/application-integration-patterns.md, concepts/service-configuration-contracts.md, concepts/service-health-check-aggregation.md, concepts/keycloak-authentication-api.md, concepts/operational-logging-and-retry-utilities.md, concepts/service-factory-registry.md
+- Recorded the 86-name package-root public contract, assembly-first runtime lifecycle, NATS ownership boundary, `validate_runtime_security()` coverage for Ollama, and the current Keycloak retry/error and health/cleanup semantics.
+- Updated index.md navigation date; no new page was needed because this source refreshed existing central topics.
+
+## [2026-07-23] ingest | docmesh-py-core v0.5.0 Configuration Guide
+- Captured immutable source: raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md
+- Refreshed entity and concept pages: entities/docmesh-py-core.md, concepts/service-configuration-contracts.md, concepts/application-integration-patterns.md, concepts/keycloak-authentication-api.md, concepts/operational-logging-and-retry-utilities.md
+- Recorded the environment-only/no-arbitrary-kwargs boundary, typed parsing and selective loading, SDK-applied PostgreSQL/SQLite/MinIO/Milvus/Ollama/Langfuse/NATS settings, `RuntimePlan.healthcheck` startup policy, and expanded production TLS/certificate guardrails.
+- No new page was needed because this source refreshed existing central topics; index.md remains current at 9 pages.
+
+## [2026-07-23] ingest | docmesh-py-core v0.5.0 Examples
+- Captured immutable source: raw/articles/docmesh-py-core-examples-guide-v0.5.0.md
+- Refreshed entity and concept pages: entities/docmesh-py-core.md, concepts/application-integration-patterns.md, concepts/service-health-check-aggregation.md, concepts/keycloak-authentication-api.md, concepts/operational-logging-and-retry-utilities.md
+- Recorded the preflight-to-async-runtime lifecycle, direct SQLite cleanup, production/authenticated presets, required-versus-optional health behavior, NATS persistent-connection ownership, Keycloak grant/JWKS usage, and structured-log masking boundary.
+- No new page was needed because this source refreshed existing central topics; index.md remains current at 9 pages.
+
+## [2026-07-23] ingest | docmesh-py-core main .env.example
+- Captured immutable source: raw/articles/docmesh-py-core-env-example-main.md
+- Refreshed concepts/service-configuration-contracts.md.
+- Recorded the current template's selected-service loading guidance, placeholder/secret handling, per-service configuration coverage, and `RuntimePlan.healthcheck` startup-policy boundary.
+- No new page was needed because this source corroborates the existing configuration contract; index.md remains current at 9 pages.
+
+## [2026-07-23] update | fastapi-core docmesh-py-core v0.5.0 adoption
+- Updated `pyproject.toml` Git source revision from `v0.4.0` to `v0.5.0`.
+- Corrected `entities/docmesh-py-core.md` to cite the v0.5.0 API inventory and current runtime/NATS lifecycle example.
+- Verified the installed package reports `0.5.0` with 86 unique root exports and the v0.5.0 assembly signatures.
+- Verification command: `.venv/bin/pytest -q` → `166 passed, 1 skipped, 1 warning in 21.98s`.
+- `uv lock` remains blocked by pre-existing merge-conflict markers in `uv.lock`; the lockfile was not modified.

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -54,6 +56,16 @@ class FailingAuthProvider(FakeAuthProvider):
         raise self.exc
 
 
+class ThreadRecordingAuthProvider(FakeAuthProvider):
+    def fetch_access_token(self, *, scope=None, username=None, password=None):
+        self.thread_id = threading.get_ident()
+        return super().fetch_access_token(
+            scope=scope,
+            username=username,
+            password=password,
+        )
+
+
 def test_token_issue_errors_are_table_driven():
     assert {error_type for error_type, _ in auth_module._TOKEN_ISSUE_ERRORS} == {
         KeycloakTokenAuthenticationError,
@@ -82,6 +94,24 @@ def test_token_endpoint_returns_token_response(auth_app_factory):
     assert provider.scope == "openid profile"
     assert provider.username == "alice"
     assert provider.password == "secret"
+
+
+@pytest.mark.asyncio
+async def test_issue_token_offloads_synchronous_provider_call():
+    provider = ThreadRecordingAuthProvider()
+    form_data = SimpleNamespace(
+        scopes=["openid", "profile"],
+        username="alice",
+        password="secret",
+    )
+
+    response = await auth_module.issue_token(
+        form_data=form_data,
+        provider=provider,
+    )
+
+    assert response.access_token == "access-token"
+    assert provider.thread_id != threading.get_ident()
 
 
 

@@ -71,7 +71,7 @@ uv add "fastapi-core @ git+https://github.com/kyundae-kim/fastapi-core.git"
 재현 가능한 배포에서는 기본 브랜치 대신 tag 또는 commit을 고정합니다.
 
 ```bash
-uv add "git+https://github.com/kyundae-kim/fastapi-core.git@v0.5.0"
+uv add "git+https://github.com/kyundae-kim/fastapi-core.git@v0.6.0"
 ```
 
 앱 설정은 `.env` 파일을 자동으로 읽지 않고 프로세스 환경변수에서 읽습니다. `.env.example`은 설정 키의 예시이며, 컨테이너 환경·배포 플랫폼·실행 도구를 통해 필요한 값을 환경변수로 주입해야 합니다. 상세 계약은 `docs/config.md`를 참고하세요.
@@ -160,6 +160,7 @@ async def me(
 - `/health/liveness`는 `{"status": "ok", "details": null}`를 반환합니다.
 - `/health/readiness`는 `app.state.readiness_registry`와 `app.state.config`를 사용합니다.
 - 기본 `create_app()` 경로에서는 조립된 runtime client의 readiness check를 자동 등록합니다.
+- runtime check가 누락되거나 기존 readiness 이름과 충돌하면 runtime과 registry를 부분 갱신하지 않고 구성을 거부합니다.
 - sync/async readiness check를 함께 실행할 수 있으며 필수 실패 시에도 전체 서비스 details를 보존합니다.
 - per-service timeout은 해당 서비스 실패로 변환되고, overall timeout은 `503 + status="error"`로 반환됩니다.
 - 필수 서비스 실패 시 `503`, 선택 서비스만 실패 시 `200 + degraded`, 모두 성공 시 `200 + ok`를 반환합니다.

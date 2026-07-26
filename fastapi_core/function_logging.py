@@ -18,37 +18,42 @@ def log_function_boundary(
     def decorator(func: Callable[P, T]) -> Callable[P, T]:
         logger = logging.getLogger(func.__module__)
         event_name = event or f"{func.__module__}.{func.__qualname__}"
+        log_extra = {"function_event": event_name}
 
         if inspect.iscoroutinefunction(func):
 
             @wraps(func)
             async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-                logger.info("function_start", extra={"function_event": event_name})
+                if logger.isEnabledFor(logging.INFO):
+                    logger.info("function_start", extra=log_extra)
                 try:
                     result = await cast(Callable[P, Any], func)(*args, **kwargs)
                 except Exception:
                     logger.exception(
                         "function_error",
-                        extra={"function_event": event_name},
+                        extra=log_extra,
                     )
                     raise
-                logger.info("function_end", extra={"function_event": event_name})
+                if logger.isEnabledFor(logging.INFO):
+                    logger.info("function_end", extra=log_extra)
                 return cast(T, result)
 
             return cast(Callable[P, T], async_wrapper)
 
         @wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            logger.info("function_start", extra={"function_event": event_name})
+            if logger.isEnabledFor(logging.INFO):
+                logger.info("function_start", extra=log_extra)
             try:
                 result = func(*args, **kwargs)
             except Exception:
                 logger.exception(
                     "function_error",
-                    extra={"function_event": event_name},
+                    extra=log_extra,
                 )
                 raise
-            logger.info("function_end", extra={"function_event": event_name})
+            if logger.isEnabledFor(logging.INFO):
+                logger.info("function_end", extra=log_extra)
             return result
 
         return cast(Callable[P, T], wrapper)
