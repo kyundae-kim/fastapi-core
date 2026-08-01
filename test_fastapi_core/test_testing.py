@@ -37,6 +37,17 @@ def test_testing_empty_runtime_uses_production_canonical_helper():
     assert testing_module.create_empty_runtime is runtime_module.create_empty_runtime
 
 
+def test_create_empty_runtime_delegates_to_docmesh_helper(monkeypatch):
+    sentinel = object()
+    monkeypatch.setattr(
+        runtime_module,
+        "create_empty_service_runtime",
+        lambda: sentinel,
+    )
+
+    assert runtime_module.create_empty_runtime() is sentinel
+
+
 def test_resource_lifecycle_probe_exercises_real_app_lifespan_and_readiness():
     value = object()
     probe = ResourceLifecycleProbe(value=value)

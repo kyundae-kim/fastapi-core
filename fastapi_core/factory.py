@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from docmesh_py_core import RuntimePlan, Service, ServiceRuntime, diagnose_services
+from docmesh_config import RuntimePlan, diagnose_services
+from docmesh_py_core import ServiceRuntime
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
@@ -99,6 +100,13 @@ def _validate_routes(routers: Sequence[APIRouter]) -> None:
 
 
 @log_function_boundary()
+def _register_extension_name(names: set[str], name: str) -> None:
+    if name in names:
+        raise ValueError(f"extension name '{name}' is already registered")
+    names.add(name)
+
+
+@log_function_boundary()
 def _validate_extension_names(
     resources: Sequence[ManagedResource[Any]],
     checks: Sequence[ReadinessCheckSpec],
@@ -107,20 +115,12 @@ def _validate_extension_names(
 ) -> None:
     names: set[str] = set()
     for resource in resources:
-        name = _resource_name(resource)
-        if name in names:
-            raise ValueError(f"extension name '{name}' is already registered")
-        names.add(name)
+        _register_extension_name(names, _resource_name(resource))
     for spec in checks:
-        if spec.name in names:
-            raise ValueError(f"extension name '{spec.name}' is already registered")
-        names.add(spec.name)
+        _register_extension_name(names, spec.name)
     if runtime is not None:
         for service in runtime.checks:
-            name = Service.parse(service).value
-            if name in names:
-                raise ValueError(f"extension name '{name}' is already registered")
-            names.add(name)
+            _register_extension_name(names, service.value)
     if runtime_plan is not None:
         planned_services = {service.value for service in runtime_plan.selected_services}
         duplicate_names = names.intersection(planned_services)

@@ -7,8 +7,8 @@ from contextlib import contextmanager
 from urllib.parse import urlparse
 
 import pytest
+from docmesh_config import Service
 from docmesh_py_core import (
-    Service,
     ServiceRuntime,
     create_keycloak_client,
     create_langfuse_client,
@@ -37,7 +37,6 @@ KEYCLOAK_REQUIRED_ENV = (
 )
 
 NATS_REQUIRED_ENV = ("NATS_SERVERS",)
-MILVUS_REQUIRED_ENV = ("MILVUS_URI",)
 SQLITE_REQUIRED_ENV = ("SQLITE_PATH",)
 MINIO_REQUIRED_ENV = (
     "MINIO_ENDPOINT",
@@ -102,8 +101,8 @@ def _parse_minio_endpoint(endpoint: str) -> tuple[str | None, int | None]:
     return parsed.hostname, parsed.port or 9000
 
 
-def _parse_milvus_uri(uri: str) -> tuple[str | None, int | None]:
-    parsed = urlparse(uri if "://" in uri else f"//{uri}")
+def _parse_milvus_endpoint(endpoint: str) -> tuple[str | None, int | None]:
+    parsed = urlparse(endpoint if "://" in endpoint else f"//{endpoint}")
     return parsed.hostname, parsed.port or 19530
 
 
@@ -132,14 +131,26 @@ def require_nats_integration() -> None:
 
 def require_minio_integration() -> None:
     _require_env(MINIO_REQUIRED_ENV, label="minio")
-    host, port = _parse_minio_endpoint(os.environ["MINIO_ENDPOINT"])
+    endpoint = os.environ["MINIO_ENDPOINT"]
+    if "MINIO_SECURE" not in os.environ and not endpoint.lower().startswith(
+        "https://"
+    ):
+        os.environ["MINIO_SECURE"] = "false"
+    host, port = _parse_minio_endpoint(endpoint)
     if not _is_tcp_reachable(host, port):
         pytest.skip(f"minio integration target is not reachable at {host}:{port}")
 
 
 def require_milvus_integration() -> None:
-    _require_env(MILVUS_REQUIRED_ENV, label="milvus")
-    host, port = _parse_milvus_uri(os.environ["MILVUS_URI"])
+    endpoint = os.getenv("MILVUS_ENDPOINT")
+    if not endpoint:
+        legacy_endpoint = os.getenv("MILVUS_URI")
+        if legacy_endpoint:
+            os.environ["MILVUS_ENDPOINT"] = legacy_endpoint
+            endpoint = legacy_endpoint
+    if not endpoint:
+        pytest.skip("milvus integration env missing: MILVUS_ENDPOINT")
+    host, port = _parse_milvus_endpoint(endpoint)
     if not _is_tcp_reachable(host, port):
         pytest.skip(f"milvus integration target is not reachable at {host}:{port}")
 

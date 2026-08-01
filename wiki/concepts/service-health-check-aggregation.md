@@ -1,10 +1,10 @@
 ---
 title: Service health check aggregation
 created: 2026-06-25
-updated: 2026-07-23
+updated: 2026-08-01
 type: concept
 tags: [service, api, observability, test, implementation]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-api-reference-v0.4.0.md, raw/articles/docmesh-py-core-api-reference-v0.5.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-v0.4.0.md, raw/articles/docmesh-py-core-examples-guide-v0.5.0.md, fastapi_core/factory.py, fastapi_core/routers/health.py]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-api-reference-v0.4.0.md, raw/articles/docmesh-py-core-api-reference-v0.5.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-v0.4.0.md, raw/articles/docmesh-py-core-examples-guide-v0.5.0.md, raw/articles/docmesh-config-api-reference-v0.1.0.md, raw/articles/docmesh-config-configuration-v0.1.0.md, raw/articles/docmesh-config-examples-v0.1.0.md, raw/articles/docmesh-py-core-api-reference-v0.6.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.6.0.md, raw/articles/docmesh-py-core-examples-guide-v0.6.0.md, fastapi_core/factory.py, fastapi_core/routers/health.py]
 confidence: medium
 ---
 
@@ -26,6 +26,20 @@ v0.5.0 API 레퍼런스는 `HealthCheckResult`가 전체 `ok`와 서비스 결�
 ## Failure model
 
 필수 서비스가 실패하면 `HealthCheckError`가 발생한다. 비동기 lifecycle을 위해 `async_check_all_services()`도 동기·awaitable check를 함께 실행하고 per-service/overall timeout을 지원한다. 선택 서비스 실패도 aggregate `ok=False`에 반영하되, `HealthCheckError`는 필수 서비스 실패에만 발생하므로 두 운영 신호를 구분할 수 있다.^[raw/articles/docmesh-py-core-api-reference-v0.5.0.md]
+
+## Configuration diagnosis is not a health check
+
+`docmesh-config`의 `diagnose_services()`는 선택된 서비스의 환경변수 상태를 `absent`, `complete`, `partial`, `invalid`로 분류하지만 DNS, socket, 외부 API를 호출하지 않는다. `HealthcheckPolicy`도 timeout·retry·failure mode를 표현하는 metadata일 뿐 실제 상태 확인 실행기가 아니다.^[raw/articles/docmesh-config-api-reference-v0.1.0.md]^[raw/articles/docmesh-config-examples-v0.1.0.md]
+
+따라서 `docmesh-config`는 client 생성과 네트워크 health check 전에 수행하는 preflight 계층이고, 이 페이지의 `check_all_services()`/`async_check_all_services()`는 실제 연결 가능성과 latency를 보고하는 downstream runtime 계층이다. 두 결과를 하나의 `ok` 의미로 합치지 않고 환경 구성 오류와 외부 서비스 장애를 별도 운영 신호로 유지해야 한다.^[raw/articles/docmesh-config-configuration-v0.1.0.md]
+
+## v0.6.0 runtime policy and descriptors
+
+v0.6.0의 `ServiceRuntime.check_with_policy(policy)`는 runtime을 닫지 않고 즉시 상태 확인을 실행한다. `REPORT`는 최종 required failure result를 반환하고 `FAIL`은 `HealthCheckError`를 유지하므로, startup 실패 정책과 readiness endpoint의 응답 매핑을 명시적으로 선택할 수 있다.^[raw/articles/docmesh-py-core-api-reference-v0.6.0.md]^[raw/articles/docmesh-py-core-examples-guide-v0.6.0.md]
+
+`RuntimeHealthDescriptor`는 service, check callback, required flag를 immutable하게 묶고 runtime 생성 시 descriptor·handle·선택 서비스의 일관성을 검증한다. 따라서 health aggregation 입력은 임의 mapping뿐 아니라 assembly가 검증한 descriptor graph에서도 파생될 수 있다.^[raw/articles/docmesh-py-core-api-reference-v0.6.0.md]
+
+서비스별 timeout은 실패 status로 변환되지만 `overall_timeout_seconds` 초과는 partial result 없이 `asyncio.TimeoutError`로 전파될 수 있다. FastAPI readiness는 `HealthCheckError`와 전체 timeout을 모두 실패 응답으로 처리해야 한다.^[raw/articles/docmesh-py-core-api-reference-v0.6.0.md]^[raw/articles/docmesh-py-core-examples-guide-v0.6.0.md]
 
 - `parallel=False`에서는 입력 순서대로 순차 실행한다.
 - `parallel=True`에서는 `ThreadPoolExecutor`로 병렬 실행하지만 반환 순서는 입력 순서를 유지한다.

@@ -132,6 +132,8 @@ def get_langfuse_client(request: Request) -> Langfuse:
 @log_function_boundary()
 def get_nats_connection_builder(request: Request) -> NatsConnectionBuilder:
     client = _resolve_service_client(request, "nats")
+    if isinstance(client, ServiceClientWrapper):
+        client = client.unwrap()
     if not isinstance(client, NatsConnectionBuilder):
         raise _service_type_mismatch("nats", "NatsConnectionBuilder")
     return client

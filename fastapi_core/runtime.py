@@ -1,20 +1,35 @@
 from __future__ import annotations
 
-from docmesh_py_core import (
+from docmesh_config import (
     HealthcheckPolicy,
-    KeycloakAuthService,
     RuntimePlan,
     Service,
+)
+from docmesh_py_core import (
+    KeycloakAuthService,
     ServiceClientWrapper,
     ServiceRuntime,
     assemble_service_runtime,
-    load_service_configs,
+    create_empty_service_runtime,
 )
 from fastapi_core.function_logging import log_function_boundary
 from fastapi import FastAPI
 
 from fastapi_core.config import AppConfig
 from fastapi_core.readiness import ReadinessCheckSpec, get_readiness_registry
+
+
+@log_function_boundary()
+def _build_healthcheck_policy(config: AppConfig) -> HealthcheckPolicy:
+    return HealthcheckPolicy(
+        on_startup=config.startup_healthcheck,
+        parallel=config.readiness_parallel,
+        timeout_seconds=config.readiness_timeout_seconds,
+        overall_timeout_seconds=config.readiness_overall_timeout_seconds,
+        failure_mode=config.startup_failure_mode,
+        attempts=config.startup_healthcheck_attempts,
+        retry_delay_seconds=config.startup_healthcheck_retry_delay_seconds,
+    )
 
 
 @log_function_boundary()
@@ -31,15 +46,7 @@ def build_runtime_plan(config: AppConfig) -> RuntimePlan:
             tuple(Service.parse(service_name) for service_name in group)
             for group in config.service_alternatives
         ),
-        healthcheck=HealthcheckPolicy(
-            on_startup=config.startup_healthcheck,
-            parallel=config.readiness_parallel,
-            timeout_seconds=config.readiness_timeout_seconds,
-            overall_timeout_seconds=config.readiness_overall_timeout_seconds,
-            failure_mode=config.startup_failure_mode,
-            attempts=config.startup_healthcheck_attempts,
-            retry_delay_seconds=config.startup_healthcheck_retry_delay_seconds,
-        ),
+        healthcheck=_build_healthcheck_policy(config),
     )
 
 
@@ -51,12 +58,7 @@ def configure_keycloak_provider(provider: KeycloakAuthService) -> None:
 @log_function_boundary()
 def create_empty_runtime() -> ServiceRuntime:
     """Create the canonical runtime that owns no external service clients."""
-    return ServiceRuntime(
-        configs=load_service_configs(services=set()),
-        clients={},
-        selected_services=frozenset(),
-        required_services=frozenset(),
-    )
+    return create_empty_service_runtime()
 
 
 @log_function_boundary()
@@ -69,21 +71,19 @@ async def assemble_runtime(plan: RuntimePlan | None) -> ServiceRuntime:
 @log_function_boundary()
 def configure_service_runtime(app: FastAPI, runtime: ServiceRuntime) -> None:
     readiness_registry = get_readiness_registry(app)
-    required_services = {
-        Service.parse(service).value for service in runtime.required_services
-    }
+    required_services = runtime.required_services
     checks = runtime.checks
     missing_checks = runtime.selected_services.difference(checks)
     if missing_checks:
         names = ", ".join(
-            sorted(Service.parse(service).value for service in missing_checks)
+            sorted(service.value for service in missing_checks)
         )
         raise AttributeError(f"Runtime services do not expose callable checks: {names}")
     readiness_specs = tuple(
         ReadinessCheckSpec(
-            name=Service.parse(service).value,
+            name=service.value,
             check=check,
-            required=Service.parse(service).value in required_services,
+            required=service in required_services,
             redact_errors=True,
         )
         for service, check in checks.items()

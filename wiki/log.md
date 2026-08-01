@@ -268,3 +268,18 @@
 - Verified the installed package reports `0.5.0` with 86 unique root exports and the v0.5.0 assembly signatures.
 - Verification command: `.venv/bin/pytest -q` → `166 passed, 1 skipped, 1 warning in 21.98s`.
 - `uv lock` remains blocked by pre-existing merge-conflict markers in `uv.lock`; the lockfile was not modified.
+
+## [2026-08-01] ingest | docmesh-config v0.1.0 documentation
+- Captured immutable sources: `raw/articles/docmesh-config-api-reference-v0.1.0.md`, `raw/articles/docmesh-config-configuration-v0.1.0.md`, `raw/articles/docmesh-config-examples-v0.1.0.md`, `raw/articles/docmesh-config-env-example-v0.1.0.md`.
+- Created `entities/docmesh-config.md` for the environment-only configuration, selective loading, service diagnosis, runtime-plan metadata, and security boundary.
+- Refreshed `entities/docmesh-py-core.md`, `concepts/service-configuration-contracts.md`, `concepts/application-integration-patterns.md`, and `concepts/service-health-check-aggregation.md` with the distinction between configuration preflight and client/runtime health execution.
+- Updated `index.md` to 10 pages.
+- Verified source retrieval from the requested GitHub wiki/blob URLs; raw body SHA-256 values are recorded in each source frontmatter.
+
+## [2026-08-01] ingest | docmesh-py-core v0.6.0 documentation
+- Captured immutable sources: `raw/articles/docmesh-py-core-api-reference-v0.6.0.md`, `raw/articles/docmesh-py-core-configuration-guide-v0.6.0.md`, `raw/articles/docmesh-py-core-examples-guide-v0.6.0.md`, `raw/articles/docmesh-py-core-env-example-v0.6.0.md`.
+- Created `concepts/service-catalog-and-configuration-document-generation.md` for `SERVICE_CATALOG`, environment/configuration document generation, and metadata boundaries.
+- Refreshed `entities/docmesh-py-core.md`, `entities/docmesh-config.md`, `concepts/service-configuration-contracts.md`, `concepts/application-integration-patterns.md`, `concepts/service-health-check-aggregation.md`, `concepts/keycloak-authentication-api.md`, `concepts/operational-logging-and-retry-utilities.md`, and `concepts/service-factory-registry.md`.
+- Recorded the v0.6.0 canonical package split (`docmesh_config` for settings/plans; `docmesh_py_core` for factories/runtime), `service_lifespan`, runtime health descriptors/policies, structured error serialization, lifecycle observers, and catalog generation.
+- Verified `pyproject.toml` pins `docmesh-config` v0.1.0 and `docmesh-py-core` v0.6.0; `uv run python` reports installed versions 0.1.0/0.6.0 and 69 `docmesh_py_core` root exports.
+- Updated `index.md` to 11 pages.

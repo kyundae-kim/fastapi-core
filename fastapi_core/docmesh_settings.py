@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 from fastapi_core.function_logging import log_function_boundary
-from docmesh_py_core import ServiceConfigs, load_service_configs
+from docmesh_config import ServiceConfigs, load_service_configs
 
 
 @lru_cache(maxsize=1)
