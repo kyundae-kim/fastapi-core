@@ -1,7 +1,7 @@
 ---
 title: Service configuration contracts
 created: 2026-06-25
-updated: 2026-08-01
+updated: 2026-08-02
 type: concept
 tags: [config, contract, integration, implementation, security]
 sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-api-reference-v0.4.0.md, raw/articles/docmesh-py-core-api-reference-v0.5.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md, raw/articles/docmesh-py-core-env-example-v0.3.0.md, raw/articles/docmesh-py-core-env-example-main.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md, raw/articles/docmesh-config-api-reference-v0.1.0.md, raw/articles/docmesh-config-configuration-v0.1.0.md, raw/articles/docmesh-config-examples-v0.1.0.md, raw/articles/docmesh-config-env-example-v0.1.0.md, raw/articles/docmesh-py-core-api-reference-v0.6.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.6.0.md, raw/articles/docmesh-py-core-examples-guide-v0.6.0.md, raw/articles/docmesh-py-core-env-example-v0.6.0.md]
@@ -94,3 +94,4 @@ v0.6.0 문서는 설정·plan·service enum을 `docmesh_config`에서 import하�
 - [[service-factory-registry]]: examples 기반 registry 패턴과 direct factory 패턴의 차이가 이 계약 해석에 영향을 준다.
 - [[keycloak-authentication-api]]: Keycloak 관련 환경변수와 운영 보안 원칙은 별도 중요도를 가진다.
 - [[operational-logging-and-retry-utilities]]: 로그 레벨 초기화와 민감정보 마스킹도 동일한 운영 계약의 일부다.
+- [[docmesh-config-consumer-implementation-minimization]]: consumer가 환경변수·plan·진단 계약을 재구현하지 않도록 하는 개선 우선순위

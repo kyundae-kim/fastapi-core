@@ -1,7 +1,7 @@
 ---
 title: docmesh-py-core
 created: 2026-06-25
-updated: 2026-08-01
+updated: 2026-08-02
 type: entity
 tags: [module, api, integration, implementation]
 sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-api-reference-v0.4.0.md, raw/articles/docmesh-py-core-api-reference-v0.5.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-v0.4.0.md, raw/articles/docmesh-py-core-examples-guide-v0.5.0.md, raw/articles/docmesh-config-api-reference-v0.1.0.md, raw/articles/docmesh-config-configuration-v0.1.0.md, raw/articles/docmesh-config-examples-v0.1.0.md, raw/articles/docmesh-config-env-example-v0.1.0.md, raw/articles/docmesh-py-core-api-reference-v0.6.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.6.0.md, raw/articles/docmesh-py-core-examples-guide-v0.6.0.md, raw/articles/docmesh-py-core-env-example-v0.6.0.md, pyproject.toml]
@@ -49,5 +49,7 @@ v0.6.0 예제는 `service_lifespan(plan=...)`이 runtime을 생성·종료하도
 v0.6.0 예시는 `RuntimePlan`으로 `ServiceRuntime`을 조립하고 `service_lifespan()`이 정상·예외 종료 모두에서 runtime cleanup을 소유하도록 한다. NATS builder가 별도로 만든 persistent connection은 애플리케이션이 직접 `drain()`해야 하며, catalog metadata와 generated reference는 client 연결을 실행하지 않는다.^[raw/articles/docmesh-py-core-examples-guide-v0.6.0.md]^[raw/articles/docmesh-py-core-api-reference-v0.6.0.md]
 
 즉 이 엔티티 페이지는 SDK capability 자체를 설명하고, 저장소별 채택 범위 판정은 [[docmesh-py-core-vs-fastapi-core-usage-comparison]] 같은 비교 페이지에서 별도 검증하는 구조가 맞다.
+
+소비자 구현 소스를 줄이기 위한 다음 개선 우선순위는 [[docmesh-py-core-consumer-implementation-minimization]]에서 runtime health registry, generic resource lifecycle, operation policy, auth domain helper 관점으로 별도 분석했다.
 
 `docmesh-config` v0.1.0은 설정 모델·환경 진단·runtime-plan 메타데이터를 별도 패키지로 소유하고, `docmesh-py-core` v0.6.0은 그 검증된 설정을 받아 factory·container·lifecycle·health를 제공한다. 현재 fastapi-core의 `pyproject.toml`과 설치 환경은 두 package를 각각 v0.1.0/v0.6.0으로 pin하고 있으므로, 이전 v0.5.0 adoption 기록은 historical baseline으로 읽어야 한다.^[raw/articles/docmesh-config-api-reference-v0.1.0.md]^[raw/articles/docmesh-py-core-api-reference-v0.6.0.md]^[pyproject.toml]

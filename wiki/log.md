@@ -283,3 +283,21 @@
 - Recorded the v0.6.0 canonical package split (`docmesh_config` for settings/plans; `docmesh_py_core` for factories/runtime), `service_lifespan`, runtime health descriptors/policies, structured error serialization, lifecycle observers, and catalog generation.
 - Verified `pyproject.toml` pins `docmesh-config` v0.1.0 and `docmesh-py-core` v0.6.0; `uv run python` reports installed versions 0.1.0/0.6.0 and 69 `docmesh_py_core` root exports.
 - Updated `index.md` to 11 pages.
+
+## [2026-08-02] query | docmesh-py-core consumer implementation minimization
+- Re-read orientation files: `SCHEMA.md`, `index.md`, recent `log.md`.
+- Inspected current `docmesh-py-core` v0.6.0 / `docmesh-config` v0.1.0 APIs and live consumer adapters in `fastapi_core/`.
+- Verification command: `uv run --frozen pytest -q` → `218 passed, 1 skipped, 1 warning`.
+- Filed query: `queries/docmesh-py-core-consumer-implementation-minimization.md`.
+- Refreshed wiki links in `entities/docmesh-py-core.md` and `concepts/application-integration-patterns.md`.
+- Updated `index.md` to 12 pages.
+- Integrity scan: 12 indexed pages, no broken/orphan wikilinks, all page frontmatter/tags valid; four pre-existing raw SHA-256 mismatches were reported without modifying immutable raw files.
+
+## [2026-08-02] query | docmesh-config consumer implementation minimization
+- Re-read orientation files: `SCHEMA.md`, `index.md`, recent `log.md`.
+- Inspected `docmesh-config` v0.1.0 API/docs and live package sources for settings, loading, diagnosis, runtime plans, metadata, and structured errors.
+- Inspected consumer configuration/plan adapters: `fastapi_core/config.py`, `fastapi_core/docmesh_settings.py`, `fastapi_core/runtime.py`, `fastapi_core/factory.py`, and related tests.
+- Verification baseline: `.venv/bin/pytest -q` → `218 passed, 1 skipped, 1 warning`.
+- Filed query: `queries/docmesh-config-consumer-implementation-minimization.md`.
+- Refreshed links in `entities/docmesh-config.md`, `concepts/service-configuration-contracts.md`, `concepts/application-integration-patterns.md`, and the related Py Core query.
+- Updated `index.md` to 13 pages.

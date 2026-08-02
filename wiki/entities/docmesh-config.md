@@ -1,7 +1,7 @@
 ---
 title: docmesh-config
 created: 2026-08-01
-updated: 2026-08-01
+updated: 2026-08-02
 type: entity
 tags: [module, config, api, contract, security, integration, implementation]
 sources: [raw/articles/docmesh-config-api-reference-v0.1.0.md, raw/articles/docmesh-config-configuration-v0.1.0.md, raw/articles/docmesh-config-examples-v0.1.0.md, raw/articles/docmesh-config-env-example-v0.1.0.md, raw/articles/docmesh-py-core-api-reference-v0.6.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.6.0.md, raw/articles/docmesh-py-core-examples-guide-v0.6.0.md, raw/articles/docmesh-py-core-env-example-v0.6.0.md]
@@ -43,3 +43,4 @@ v0.6.0 예제의 `service_lifespan()`과 `SERVICE_CATALOG`는 이 분리를 실�
 - [[service-health-check-aggregation]]: 정책/환경 진단과 실제 외부 서비스 health check의 구분
 - [[docmesh-py-core]]: client·runtime capability를 제공하는 인접 DocMesh 백엔드 라이브러리
 - [[service-catalog-and-configuration-document-generation]]: 설정 metadata와 generated reference/template 경계
+- [[docmesh-config-consumer-implementation-minimization]]: one-pass configuration snapshot, plan builder, generic access, config catalog 개선안

@@ -1,7 +1,7 @@
 ---
 title: Application integration patterns
 created: 2026-06-29
-updated: 2026-08-01
+updated: 2026-08-02
 type: concept
 tags: [integration, workflow, implementation, observability]
 sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-api-reference-v0.4.0.md, raw/articles/docmesh-py-core-api-reference-v0.5.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-v0.4.0.md, raw/articles/docmesh-py-core-examples-guide-v0.5.0.md, raw/articles/docmesh-config-api-reference-v0.1.0.md, raw/articles/docmesh-config-configuration-v0.1.0.md, raw/articles/docmesh-config-examples-v0.1.0.md, raw/articles/docmesh-config-env-example-v0.1.0.md, raw/articles/docmesh-py-core-api-reference-v0.6.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.6.0.md, raw/articles/docmesh-py-core-examples-guide-v0.6.0.md, raw/articles/docmesh-py-core-env-example-v0.6.0.md]
@@ -63,3 +63,7 @@ readiness/liveness 용도에서는 `check_all_services()` 결과를 `{ok, servic
 Keycloak 예시는 `password` grant 사용자 credential을 설정 객체에 고정하지 않고 토큰 요청 시점 인자로 전달하는 방식을 권장한다. 로깅 예시는 `configure_logging()`과 `DOCMESH_LOG_LEVEL` 기반 초기화를 보여주며, direct factory 경로에서는 여러 optional client 정리를 `close_service_clients()`로 통일할 수 있다.^[raw/articles/docmesh-py-core-examples-guide-2026.md]
 
 이런 지침은 [[keycloak-authentication-api]]와 [[operational-logging-and-retry-utilities]]의 운영 원칙을 실제 코드 형태로 구체화한 것이다.
+
+현재 consumer adapter의 반복 구현을 줄이는 framework-neutral 개선안은 [[docmesh-py-core-consumer-implementation-minimization]]에 정리했다.
+
+설정 로딩·plan 생성·preflight 중복을 줄이는 docmesh-config 측 개선안은 [[docmesh-config-consumer-implementation-minimization]]에 정리했다.

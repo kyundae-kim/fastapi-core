@@ -2,7 +2,7 @@
 
 > Content catalog. Every wiki page listed under its type with a one-line summary.
 > Read this first to find relevant pages for any query.
-> Last updated: 2026-08-01 | Total pages: 11
+> Last updated: 2026-08-02 | Total pages: 13
 
 ## Entities
 <!-- Alphabetical within section -->
@@ -24,5 +24,7 @@
 
 ## Queries
 
+- [[docmesh-config-consumer-implementation-minimization]] - 환경변수·plan·preflight·설정 catalog 중복을 줄이기 위한 docmesh-config 개선 우선순위.
+- [[docmesh-py-core-consumer-implementation-minimization]] - FastAPI 소비자 구현 소스를 줄이기 위한 health registry, generic resource lifecycle, operation policy, auth/NATS 개선 우선순위.
 - [[docmesh-py-core-vs-fastapi-core-usage-comparison]] - docmesh-py-core v0.2.0과 대조해 P0~P2 async lifecycle, assembly, timeout, 대안 서비스, rollback 반영을 정리한 비교.
 - [[fastapi-core-prd-vs-source-code-comparison]] - PRD v0.4 capability를 현재 소스·테스트와 대조하고 P0~P2 정렬 상태와 제품별 잔여 과제를 정리한 비교.
