@@ -1,6 +1,6 @@
 # fastapi-core API Reference
 
-> 기준 릴리스: `fastapi-core 0.6.0`
+> 기준 릴리스: `fastapi-core 0.7.0`
 >
 > 상태: current-implementation
 >

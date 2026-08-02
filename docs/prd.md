@@ -2,7 +2,7 @@
 
 > 문서 리비전: 2026-08-02
 >
-> 기준 릴리스: `fastapi-core 0.6.0`
+> 기준 릴리스: `fastapi-core 0.7.0`
 >
 > 상태: current-implementation
 >

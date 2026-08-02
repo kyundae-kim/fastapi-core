@@ -2,7 +2,7 @@
 
 > 문서 리비전: 2026-08-02
 >
-> 기준 릴리스: `fastapi-core 0.6.0`
+> 기준 릴리스: `fastapi-core 0.7.0`
 >
 > 상태: current-implementation
 >
@@ -23,9 +23,9 @@
 ### 1.2 시스템 경계
 
 - **SRS-SYS-001** `fastapi-core`는 FastAPI 앱 조립, router 등록, dependency 제공, HTTP middleware, 오류 응답 및 lifespan 통합을 소유해야 한다.
-- **SRS-SYS-002** `docmesh-py-core`는 서비스 설정, `RuntimePlan`, `ServiceRuntime`, 서비스 client 조립·점검·종료 및 민감 정보 마스킹을 소유해야 한다.
+- **SRS-SYS-002** `docmesh-config`는 서비스 설정 모델·로더, `Service`, `RuntimePlan`, `HealthcheckPolicy` 및 네트워크 연결 전 사전 진단을 소유해야 하며, `docmesh-py-core`는 `ServiceRuntime`, 서비스 client 조립·점검·종료 및 민감 정보 마스킹을 소유해야 한다.
 - **SRS-SYS-003** 소비 애플리케이션은 도메인 router와 schema, 사용자 정의 lifespan, 서비스 고유 자원 및 도메인 오류 매핑을 소유해야 한다.
-- **SRS-SYS-004** `fastapi-core`는 Python `>=3.11`과 프로젝트가 선언한 FastAPI 및 DocMesh Py Core 버전 범위에서 동작해야 한다.
+- **SRS-SYS-004** `fastapi-core`는 Python `>=3.11`과 프로젝트가 선언한 FastAPI 의존성, `docmesh-config v0.1.0`, `docmesh-py-core v0.6.0` 조합에서 동작해야 한다.
 
 ---
 
@@ -117,6 +117,7 @@ create_app(
 - **SRS-CFG-003** 개별·전체 readiness timeout은 지정 시 양수, startup healthcheck 시도 횟수는 1 이상, 재시도 간격은 0 이상이어야 한다.
 - **SRS-CFG-004** CORS origin, 활성 서비스 및 필수 서비스 환경변수는 CSV를 지원해야 한다. 환경변수의 빈 문자열은 빈 목록으로 해석하되 Python 생성자에 직접 전달한 빈 문자열은 거부해야 한다.
 - **SRS-CFG-005** 대체 서비스 그룹 환경변수는 세미콜론으로 그룹을, 쉼표로 그룹 내 서비스를 구분해야 하며 빈 그룹과 빈 항목은 제거해야 한다.
+- **SRS-CFG-006** 앱 계층 `AppConfig`와 DocMesh 서비스 설정(`ServiceConfigs`)의 소유 경계가 분명해야 하며, 서비스 설정 로딩은 `docmesh-config` 경로를 사용하고 앱은 현재 `ServiceRuntime.configs`를 통해 이를 제공해야 한다.
 
 ### 3.2 Runtime 계획과 연결
 
@@ -179,7 +180,7 @@ create_app(
 - **SRS-READY-006** 하위 이름과 동일한 spec이 있으면 exact match를 우선하고, 없으면 최상위 parent spec으로 required·timeout·redaction 정책을 해석해야 한다.
 - **SRS-READY-007** 필수 check가 실패해도 완료된 선택·성공 check 결과를 보존해야 한다.
 - **SRS-READY-008** registry는 설정에 따라 순차 또는 병렬 실행과 전체 timeout을 지원해야 한다.
-- **SRS-READY-009** `HealthOutcome` protocol 또는 명시적 adapter는 `bool`, 기존 `HealthCheckResult`, `ok`·`detail`·`error`를 가진 SDK health 결과를 공통 readiness 결과로 정규화해야 한다. adapter가 없는 opaque legacy sentinel은 0.6.0 호환을 위해 성공 sentinel로 허용한다.
+- **SRS-READY-009** `HealthOutcome` protocol 또는 명시적 adapter는 `bool`, 기존 `HealthCheckResult`, `ok`·`detail`·`error`를 가진 SDK health 결과를 공통 readiness 결과로 정규화해야 한다. adapter가 없는 opaque legacy sentinel은 0.6.x 호환을 위해 성공 sentinel로 허용한다.
 - **SRS-READY-010** sync·async check와 adapter는 동일한 timeout·redaction·required 정책을 사용해야 하며, `ok=False` 결과는 예외와 같은 readiness failure로 처리해야 한다.
 
 ### 5.2 HTTP health 계약
@@ -343,6 +344,6 @@ create_app(
 
 ### 11.3 구현 상태
 
-- 이 문서의 모든 요구사항은 `fastapi-core 0.6.0` 현재 구현 계약이며, 2026-08-02에 구현·회귀 검증된 promoted extension을 포함한다.
+- 이 문서의 모든 요구사항은 `fastapi-core 0.7.0` 현재 구현 계약이다. `invoke_resource`, `ResourceBinding`, readiness result adapter, exception mapping table, transport policy, managed streaming 및 application contract profile을 포함한다.
 - 미래 기능, 우선순위 backlog 및 릴리스 이력은 현재 구현 요구사항과 혼합하지 않는다.
 - 제품 수준 완료 조건은 `docs/prd.md`, 구체 소프트웨어 수용 기준은 이 문서를 기준으로 판정한다.

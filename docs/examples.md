@@ -1,6 +1,6 @@
 # fastapi-core 사용 예제
 
-이 문서는 현재 구현된 `fastapi-core 0.6.0` API를 기준으로 한다. 전체 API surface는 [`api.md`](api.md), 수용 기준은 [`srs.md`](srs.md)를 참조한다.
+이 문서는 현재 구현된 `fastapi-core 0.7.0` API를 기준으로 한다. 전체 API surface는 [`api.md`](api.md), 수용 기준은 [`srs.md`](srs.md)를 참조한다.
 
 ## ResourceBinding과 module
 
