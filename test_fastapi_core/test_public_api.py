@@ -20,13 +20,22 @@ from fastapi_core.readiness import get_readiness_registry
 
 ROOT_EXPORTS = {
     "DomainModule",
+    "DomainModuleProvider",
     "ErrorMapperSpec",
     "ErrorMapping",
     "ErrorRenderer",
+    "ExceptionMappingTable",
+    "HealthOutcome",
+    "HealthResultAdapter",
     "ManagedResource",
+    "ManagedStreamingResponse",
     "ReadinessCheckSpec",
+    "ResourceBinding",
     "ResourceKey",
+    "TransportPolicy",
     "create_app",
+    "create_error_renderer",
+    "invoke_resource",
     "register_error_mapper",
     "register_readiness_check",
 }
@@ -101,6 +110,8 @@ def test_create_app_signature_is_stable():
         ("error_mappers", Parameter.KEYWORD_ONLY, ()),
         ("error_renderer", Parameter.KEYWORD_ONLY, None),
         ("auth_provider", Parameter.KEYWORD_ONLY, None),
+        ("transport_policy", Parameter.KEYWORD_ONLY, None),
+        ("error_mapping_table", Parameter.KEYWORD_ONLY, None),
     ]
 
 
@@ -111,11 +122,13 @@ def test_runtime_extension_contracts_are_stable():
         "required",
         "timeout_seconds",
         "redact_errors",
+        "health_result_adapter",
     ]
     assert _field_defaults(fastapi_core.ReadinessCheckSpec) == {
         "required": True,
         "timeout_seconds": None,
         "redact_errors": True,
+        "health_result_adapter": None,
     }
 
     assert [field.name for field in fields(fastapi_core.ManagedResource)] == [
@@ -126,6 +139,7 @@ def test_runtime_extension_contracts_are_stable():
         "required",
         "readiness_timeout_seconds",
         "redact_errors",
+        "health_result_adapter",
     ]
     assert _field_defaults(fastapi_core.ManagedResource) == {
         "healthcheck": None,
@@ -133,6 +147,7 @@ def test_runtime_extension_contracts_are_stable():
         "required": True,
         "readiness_timeout_seconds": None,
         "redact_errors": True,
+        "health_result_adapter": None,
     }
 
     assert [field.name for field in fields(fastapi_core.ErrorMapping)] == [
@@ -161,6 +176,7 @@ def test_extension_function_signatures_are_stable():
         ("required", Parameter.KEYWORD_ONLY, True),
         ("timeout_seconds", Parameter.KEYWORD_ONLY, None),
         ("redact_errors", Parameter.KEYWORD_ONLY, True),
+        ("health_result_adapter", Parameter.KEYWORD_ONLY, None),
     ]
     assert _parameter_contract(fastapi_core.register_error_mapper) == [
         ("app", Parameter.POSITIONAL_OR_KEYWORD, Parameter.empty),

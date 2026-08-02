@@ -15,8 +15,10 @@ from fastapi_core.testing import (
 
 def test_testing_module_exports_only_contract_helpers():
     assert set(testing_module.__all__) == {
+        "ApplicationContractProfile",
         "ResourceLifecycleProbe",
         "assert_auth_router_contract",
+        "assert_application_contract",
         "assert_health_contract",
         "assert_module_contract",
         "assert_openapi_contract",

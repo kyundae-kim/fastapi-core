@@ -17,7 +17,7 @@ from ollama import Client as OllamaClient
 from pymilvus import MilvusClient
 from sqlalchemy.engine import Engine
 
-from fastapi_core.resources import ResourceKey
+from fastapi_core.resources import ResourceBinding, ResourceKey
 
 
 ServiceClientDependency = Callable[[Request], Any]
@@ -90,7 +90,9 @@ def get_service_runtime(request: Request) -> ServiceRuntime:
 
 
 @log_function_boundary()
-def get_resource(name: str) -> ResourceDependency:
+def get_resource(name: str | ResourceKey[Any] | ResourceBinding[Any]) -> ResourceDependency:
+    if isinstance(name, (ResourceBinding, ResourceKey)):
+        return name.dependency
     return ResourceKey[Any](name).dependency
 
 

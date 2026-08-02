@@ -4,13 +4,18 @@
 앱 factory, 인증·인가, health endpoint, 서비스 client dependency, 오류 응답, 요청 추적, readiness와 자원 lifecycle을 하나의 FastAPI 애플리케이션 표면으로 제공합니다.
 
 현재 구현된 핵심 범위:
-- package root export: `create_app`, `ManagedResource`, `ResourceKey`, `ReadinessCheckSpec`, `register_readiness_check`, `ErrorMapping`, `ErrorRenderer`, `register_error_mapper`
+- package root export: `create_app`, `DomainModule`, `DomainModuleProvider`, `ManagedResource`, `ResourceBinding`, `ResourceKey`, `ReadinessCheckSpec`, `HealthOutcome`, `register_readiness_check`, `ErrorMapping`, `ErrorRenderer`, `ExceptionMappingTable`, `create_error_renderer`, `TransportPolicy`, `ManagedStreamingResponse`, `invoke_resource`, `register_error_mapper`
 - auth router: `POST /token`, `GET /user`
 - health router: `GET /health/liveness`, `GET /health/readiness`
 - dependency: 앱 설정/runtime, Keycloak·PostgreSQL·SQLite·MinIO·Milvus·Ollama·Langfuse·NATS client, managed resource, 현재 사용자와 권한 검사
 - schema: `TokenResponse`, `UserInfo`, `HealthResponse`, `HealthServiceDetail`, `ProblemDetail`
 - runtime extension: managed resource 생성·조회·readiness 등록·역순 종료
+- resource contract: `ResourceBinding`, typed dependency, health result adapter, sync/async resource executor
+- module transport contract: module-local auth dependency, validation status, common/fallback response model, renderer와 OpenAPI policy
+- streaming contract: iterator와 resource를 함께 소유하는 `ManagedStreamingResponse`, close exactly once
 - HTTP contract: 앱별 OAuth2 scheme, `X-Correlation-ID`, RFC 7807 problem details, domain error mapper
+- error contract: most-specific `ExceptionMappingTable`, explicit fallback, configurable standard renderer factory
+- consumer contract testing: `ApplicationContractProfile`과 module/OpenAPI semantic assertion
 - app state integration: `config`, `root_logger`, `service_runtime`, `readiness_registry`, `resource_registry`, `oauth2_scheme`, `error_renderer`, `auth_provider`(Keycloak 활성 시)
 
 외부 연동은 `docmesh_py_core`를 통해 이어집니다.
@@ -130,6 +135,40 @@ async def me(
 
 더 많은 예제는 `docs/examples.md`를 참고하세요.
 
+### 선언적 resource/module contract
+
+```python
+from fastapi import APIRouter, Depends
+from fastapi_core import DomainModule, ResourceBinding, TransportPolicy, create_app
+
+search_client = ResourceBinding(
+    "search-client",
+    factory=lambda _app: SearchClient(),
+    healthcheck=lambda client: client.ping(),
+)
+
+router = APIRouter(prefix="/documents")
+
+@router.get("")
+async def documents(client=Depends(search_client.dependency)):
+    return await client.search("*")
+
+module = DomainModule(
+    name="documents",
+    routers=(router,),
+    resources=(search_client,),
+    transport_policy=TransportPolicy(
+        dependencies=(Depends(require_document_scope),),
+        validation_status=400,
+        include_synthetic_422=False,
+    ),
+)
+
+app = create_app(modules=(module,))
+```
+
+이 policy는 module route의 runtime validation과 OpenAPI 응답을 동시에 변경하며 health/auth router에는 전파되지 않습니다. 기존 `ManagedResource` 소비자는 `.bind()` 또는 기존 입력 타입을 그대로 사용할 수 있습니다.
+
 ## 현재 구현 동작
 
 ### `create_app(...)`
@@ -232,14 +271,15 @@ async def me(
 ## 문서
 
 - 제품 요구사항: `docs/prd.md`
-- API Reference: `docs/api.md`
-- 설정 정의: `docs/config.md`
-- 예제: `docs/examples.md`
+- 소프트웨어 요구사항: `docs/srs.md`
+- 현재 API Reference: `docs/api.md`
+- 현재 설정 정의: `docs/config.md`
+- 현재 사용 예제: `docs/examples.md`
 
 ## 개발 및 검증
 
 현재 저장소 기준 검증 명령:
 
 ```bash
-uv run pytest -q
+uv run --frozen pytest -q
 ```
