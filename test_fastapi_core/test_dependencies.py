@@ -4,12 +4,13 @@ from typing import get_type_hints
 
 import pytest
 import fastapi_core.dependencies as dependencies_module
+import fastapi_core.dependencies.config as config_module
 import fastapi_core.dependencies.services as services_module
+from docmesh_config import Service
 from docmesh_py_core import (
     AuthenticatedUser,
     KeycloakAuthService,
     NatsConnectionBuilder,
-    Service,
     ServiceClientWrapper,
     ServiceRuntime,
     create_keycloak_client,
@@ -76,6 +77,16 @@ def test_get_settings_returns_runtime_configs(empty_runtime):
     assert get_settings(request) is empty_runtime.configs
 
 
+def test_get_config_falls_back_when_state_config_is_none(monkeypatch, empty_runtime):
+    expected = AppConfig(log_level="WARNING")
+    monkeypatch.setattr(config_module, "load_app_config", lambda: expected)
+    app = create_app(runtime=empty_runtime, include_auth_router=False)
+    app.state.config = None
+    request = Request({"type": "http", "app": app})
+
+    assert config_module.get_config(request) is expected
+
+
 def test_service_dependency_module_exposes_typed_service_getters():
     expected = {
         "get_keycloak_auth_service",
@@ -108,7 +119,12 @@ def test_service_client_is_resolved_from_runtime(settings):
         def check(self):
             return None
 
-    runtime_client = Client()
+    client = Client()
+    runtime_client = ServiceClientWrapper(
+        client=client,
+        healthcheck=client.check,
+        service_name="sqlite",
+    )
 
     runtime = ServiceRuntime(
         configs=settings,

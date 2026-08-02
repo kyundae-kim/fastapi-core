@@ -1,16 +1,33 @@
 ---
 title: Service configuration contracts
 created: 2026-06-25
-updated: 2026-07-23
+updated: 2026-08-02
 type: concept
 tags: [config, contract, integration, implementation, security]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-api-reference-v0.4.0.md, raw/articles/docmesh-py-core-api-reference-v0.5.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md, raw/articles/docmesh-py-core-env-example-v0.3.0.md, raw/articles/docmesh-py-core-env-example-main.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-api-reference-v0.4.0.md, raw/articles/docmesh-py-core-api-reference-v0.5.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md, raw/articles/docmesh-py-core-env-example-v0.3.0.md, raw/articles/docmesh-py-core-env-example-main.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md, raw/articles/docmesh-config-api-reference-v0.1.0.md, raw/articles/docmesh-config-configuration-v0.1.0.md, raw/articles/docmesh-config-examples-v0.1.0.md, raw/articles/docmesh-config-env-example-v0.1.0.md, raw/articles/docmesh-py-core-api-reference-v0.6.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.6.0.md, raw/articles/docmesh-py-core-examples-guide-v0.6.0.md, raw/articles/docmesh-py-core-env-example-v0.6.0.md]
 confidence: medium
 ---
 
 # Service configuration contracts
 
 `docmesh-py-core`의 현재 설정 표면은 일반 lifecycle의 assembly-first 경로와 direct-api-when-needed 경로를 함께 제공한다. 모든 `*Config`와 선택 loader는 프로세스 환경변수만 읽으며, 설정 객체·factory에 mapping, 개별 연결값, 임의 SDK kwargs를 주입하는 경로는 허용하지 않는다.^[raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md]
+
+## docmesh-config v0.1.0 boundary
+
+`docmesh-config` v0.1.0은 `CommonConfig`와 8개 서비스 설정 모델의 98개 canonical 환경변수, 선택적 loader, 환경 진단, runtime-plan metadata를 별도 구성 계층으로 정리한다. 이 문서는 `docmesh-py-core`의 client/runtime capability를 대체한다고 주장하지 않으며, 설정 preflight와 실제 외부 연결 사이의 경계를 명확히 한다.^[raw/articles/docmesh-config-api-reference-v0.1.0.md]^[raw/articles/docmesh-config-configuration-v0.1.0.md]
+
+- `load_service_configs()`는 지정 서비스를 완전하게 검증하고, `load_available_service_configs()`는 후보 중 관련 환경변수가 있는 서비스만 로드하되 partial configuration은 `ConfigError`로 실패시킨다.
+- `diagnose_services()`는 `absent`, `complete`, `partial`, `invalid` 상태와 secret-safe issue를 반환하며 DNS·socket·외부 API를 호출하지 않는다. `auto`/`explicit`/`strict` 선택 모드로 대안 서비스 해석을 구분한다.^[raw/articles/docmesh-config-api-reference-v0.1.0.md]^[raw/articles/docmesh-config-examples-v0.1.0.md]
+- `RuntimePlan`의 service selection, `one_of`, MinIO bucket 요구와 `HealthcheckPolicy`는 immutable 선언/metadata다. `HealthcheckPolicy`가 실제 상태 확인을 실행하는 것으로 해석해서는 안 된다.^[raw/articles/docmesh-config-api-reference-v0.1.0.md]
+- `.env.example`은 자동 로드되지 않으며, 필요한 값은 애플리케이션·container·orchestrator가 프로세스 환경변수로 주입한다. Milvus의 canonical key는 `MILVUS_ENDPOINT`이고 `MILVUS_URI`는 지원하지 않는다.^[raw/articles/docmesh-config-configuration-v0.1.0.md]^[raw/articles/docmesh-config-env-example-v0.1.0.md]
+
+이 계층을 기존 문서와 함께 읽을 때는 [[docmesh-config]]를 설정·진단의 source of truth로, [[application-integration-patterns]]를 preflight 이후 runtime assembly의 수명주기 설명으로 구분한다.
+
+## v0.6.0 canonical package split
+
+v0.6.0 문서는 설정·plan·service enum을 `docmesh_config`에서 import하고, client factory·container·lifecycle·health API를 `docmesh_py_core`에서 import하도록 경계를 고정한다. `docmesh_py_core.config`, `.settings`, `.runtime_plan`, `.factories`는 호환 facade일 뿐 새 code의 canonical source가 아니다.^[raw/articles/docmesh-py-core-api-reference-v0.6.0.md]^[raw/articles/docmesh-py-core-configuration-guide-v0.6.0.md]
+
+`service_lifespan()`은 이 검증된 설정과 `RuntimePlan`을 받아 async runtime을 소유하고, `SERVICE_CATALOG`는 설정 metadata와 factory/documentation 추적을 제공한다. 따라서 설정 계약, catalog metadata, 실제 SDK wiring, deployment secret 주입을 각각 검증해야 한다.^[raw/articles/docmesh-py-core-api-reference-v0.6.0.md]^[raw/articles/docmesh-py-core-examples-guide-v0.6.0.md]
 
 ## Global rules
 
@@ -23,12 +40,12 @@ confidence: medium
 
 ## Loader behavior
 
-- v0.5.0 API 계약에서 각 `*Config`는 인자 없이 생성하고 실행 프로세스 환경변수에서만 읽는다. `KeycloakDiscoveryConfig`는 issuer discovery에 필요한 URL/realm만 읽고, 나머지는 서비스 연결 설정 전체를 검증한다.^[raw/articles/docmesh-py-core-api-reference-v0.5.0.md]
+- v0.6.0 API 계약에서 각 `*Config`는 인자 없이 생성하고 실행 프로세스 환경변수에서만 읽는다. `KeycloakDiscoveryConfig`는 issuer discovery에 필요한 URL/realm만 읽고, 나머지는 서비스 연결 설정 전체를 검증한다.^[raw/articles/docmesh-py-core-api-reference-v0.6.0.md]
 - `load_service_configs(services=...)`는 선택된 서비스 설정을 모두 요구하고, `load_available_service_configs(services=...)`는 인식 가능한 환경변수가 하나라도 있는 서비스만 로드한다. 둘 다 불완전한 설정은 `ConfigError`로 처리한다.^[raw/articles/docmesh-py-core-api-reference-v0.5.0.md]
 - 서비스 이름은 대소문자와 무관하게 `keycloak`, `postgres`, `sqlite`, `minio`, `milvus`, `ollama`, `langfuse`, `nats`를 사용한다. `services=None`이면 전체를 검증하고, 지정하면 나머지는 `None`으로 둔다.^[raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md]
 - 이전 API 자료에는 `env` mapping 전달 경로가 기록돼 있지만, v0.4.0 공개 레퍼런스는 설정 모델과 loader를 실행 프로세스 환경변수 기반 API로 제시한다. 따라서 새 소비 코드는 최신 공개 계약의 인자 없는 config 생성과 `services=` 선택만 전제로 하고, mapping 기반 호출은 실제 설치 버전 소스로 별도 검증해야 한다.^[raw/articles/docmesh-py-core-api-reference-v0.4.0.md]
 - main 브랜치의 `.env.example`은 deployment template이며 placeholder를 실제 배포값으로 교체하고 실제 secret은 절대 commit하지 않아야 한다. 필요한 서비스만 선택하고 direct factory에서는 `load_service_configs(services={...})`로 같은 서비스 이름을 전달해 무관한 placeholder가 검증되지 않도록 한다. template도 startup healthcheck가 환경변수가 아닌 `RuntimePlan.healthcheck` 정책임을 명시한다.^[raw/articles/docmesh-py-core-env-example-main.md]
-- 마지막 단계에서 `validate_runtime_security()`를 호출해 Keycloak·MinIO·Milvus·Ollama의 production 전송 보안 제약을 확인한다. v0.5.0은 `load_available_service_configs()`가 인식 가능한 환경변수가 하나라도 있는 서비스만 로드하되 불완전한 설정은 `ConfigError`로 처리한다고 명시한다.^[raw/articles/docmesh-py-core-api-reference-v0.5.0.md]
+- 마지막 단계에서 `validate_runtime_security()`를 호출해 Keycloak·MinIO·Milvus·Ollama의 production 전송 보안 제약을 확인한다. v0.6.0은 `load_available_service_configs()`가 인식 가능한 환경변수가 하나라도 있는 서비스만 로드하되 불완전한 설정은 `ConfigError`로 처리한다고 명시한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.6.0.md]
 - production 보안 제약은 `DOCMESH_SECURITY_MODE`가 있으면 그 값을 우선 사용하고, 없으면 `CommonConfig.env`를 `DOCMESH_PRODUCTION_ALIASES`(기본 `prod,production`)와 비교해 활성화한다.^[raw/articles/docmesh-py-core-api-reference-v0.2.0.md]
 
 ## Service-specific contracts
@@ -77,3 +94,4 @@ confidence: medium
 - [[service-factory-registry]]: examples 기반 registry 패턴과 direct factory 패턴의 차이가 이 계약 해석에 영향을 준다.
 - [[keycloak-authentication-api]]: Keycloak 관련 환경변수와 운영 보안 원칙은 별도 중요도를 가진다.
 - [[operational-logging-and-retry-utilities]]: 로그 레벨 초기화와 민감정보 마스킹도 동일한 운영 계약의 일부다.
+- [[docmesh-config-consumer-implementation-minimization]]: consumer가 환경변수·plan·진단 계약을 재구현하지 않도록 하는 개선 우선순위

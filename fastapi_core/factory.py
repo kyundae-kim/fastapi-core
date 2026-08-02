@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from docmesh_py_core import RuntimePlan, Service, ServiceRuntime, diagnose_services
+from docmesh_config import RuntimePlan, diagnose_services
+from docmesh_py_core import ServiceRuntime
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
@@ -16,6 +17,7 @@ from fastapi_core.http import (
     AccessLogMiddleware,
     CorrelationIdMiddleware,
     ErrorRenderer,
+    ExceptionMappingTable,
     install_problem_handlers,
     register_error_mapper,
 )
@@ -23,10 +25,16 @@ from fastapi_core.lifecycle import build_lifespan
 from fastapi_core.logging import configure_application_logging
 from fastapi_core.modules import DomainModule, ErrorMapperSpec
 from fastapi_core.readiness import ReadinessCheckSpec, ReadinessRegistry
-from fastapi_core.resources import ManagedResource, ResourceRegistry
+from fastapi_core.resources import (
+    ManagedResource,
+    ResourceBinding,
+    ResourceKey,
+    ResourceRegistry,
+)
 from fastapi_core.routers.auth import router as auth_router
 from fastapi_core.routers.health import router as health_router
 from fastapi_core.runtime import build_runtime_plan, configure_service_runtime
+from fastapi_core.transport import TransportPolicy
 
 
 @log_function_boundary()
@@ -49,21 +57,21 @@ def _configure_oauth2_scheme(app: FastAPI, token_url: str) -> None:
 
 
 @log_function_boundary()
-def _resource_name(resource: ManagedResource[Any]) -> str:
+def _resource_name(resource: ManagedResource[Any] | ResourceBinding[Any]) -> str:
     name = resource.name
-    return name.name if hasattr(name, "name") else name
+    return name.name if isinstance(name, ResourceKey) else name
 
 
 @log_function_boundary()
 def _flatten_modules(
     modules: Sequence[DomainModule],
 ) -> tuple[
-    tuple[ManagedResource[Any], ...],
+    tuple[ManagedResource[Any] | ResourceBinding[Any], ...],
     tuple[ReadinessCheckSpec, ...],
     tuple[ErrorMapperSpec, ...],
 ]:
     names: set[str] = set()
-    resources: list[ManagedResource[Any]] = []
+    resources: list[ManagedResource[Any] | ResourceBinding[Any]] = []
     checks: list[ReadinessCheckSpec] = []
     mappers: list[ErrorMapperSpec] = []
     for module in modules:
@@ -73,6 +81,13 @@ def _flatten_modules(
         resources.extend(module.resources)
         checks.extend(module.readiness_checks)
         mappers.extend(module.error_mappers)
+    TransportPolicy.validate_module_conflicts(
+        tuple(
+            module.transport_policy
+            for module in modules
+            if module.transport_policy is not None
+        )
+    )
     return tuple(resources), tuple(checks), tuple(mappers)
 
 
@@ -99,28 +114,27 @@ def _validate_routes(routers: Sequence[APIRouter]) -> None:
 
 
 @log_function_boundary()
+def _register_extension_name(names: set[str], name: str) -> None:
+    if name in names:
+        raise ValueError(f"extension name '{name}' is already registered")
+    names.add(name)
+
+
+@log_function_boundary()
 def _validate_extension_names(
-    resources: Sequence[ManagedResource[Any]],
+    resources: Sequence[ManagedResource[Any] | ResourceBinding[Any]],
     checks: Sequence[ReadinessCheckSpec],
     runtime: ServiceRuntime | None,
     runtime_plan: RuntimePlan | None,
 ) -> None:
     names: set[str] = set()
     for resource in resources:
-        name = _resource_name(resource)
-        if name in names:
-            raise ValueError(f"extension name '{name}' is already registered")
-        names.add(name)
+        _register_extension_name(names, _resource_name(resource))
     for spec in checks:
-        if spec.name in names:
-            raise ValueError(f"extension name '{spec.name}' is already registered")
-        names.add(spec.name)
+        _register_extension_name(names, spec.name)
     if runtime is not None:
         for service in runtime.checks:
-            name = Service.parse(service).value
-            if name in names:
-                raise ValueError(f"extension name '{name}' is already registered")
-            names.add(name)
+            _register_extension_name(names, service.value)
     if runtime_plan is not None:
         planned_services = {service.value for service in runtime_plan.selected_services}
         duplicate_names = names.intersection(planned_services)
@@ -161,6 +175,44 @@ def _diagnose_auth_configuration(config: AppConfig, runtime_plan: Any) -> None:
 
 
 @log_function_boundary()
+def _configure_transport_openapi(app: FastAPI) -> None:
+    default_openapi = app.openapi
+
+    @log_function_boundary()
+    def app_openapi() -> dict[str, Any]:
+        schema = default_openapi()
+        for (method, path), policy in getattr(
+            app.state, "transport_policies", {}
+        ).items():
+            operation = schema.get("paths", {}).get(path, {}).get(method.lower())
+            if operation is None:
+                continue
+            responses = operation.setdefault("responses", {})
+            status_code = str(policy.effective_validation_status)
+            responses.setdefault(status_code, {"description": "Request validation error"})
+            if not policy.effective_include_synthetic_422:
+                responses.pop("422", None)
+        return schema
+
+    app.openapi = app_openapi
+
+
+@log_function_boundary()
+def _record_transport_policy(
+    app: FastAPI,
+    router: APIRouter,
+    policy: TransportPolicy | None,
+) -> None:
+    if policy is None:
+        return
+    for route in router.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        for method in route.methods or ():
+            app.state.transport_policies[(method.upper(), route.path)] = policy
+
+
+@log_function_boundary()
 def create_app(
     config: AppConfig | None = None,
     *,
@@ -169,10 +221,12 @@ def create_app(
     include_auth_router: bool = False,
     routers: Sequence[APIRouter] = (),
     modules: Sequence[DomainModule] = (),
-    resources: Sequence[ManagedResource[Any]] = (),
+    resources: Sequence[ManagedResource[Any] | ResourceBinding[Any]] = (),
     error_mappers: Sequence[ErrorMapperSpec] = (),
     error_renderer: ErrorRenderer | None = None,
     auth_provider: Any | None = None,
+    transport_policy: TransportPolicy | None = None,
+    error_mapping_table: ExceptionMappingTable | None = None,
 ) -> FastAPI:
     """Create an application with lifespan-managed DocMesh services."""
     app_config = config or load_app_config()
@@ -187,6 +241,7 @@ def create_app(
         _diagnose_auth_configuration(app_config, runtime_plan)
 
     module_resources, module_checks, module_mappers = _flatten_modules(modules)
+    base_transport_policy = TransportPolicy.resolve(None, transport_policy)
     all_resources = tuple(resources) + module_resources
     all_mappers = tuple(error_mappers) + module_mappers
     all_routers = (
@@ -222,7 +277,11 @@ def create_app(
     app.state.service_runtime = runtime
     app.state.readiness_registry = readiness_registry
     app.state.resource_registry = resource_registry
+    app.state.resource_bindings = resource_registry.bindings
     app.state.domain_modules = tuple(modules)
+    app.state.transport_policy = base_transport_policy
+    app.state.transport_policies = {}
+    app.state.error_mapping_table = error_mapping_table
     if runtime is not None:
         configure_service_runtime(app, runtime)
     if auth_provider is not None:
@@ -233,9 +292,11 @@ def create_app(
         raise ValueError("auth router requires a configured auth provider")
 
     _configure_oauth2_scheme(app, app_config.token_url)
-    install_problem_handlers(app, error_renderer)
+    install_problem_handlers(app, error_renderer, error_mapping_table)
     for spec in all_mappers:
         register_error_mapper(app, spec.exception_type, spec.mapper)
+
+    _configure_transport_openapi(app)
 
     app.add_middleware(
         CORSMiddleware,
@@ -255,9 +316,28 @@ def create_app(
     if include_auth_router:
         app.include_router(auth_router)
     for router in routers:
-        app.include_router(router)
+        if transport_policy is None:
+            app.include_router(router)
+        else:
+            app.include_router(
+                router,
+                dependencies=list(base_transport_policy.dependencies),
+                responses=base_transport_policy.response_definitions(),
+            )
+            _record_transport_policy(app, router, base_transport_policy)
     for module in modules:
+        policy = TransportPolicy.resolve(base_transport_policy, module.transport_policy)
+        declared_policy = transport_policy is not None or module.transport_policy is not None
         for router in module.routers:
-            app.include_router(router, dependencies=list(module.dependencies))
+            dependencies = list(module.dependencies) + list(policy.dependencies)
+            if declared_policy:
+                app.include_router(
+                    router,
+                    dependencies=dependencies,
+                    responses=policy.response_definitions(),
+                )
+                _record_transport_policy(app, router, policy)
+            else:
+                app.include_router(router, dependencies=list(module.dependencies))
 
     return app

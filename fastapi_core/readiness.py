@@ -4,6 +4,7 @@ import asyncio
 import inspect
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
 from docmesh_py_core import (
     HealthCheckError,
     HealthCheckResult,
@@ -14,6 +15,14 @@ from fastapi_core.function_logging import log_function_boundary
 from fastapi import FastAPI
 
 Check = Callable[[], object | Awaitable[object]]
+HealthResultAdapter = Callable[[object], object | Awaitable[object]]
+
+
+@runtime_checkable
+class HealthOutcome(Protocol):
+    @property
+    @log_function_boundary()
+    def ok(self) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -23,6 +32,7 @@ class ReadinessCheckSpec:
     required: bool = True
     timeout_seconds: float | None = None
     redact_errors: bool = True
+    health_result_adapter: HealthResultAdapter | None = None
 
 
 @log_function_boundary()
@@ -132,8 +142,13 @@ class ReadinessRegistry:
                 check: Check = spec.check,
                 required: bool = spec.required,
                 timeout: float | None = timeout_seconds,
+                adapter: HealthResultAdapter | None = spec.health_result_adapter,
             ) -> None:
                 result = await _invoke_check(check, timeout)
+                if adapter is not None:
+                    result = adapter(result)
+                    if inspect.isawaitable(result):
+                        result = await result
                 if result is False:
                     raise RuntimeError("readiness check returned False")
                 if isinstance(result, HealthCheckResult):
@@ -141,6 +156,22 @@ class ReadinessRegistry:
                     structured[name] = nested
                     if not nested.ok:
                         raise RuntimeError("structured readiness check failed")
+                    return
+                if isinstance(result, ServiceHealthStatus):
+                    if result.ok:
+                        return
+                    raise RuntimeError(result.error or "service health check failed")
+                if result is None or result is True:
+                    return
+                if isinstance(result, HealthOutcome) or hasattr(result, "ok"):
+                    if bool(result.ok):
+                        return
+                    detail = getattr(result, "error", None) or "health outcome was not ok"
+                    raise RuntimeError(str(detail))
+                # Preserve the pre-0.7 contract for SDK checks that use a
+                # non-boolean success sentinel.  Callers that need strict
+                # interpretation can provide ``health_result_adapter``.
+                return
 
             checks[name] = run
         try:
@@ -175,6 +206,7 @@ def register_readiness_check(
     required: bool = True,
     timeout_seconds: float | None = None,
     redact_errors: bool = True,
+    health_result_adapter: HealthResultAdapter | None = None,
 ) -> None:
     get_readiness_registry(app).register(
         ReadinessCheckSpec(
@@ -183,12 +215,15 @@ def register_readiness_check(
             required=required,
             timeout_seconds=timeout_seconds,
             redact_errors=redact_errors,
+            health_result_adapter=health_result_adapter,
         )
     )
 
 
 __all__ = [
     "Check",
+    "HealthOutcome",
+    "HealthResultAdapter",
     "ReadinessCheckSpec",
     "ReadinessRegistry",
     "register_readiness_check",

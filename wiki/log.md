@@ -268,3 +268,36 @@
 - Verified the installed package reports `0.5.0` with 86 unique root exports and the v0.5.0 assembly signatures.
 - Verification command: `.venv/bin/pytest -q` → `166 passed, 1 skipped, 1 warning in 21.98s`.
 - `uv lock` remains blocked by pre-existing merge-conflict markers in `uv.lock`; the lockfile was not modified.
+
+## [2026-08-01] ingest | docmesh-config v0.1.0 documentation
+- Captured immutable sources: `raw/articles/docmesh-config-api-reference-v0.1.0.md`, `raw/articles/docmesh-config-configuration-v0.1.0.md`, `raw/articles/docmesh-config-examples-v0.1.0.md`, `raw/articles/docmesh-config-env-example-v0.1.0.md`.
+- Created `entities/docmesh-config.md` for the environment-only configuration, selective loading, service diagnosis, runtime-plan metadata, and security boundary.
+- Refreshed `entities/docmesh-py-core.md`, `concepts/service-configuration-contracts.md`, `concepts/application-integration-patterns.md`, and `concepts/service-health-check-aggregation.md` with the distinction between configuration preflight and client/runtime health execution.
+- Updated `index.md` to 10 pages.
+- Verified source retrieval from the requested GitHub wiki/blob URLs; raw body SHA-256 values are recorded in each source frontmatter.
+
+## [2026-08-01] ingest | docmesh-py-core v0.6.0 documentation
+- Captured immutable sources: `raw/articles/docmesh-py-core-api-reference-v0.6.0.md`, `raw/articles/docmesh-py-core-configuration-guide-v0.6.0.md`, `raw/articles/docmesh-py-core-examples-guide-v0.6.0.md`, `raw/articles/docmesh-py-core-env-example-v0.6.0.md`.
+- Created `concepts/service-catalog-and-configuration-document-generation.md` for `SERVICE_CATALOG`, environment/configuration document generation, and metadata boundaries.
+- Refreshed `entities/docmesh-py-core.md`, `entities/docmesh-config.md`, `concepts/service-configuration-contracts.md`, `concepts/application-integration-patterns.md`, `concepts/service-health-check-aggregation.md`, `concepts/keycloak-authentication-api.md`, `concepts/operational-logging-and-retry-utilities.md`, and `concepts/service-factory-registry.md`.
+- Recorded the v0.6.0 canonical package split (`docmesh_config` for settings/plans; `docmesh_py_core` for factories/runtime), `service_lifespan`, runtime health descriptors/policies, structured error serialization, lifecycle observers, and catalog generation.
+- Verified `pyproject.toml` pins `docmesh-config` v0.1.0 and `docmesh-py-core` v0.6.0; `uv run python` reports installed versions 0.1.0/0.6.0 and 69 `docmesh_py_core` root exports.
+- Updated `index.md` to 11 pages.
+
+## [2026-08-02] query | docmesh-py-core consumer implementation minimization
+- Re-read orientation files: `SCHEMA.md`, `index.md`, recent `log.md`.
+- Inspected current `docmesh-py-core` v0.6.0 / `docmesh-config` v0.1.0 APIs and live consumer adapters in `fastapi_core/`.
+- Verification command: `uv run --frozen pytest -q` → `218 passed, 1 skipped, 1 warning`.
+- Filed query: `queries/docmesh-py-core-consumer-implementation-minimization.md`.
+- Refreshed wiki links in `entities/docmesh-py-core.md` and `concepts/application-integration-patterns.md`.
+- Updated `index.md` to 12 pages.
+- Integrity scan: 12 indexed pages, no broken/orphan wikilinks, all page frontmatter/tags valid; four pre-existing raw SHA-256 mismatches were reported without modifying immutable raw files.
+
+## [2026-08-02] query | docmesh-config consumer implementation minimization
+- Re-read orientation files: `SCHEMA.md`, `index.md`, recent `log.md`.
+- Inspected `docmesh-config` v0.1.0 API/docs and live package sources for settings, loading, diagnosis, runtime plans, metadata, and structured errors.
+- Inspected consumer configuration/plan adapters: `fastapi_core/config.py`, `fastapi_core/docmesh_settings.py`, `fastapi_core/runtime.py`, `fastapi_core/factory.py`, and related tests.
+- Verification baseline: `.venv/bin/pytest -q` → `218 passed, 1 skipped, 1 warning`.
+- Filed query: `queries/docmesh-config-consumer-implementation-minimization.md`.
+- Refreshed links in `entities/docmesh-config.md`, `concepts/service-configuration-contracts.md`, `concepts/application-integration-patterns.md`, and the related Py Core query.
+- Updated `index.md` to 13 pages.

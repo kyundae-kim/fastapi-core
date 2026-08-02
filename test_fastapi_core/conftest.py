@@ -4,7 +4,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from docmesh_py_core import Service, ServiceRuntime
+from docmesh_config import Service
+from docmesh_py_core import ServiceClientWrapper, ServiceRuntime
 
 from fastapi_core import register_readiness_check
 from fastapi_core.config import AppConfig
@@ -32,7 +33,7 @@ def build_test_settings(monkeypatch: pytest.MonkeyPatch):
         "MINIO_ENDPOINT": "minio.test:9000",
         "MINIO_ACCESS_KEY": "minio",
         "MINIO_SECRET_KEY": "miniosecret",
-        "MILVUS_URI": "http://milvus.test:19530",
+        "MILVUS_ENDPOINT": "http://milvus.test:19530",
         "OLLAMA_HOST": "http://ollama.test:11434",
         "LANGFUSE_HOST": "http://langfuse.test:3000",
         "LANGFUSE_PUBLIC_KEY": "pk",
@@ -53,11 +54,23 @@ def settings(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture
 def runtime_factory(settings):
+    def as_service_handle(service: Service, client):
+        if isinstance(client, ServiceClientWrapper):
+            return client
+        check = getattr(client, "check", None)
+        if callable(check):
+            return ServiceClientWrapper(
+                client=client,
+                healthcheck=check,
+                service_name=service.value,
+            )
+        return client
+
     def factory(*, clients=None, required=()):
-        service_clients = {
-            Service.parse(service): client
-            for service, client in (clients or {}).items()
-        }
+        service_clients = {}
+        for service, client in (clients or {}).items():
+            service_key = Service.parse(service)
+            service_clients[service_key] = as_service_handle(service_key, client)
         return ServiceRuntime(
             configs=settings,
             clients=service_clients,

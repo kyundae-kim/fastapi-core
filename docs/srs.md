@@ -1,8 +1,8 @@
 # fastapi-core 소프트웨어 요구사항 명세서 (SRS)
 
-> 문서 리비전: 2026-07-23
+> 문서 리비전: 2026-08-02
 >
-> 기준 릴리스: `fastapi-core 0.6.0`
+> 기준 릴리스: `fastapi-core 0.7.0`
 >
 > 상태: current-implementation
 >
@@ -23,9 +23,9 @@
 ### 1.2 시스템 경계
 
 - **SRS-SYS-001** `fastapi-core`는 FastAPI 앱 조립, router 등록, dependency 제공, HTTP middleware, 오류 응답 및 lifespan 통합을 소유해야 한다.
-- **SRS-SYS-002** `docmesh-py-core`는 서비스 설정, `RuntimePlan`, `ServiceRuntime`, 서비스 client 조립·점검·종료 및 민감 정보 마스킹을 소유해야 한다.
+- **SRS-SYS-002** `docmesh-config`는 서비스 설정 모델·로더, `Service`, `RuntimePlan`, `HealthcheckPolicy` 및 네트워크 연결 전 사전 진단을 소유해야 하며, `docmesh-py-core`는 `ServiceRuntime`, 서비스 client 조립·점검·종료 및 민감 정보 마스킹을 소유해야 한다.
 - **SRS-SYS-003** 소비 애플리케이션은 도메인 router와 schema, 사용자 정의 lifespan, 서비스 고유 자원 및 도메인 오류 매핑을 소유해야 한다.
-- **SRS-SYS-004** `fastapi-core`는 Python `>=3.11`과 프로젝트가 선언한 FastAPI 및 DocMesh Py Core 버전 범위에서 동작해야 한다.
+- **SRS-SYS-004** `fastapi-core`는 Python `>=3.11`과 프로젝트가 선언한 FastAPI 의존성, `docmesh-config v0.1.0`, `docmesh-py-core v0.6.0` 조합에서 동작해야 한다.
 
 ---
 
@@ -33,7 +33,7 @@
 
 ### 2.1 패키지 공개 표면
 
-- **SRS-API-001** `fastapi_core.__all__`은 `create_app`, `DomainModule`, `ErrorMapperSpec`, `ManagedResource`, `ResourceKey`, `ReadinessCheckSpec`, `register_readiness_check`, `ErrorMapping`, `ErrorRenderer`, `register_error_mapper`를 공개해야 한다.
+- **SRS-API-001** `fastapi_core.__all__`은 `create_app`, `DomainModule`, `DomainModuleProvider`, `ErrorMapperSpec`, `ManagedResource`, `ResourceBinding`, `ResourceKey`, `ReadinessCheckSpec`, `HealthOutcome`, `HealthResultAdapter`, `register_readiness_check`, `ErrorMapping`, `ErrorRenderer`, `ExceptionMappingTable`, `create_error_renderer`, `register_error_mapper`, `TransportPolicy`, `ManagedStreamingResponse`, `invoke_resource`를 공개해야 한다.
 - **SRS-API-002** `fastapi_core.dependencies.__all__`은 인증·설정·서비스·자원 dependency를 명시적으로 공개해야 한다.
 - **SRS-API-003** `fastapi_core.schemas.__all__`은 `HealthResponse`, `HealthServiceDetail`, `ProblemDetail`, `TokenResponse`, `UserInfo`를 공개해야 한다.
 - **SRS-API-004** `fastapi_core.testing.__all__`은 10절에 정의된 소비사 테스트 helper만 공개해야 한다.
@@ -51,10 +51,12 @@ create_app(
     include_auth_router: bool = False,
     routers: Sequence[APIRouter] = (),
     modules: Sequence[DomainModule] = (),
-    resources: Sequence[ManagedResource[Any]] = (),
+    resources: Sequence[ManagedResource[Any] | ResourceBinding[Any]] = (),
     error_mappers: Sequence[ErrorMapperSpec] = (),
     error_renderer: ErrorRenderer | None = None,
     auth_provider: Any | None = None,
+    transport_policy: TransportPolicy | None = None,
+    error_mapping_table: ExceptionMappingTable | None = None,
 ) -> FastAPI
 ```
 
@@ -67,16 +69,18 @@ create_app(
 - **SRS-APP-008** 인증 provider가 명시적으로 주입되거나 runtime에서 구성된 경우 `app.state.auth_provider`를 제공해야 한다.
 - **SRS-APP-009** 앱별 OAuth2 scheme 객체와 OpenAPI token URL은 다른 앱과 격리되어야 한다. `AppConfig.token_url`은 OpenAPI password flow URL만 변경하며 내장 token endpoint 경로를 이동시키지 않아야 한다.
 - **SRS-APP-010** 기본 설정에서 외부 서비스가 활성화되지 않은 앱은 외부 인프라 없이 lifespan에 진입할 수 있어야 한다.
+- **SRS-APP-011** 생성된 앱은 effective `transport_policy`, route별 `transport_policies`, `error_mapping_table` 및 `resource_bindings`를 app state에서 제공해야 하며, runtime handler와 OpenAPI는 이 상태에서 파생된 동일 계약을 사용해야 한다.
 
 ### 2.3 도메인 모듈
 
-- **SRS-MOD-001** `DomainModule`은 `name`, `routers`, `dependencies`, `resources`, `readiness_checks`, `error_mappers`를 갖는 불변 선언 타입이어야 한다.
+- **SRS-MOD-001** `DomainModule`은 `name`, `routers`, `dependencies`, `resources`, `readiness_checks`, `error_mappers`, `transport_policy`를 갖는 불변 선언 타입이어야 한다. `resources`는 `ManagedResource` 또는 `ResourceBinding`을 받을 수 있다.
 - **SRS-MOD-002** module 이름은 공백일 수 없고 한 앱에서 고유해야 한다.
 - **SRS-MOD-003** module dependency는 해당 module의 모든 router에 추가하되 router 자체 dependency를 대체하지 않아야 한다.
 - **SRS-MOD-004** module dependency는 내장 health·auth router 또는 다른 module로 전파되지 않아야 한다.
 - **SRS-MOD-005** framework는 module 등록 전에 module 이름, router 타입과 충돌, resource·readiness 이름 충돌 및 error mapper 계약을 검증해야 한다. 검증 실패 시 부분 등록 없이 앱 생성을 실패시켜야 한다.
 - **SRS-MOD-006** module resource와 readiness는 각각 공통 `ResourceRegistry`와 `ReadinessRegistry`가 관리해야 하며 별도 runtime 또는 lifecycle container를 만들지 않아야 한다.
 - **SRS-MOD-007** DocMesh 서비스 client의 소유권과 종료 책임은 `ServiceRuntime`에 유지해야 한다. module이 직접 생성한 자원은 명시된 managed resource 종료 계약을 따라야 한다.
+- **SRS-MOD-008** `DomainModuleProvider`는 `build_*_module(...) -> DomainModule` callable convention을 표현해야 하며, framework는 plugin discovery나 implicit import를 수행하지 않아야 한다.
 
 ---
 
@@ -113,6 +117,7 @@ create_app(
 - **SRS-CFG-003** 개별·전체 readiness timeout은 지정 시 양수, startup healthcheck 시도 횟수는 1 이상, 재시도 간격은 0 이상이어야 한다.
 - **SRS-CFG-004** CORS origin, 활성 서비스 및 필수 서비스 환경변수는 CSV를 지원해야 한다. 환경변수의 빈 문자열은 빈 목록으로 해석하되 Python 생성자에 직접 전달한 빈 문자열은 거부해야 한다.
 - **SRS-CFG-005** 대체 서비스 그룹 환경변수는 세미콜론으로 그룹을, 쉼표로 그룹 내 서비스를 구분해야 하며 빈 그룹과 빈 항목은 제거해야 한다.
+- **SRS-CFG-006** 앱 계층 `AppConfig`와 DocMesh 서비스 설정(`ServiceConfigs`)의 소유 경계가 분명해야 하며, 서비스 설정 로딩은 `docmesh-config` 경로를 사용하고 앱은 현재 `ServiceRuntime.configs`를 통해 이를 제공해야 한다.
 
 ### 3.2 Runtime 계획과 연결
 
@@ -157,6 +162,9 @@ create_app(
 - **SRS-RES-005** 명시적 close callback이 없으면 자원의 `aclose()`, 그 다음 `close()`를 탐색하여 호출해야 한다.
 - **SRS-RES-006** `ResourceKey[T].dependency`와 `get_resource(name)`는 생성 완료된 자원을 반환해야 한다. registry 또는 자원이 준비되지 않았으면 `503 Service Unavailable`을 발생시켜야 한다.
 - **SRS-RES-007** resource 종료 시 해당 인스턴스에 결합된 readiness check를 제거해야 한다.
+- **SRS-RES-008** `ResourceBinding[T]`는 `ResourceKey[T]`, factory, dependency, lifecycle callback, health check 및 `HealthResultAdapter`를 하나의 typed 선언으로 제공해야 한다. `ManagedResource.bind()`는 기존 선언을 binding으로 승격하는 호환 경로여야 한다.
+- **SRS-RES-009** binding의 `call()`과 `invoke_resource()`는 coroutine 함수를 직접 await하고 sync callable을 worker thread에서 실행해야 하며, sync callable이 awaitable을 반환하는 경우도 완료까지 await해야 한다.
+- **SRS-RES-010** resource invocation은 선택적 timeout을 지원하고 caller cancellation과 예외를 숨기지 않아야 하며, `ResourceRegistry`의 sync factory와 close callback에도 같은 executor 정책을 적용해야 한다.
 
 ---
 
@@ -172,6 +180,8 @@ create_app(
 - **SRS-READY-006** 하위 이름과 동일한 spec이 있으면 exact match를 우선하고, 없으면 최상위 parent spec으로 required·timeout·redaction 정책을 해석해야 한다.
 - **SRS-READY-007** 필수 check가 실패해도 완료된 선택·성공 check 결과를 보존해야 한다.
 - **SRS-READY-008** registry는 설정에 따라 순차 또는 병렬 실행과 전체 timeout을 지원해야 한다.
+- **SRS-READY-009** `HealthOutcome` protocol 또는 명시적 adapter는 `bool`, 기존 `HealthCheckResult`, `ok`·`detail`·`error`를 가진 SDK health 결과를 공통 readiness 결과로 정규화해야 한다. adapter가 없는 opaque legacy sentinel은 0.6.x 호환을 위해 성공 sentinel로 허용한다.
+- **SRS-READY-010** sync·async check와 adapter는 동일한 timeout·redaction·required 정책을 사용해야 하며, `ok=False` 결과는 예외와 같은 readiness failure로 처리해야 한다.
 
 ### 5.2 HTTP health 계약
 
@@ -258,8 +268,19 @@ create_app(
 - **SRS-ERR-006** 앱 수준과 module 수준 error mapper는 일괄 검증해야 하며 동일 예외 타입의 중복을 override하지 않고 거부해야 한다.
 - **SRS-ERR-007** 앱 생성 후 `register_error_mapper()`로 동일 예외 타입을 다시 등록하는 경우에도 오류를 발생시켜야 한다.
 - **SRS-ERR-008** `error_renderer`가 제공되면 기본 problem envelope 대신 동기·비동기 custom renderer를 사용하되 민감 정보가 제거된 `ErrorMapping`만 전달해야 한다.
+- **SRS-ERR-009** `ExceptionMappingTable`은 예외 유형의 MRO에서 most-specific mapping을 선택하고 명시적 fallback을 지원해야 하며, duplicate mapping과 fallback에 도달할 수 없는 `Exception` mapping을 생성 시 거부해야 한다.
+- **SRS-ERR-010** table mapping은 response status, headers, domain code 및 extensions를 보존하고 sync·async mapping callable을 동일한 rendering 흐름으로 처리해야 한다.
+- **SRS-ERR-011** `create_error_renderer()`는 correlation ID extractor, status별 fallback code, 안전한 envelope builder 및 optional Problem Details mode를 조합할 수 있어야 한다. renderer는 body correlation ID와 `X-Correlation-ID` response header를 일관되게 제공해야 한다.
 
-### 8.3 로깅과 access log
+### 8.3 Module transport policy 및 streaming
+
+- **SRS-HTTP-003** `TransportPolicy`는 공통 security dependency, validation status/response model, common error response model, fallback response model, custom responses, renderer 및 synthetic 422 유지 여부를 선언해야 한다.
+- **SRS-HTTP-004** app/module transport policy는 route 등록 시 dependency와 response metadata에 적용되고, 같은 policy 객체의 규칙을 runtime validation handler와 OpenAPI 생성에 함께 사용해야 한다.
+- **SRS-HTTP-005** `validation_status=400`과 `include_synthetic_422=False`를 선언한 route는 validation 오류를 400으로 반환하고 OpenAPI에서 synthetic 422를 제거해야 한다. 기본 policy는 기존 422 계약을 유지해야 한다.
+- **SRS-HTTP-006** module policy의 공통 renderer·response·validation 선언이 서로 충돌하면 silent override 없이 앱 생성 전에 실패해야 하며, module-local dependency는 해당 module route에만 적용되어야 한다.
+- **SRS-HTTP-007** `ManagedStreamingResponse`는 sync/async iterator와 기존 `StreamingResponse` metadata를 보존하고, 정상 완료·producer exception·disconnect·cancellation에서 resource close/aclose를 정확히 한 번 실행해야 한다. sync close는 worker thread에서 실행해야 한다.
+
+### 8.4 로깅과 access log
 
 - **SRS-OBS-001** 앱 로깅은 DocMesh 공통 logging 설정을 사용하고 JSON 모드에서 timestamp, logger, level, message와 선택적 function·event·exception 정보를 구조화해야 한다.
 - **SRS-OBS-002** access logging이 활성화되면 각 HTTP 요청 완료 시 method, route template 또는 안전한 path, status code, duration, outcome 및 correlation ID를 포함하는 event를 정확히 한 번 기록해야 한다.
@@ -283,7 +304,7 @@ create_app(
 
 ## 10. 테스트 지원 요구사항
 
-- **SRS-TEST-001** `fastapi_core.testing`은 `create_empty_runtime`, `ResourceLifecycleProbe`, `assert_health_contract`, `assert_auth_router_contract`, `assert_module_contract`, `assert_openapi_contract`, `test_environment`를 공개해야 한다.
+- **SRS-TEST-001** `fastapi_core.testing`은 `ApplicationContractProfile`, `create_empty_runtime`, `ResourceLifecycleProbe`, `assert_health_contract`, `assert_auth_router_contract`, `assert_application_contract`, `assert_module_contract`, `assert_openapi_contract`, `test_environment`를 공개해야 한다.
 - **SRS-TEST-002** `create_empty_runtime()`은 production runtime helper와 동일한 canonical empty `ServiceRuntime`을 반환해야 한다.
 - **SRS-TEST-003** `ResourceLifecycleProbe`는 실제 managed resource를 생성하여 create, check, close 이벤트 순서를 기록해야 한다.
 - **SRS-TEST-004** health assertion은 liveness와 readiness 성공 계약을, auth assertion은 auth router 포함 여부를 실제 HTTP 요청으로 검증해야 한다.
@@ -294,6 +315,7 @@ create_app(
 - **SRS-TEST-009** OpenAPI assertion은 실제 schema를 생성하고 요구된 path·method, operation ID 고유성, security scheme 및 component schema reference 유효성을 의미 기반으로 검사해야 한다.
 - **SRS-TEST-010** OpenAPI 검증은 비계약적 출력 순서나 설명 문구까지 고정하는 전체 JSON 문자열 snapshot을 기본 방식으로 사용하지 않아야 한다.
 - **SRS-TEST-011** async 동작을 검증하는 프로젝트 테스트는 `pytest-asyncio` async test 함수에서 직접 `await`해야 한다.
+- **SRS-TEST-012** `ApplicationContractProfile`은 module 이름, expected route, security scheme, validation status, common response, resource/readiness/error mapper 및 transport policy assertion을 하나의 조합 가능한 typed profile로 제공해야 한다.
 
 ---
 
@@ -303,15 +325,15 @@ create_app(
 
 | 요구사항 영역 | 대표 소스 | 대표 테스트 |
 |---|---|---|
-| 공개 API·앱 조립 | `fastapi_core/__init__.py`, `factory.py`, `modules.py` | `test_public_api.py`, `test_factory.py`, `test_next_requirements.py` |
+| 공개 API·앱 조립 | `fastapi_core/__init__.py`, `factory.py`, `modules.py`, `transport.py` | `test_public_api.py`, `test_factory.py`, `test_target_contracts.py` |
 | 설정·runtime | `config.py`, `runtime.py`, `docmesh_settings.py` | `test_config.py`, `test_settings_compatibility.py`, `test_factory.py` |
-| lifespan·자원 | `lifecycle.py`, `resources.py` | `test_factory.py`, `test_extensions.py` |
-| readiness·health | `readiness.py`, `routers/health.py` | `test_extensions.py`, `test_health_router.py` |
+| lifespan·자원 | `lifecycle.py`, `resources.py`, `invocation.py`, `streaming.py` | `test_factory.py`, `test_extensions.py`, `test_target_contracts.py` |
+| readiness·health | `readiness.py`, `routers/health.py` | `test_extensions.py`, `test_health_router.py`, `test_target_contracts.py` |
 | 인증·인가 | `routers/auth.py`, `dependencies/auth.py` | `test_auth_router.py`, `test_dependencies.py`, `test_next_requirements.py` |
 | 서비스 dependency | `dependencies/services.py`, `dependencies/config.py` | `test_dependencies.py`, integration runtime tests |
-| HTTP 오류·관측성 | `http.py`, `schemas/error.py` | `test_http.py`, `test_next_requirements.py` |
+| HTTP 오류·관측성 | `http.py`, `schemas/error.py`, `streaming.py` | `test_http.py`, `test_next_requirements.py`, `test_target_contracts.py` |
 | schema | `schemas/` | `test_schemas.py`, router tests |
-| 소비사 테스트 helper | `testing.py` | `test_testing.py`, `test_next_requirements.py` |
+| 소비사 테스트 helper | `testing.py` | `test_testing.py`, `test_next_requirements.py`, `test_target_contracts.py` |
 
 ### 11.2 검증 기준
 
@@ -322,6 +344,6 @@ create_app(
 
 ### 11.3 구현 상태
 
-- 이 문서의 모든 요구사항은 `fastapi-core 0.6.0` 현재 구현 계약이다.
+- 이 문서의 모든 요구사항은 `fastapi-core 0.7.0` 현재 구현 계약이다. `invoke_resource`, `ResourceBinding`, readiness result adapter, exception mapping table, transport policy, managed streaming 및 application contract profile을 포함한다.
 - 미래 기능, 우선순위 backlog 및 릴리스 이력은 현재 구현 요구사항과 혼합하지 않는다.
 - 제품 수준 완료 조건은 `docs/prd.md`, 구체 소프트웨어 수용 기준은 이 문서를 기준으로 판정한다.

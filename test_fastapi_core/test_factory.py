@@ -6,17 +6,20 @@ import logging
 import os
 
 import pytest
-from docmesh_py_core import (
-    HealthCheckError,
+from docmesh_config import (
     HealthcheckPolicy,
     InvalidRuntimePlanError,
     RuntimePlan,
     Service,
+    StartupFailureMode,
+    UnknownServiceError,
+)
+from docmesh_py_core import (
+    HealthCheckError,
+    RuntimeHealthDescriptorError,
     ServiceCloseError,
     ServiceClientWrapper,
     ServiceRuntime,
-    StartupFailureMode,
-    UnknownServiceError,
     create_keycloak_client,
     create_sqlite_client,
 )
@@ -29,6 +32,14 @@ from fastapi_core.docmesh_settings import load_docmesh_settings
 from fastapi_core.factory import create_app
 from fastapi_core.readiness import register_readiness_check
 from fastapi_core.runtime import configure_service_runtime
+
+
+def _service_handle(service: Service, client, *, healthcheck=None):
+    return ServiceClientWrapper(
+        client=client,
+        healthcheck=healthcheck or client.check,
+        service_name=service.value,
+    )
 
 
 def test_create_app_defaults_to_service_free_health_only_app(monkeypatch):
@@ -222,7 +233,7 @@ def test_create_app_accepts_prebuilt_service_runtime(settings):
 
     runtime = ServiceRuntime(
         configs=settings,
-        clients={Service.SQLITE: SqliteClient()},
+        clients={Service.SQLITE: _service_handle(Service.SQLITE, SqliteClient())},
         selected_services=frozenset({Service.SQLITE}),
         required_services=frozenset({Service.SQLITE}),
     )
@@ -302,7 +313,7 @@ async def test_configure_service_runtime_preserves_async_checks(settings, empty_
     )
     runtime = ServiceRuntime(
         configs=settings,
-        clients={Service.NATS: AsyncClient()},
+        clients={Service.NATS: _service_handle(Service.NATS, AsyncClient())},
         selected_services=frozenset({Service.NATS}),
     )
     configure_service_runtime(app, runtime)
@@ -339,10 +350,15 @@ def test_configure_service_runtime_uses_runtime_checks_container_surface(
     )
     runtime = ServiceRuntime(
         configs=settings,
-        clients={Service.SQLITE: Client()},
+        clients={
+            Service.SQLITE: _service_handle(
+                Service.SQLITE,
+                Client(),
+                healthcheck=canonical_check,
+            )
+        },
         selected_services=frozenset({Service.SQLITE}),
     )
-
     configure_service_runtime(app, runtime)
     app.state.readiness_registry.specs["sqlite"].check()
 
@@ -364,7 +380,7 @@ def test_configure_service_runtime_redacts_service_check_errors_by_default(
     )
     runtime = ServiceRuntime(
         configs=settings,
-        clients={Service.POSTGRES: Client()},
+        clients={Service.POSTGRES: _service_handle(Service.POSTGRES, Client())},
         selected_services=frozenset({Service.POSTGRES}),
     )
 
@@ -373,26 +389,17 @@ def test_configure_service_runtime_redacts_service_check_errors_by_default(
     assert app.state.readiness_registry.specs["postgres"].redact_errors is True
 
 
-def test_configure_service_runtime_rejects_client_without_check(
-    settings,
-    empty_runtime,
-):
-    app = create_app(
-        config=AppConfig(enabled_services=[], required_services=[]),
-        runtime=empty_runtime,
-        include_auth_router=False,
-    )
-    runtime = ServiceRuntime(
-        configs=settings,
-        clients={Service.KEYCLOAK: object()},
-        selected_services=frozenset({Service.KEYCLOAK}),
-        required_services=frozenset({Service.KEYCLOAK}),
-    )
-
-    with pytest.raises(AttributeError):
-        configure_service_runtime(app, runtime)
-
-    assert app.state.service_runtime is empty_runtime
+def test_service_runtime_rejects_client_without_health_descriptor(settings):
+    with pytest.raises(
+        RuntimeHealthDescriptorError,
+        match="missing a health descriptor: keycloak",
+    ):
+        ServiceRuntime(
+            configs=settings,
+            clients={Service.KEYCLOAK: object()},
+            selected_services=frozenset({Service.KEYCLOAK}),
+            required_services=frozenset({Service.KEYCLOAK}),
+        )
 
 
 def test_configure_service_runtime_is_atomic_on_readiness_name_collision(
@@ -412,8 +419,8 @@ def test_configure_service_runtime_is_atomic_on_readiness_name_collision(
     runtime = ServiceRuntime(
         configs=settings,
         clients={
-            Service.SQLITE: Client(),
-            Service.POSTGRES: Client(),
+            Service.SQLITE: _service_handle(Service.SQLITE, Client()),
+            Service.POSTGRES: _service_handle(Service.POSTGRES, Client()),
         },
         selected_services=frozenset({Service.SQLITE, Service.POSTGRES}),
     )
@@ -585,7 +592,7 @@ def test_create_app_assembles_default_runtime_during_lifespan(monkeypatch):
 
     runtime = ServiceRuntime(
         configs=settings,
-        clients={Service.SQLITE: SqliteClient()},
+        clients={Service.SQLITE: _service_handle(Service.SQLITE, SqliteClient())},
         selected_services=frozenset({Service.SQLITE}),
         required_services=frozenset({Service.SQLITE}),
     )
@@ -677,6 +684,53 @@ def test_create_app_checks_injected_runtime_on_startup(runtime_factory):
     assert events == ["checked", "closed"]
 
 
+def test_create_app_delegates_injected_startup_policy_to_docmesh(runtime_factory):
+    policies: list[HealthcheckPolicy] = []
+
+    class Client:
+        def check(self):
+            return None
+
+        def close(self):
+            return None
+
+    runtime = runtime_factory(
+        clients={"keycloak": Client()},
+        required=("keycloak",),
+    )
+    original_check_with_policy = runtime.check_with_policy
+
+    async def tracked_check_with_policy(policy):
+        policies.append(policy)
+        return await original_check_with_policy(policy)
+
+    runtime.check_with_policy = tracked_check_with_policy
+    config = AppConfig(
+        startup_healthcheck=True,
+        readiness_parallel=True,
+        readiness_timeout_seconds=0.25,
+        readiness_overall_timeout_seconds=1.5,
+        startup_failure_mode=StartupFailureMode.REPORT,
+        startup_healthcheck_attempts=2,
+        startup_healthcheck_retry_delay_seconds=0.1,
+    )
+    app = create_app(config=config, runtime=runtime, include_auth_router=False)
+
+    with TestClient(app):
+        pass
+
+    assert len(policies) == 1
+    assert policies[0] == HealthcheckPolicy(
+        on_startup=True,
+        parallel=True,
+        timeout_seconds=0.25,
+        overall_timeout_seconds=1.5,
+        failure_mode=StartupFailureMode.REPORT,
+        attempts=2,
+        retry_delay_seconds=0.1,
+    )
+
+
 def test_create_app_retries_injected_runtime_startup_check(runtime_factory):
     events: list[str] = []
 
@@ -756,7 +810,9 @@ def test_create_app_closes_injected_runtime_when_startup_healthcheck_fails(setti
 
     runtime = ServiceRuntime(
         configs=settings,
-        clients={Service.SQLITE: Client()},
+        clients={
+            Service.SQLITE: _service_handle(Service.SQLITE, Client()),
+        },
         selected_services=frozenset({Service.SQLITE}),
         required_services=frozenset({Service.SQLITE}),
     )

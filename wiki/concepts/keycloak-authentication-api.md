@@ -1,10 +1,10 @@
 ---
 title: Keycloak authentication API
 created: 2026-06-25
-updated: 2026-07-23
+updated: 2026-08-01
 type: concept
 tags: [service, api, security, integration, implementation]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-api-reference-v0.4.0.md, raw/articles/docmesh-py-core-api-reference-v0.5.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-v0.4.0.md, raw/articles/docmesh-py-core-examples-guide-v0.5.0.md, fastapi_core/factory.py, fastapi_core/dependencies/auth.py, fastapi_core/routers/auth.py]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-api-reference-v0.4.0.md, raw/articles/docmesh-py-core-api-reference-v0.5.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-v0.4.0.md, raw/articles/docmesh-py-core-examples-guide-v0.5.0.md, raw/articles/docmesh-py-core-api-reference-v0.6.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.6.0.md, raw/articles/docmesh-py-core-examples-guide-v0.6.0.md, raw/articles/docmesh-py-core-env-example-v0.6.0.md, fastapi_core/factory.py, fastapi_core/dependencies/auth.py, fastapi_core/routers/auth.py]
 confidence: medium
 ---
 
@@ -14,7 +14,9 @@ confidence: medium
 
 ## Discovery and base config
 
-v0.5.0 설정 가이드는 `KeycloakDiscoveryConfig`와 `KeycloakConfig`를 구분하며, 두 타입 모두 프로세스 환경변수만 읽는다.
+v0.6.0 설정 가이드는 `KeycloakDiscoveryConfig`와 `KeycloakConfig`를 구분하며, 두 타입 모두 프로세스 환경변수만 읽는다.
+
+v0.6.0에서는 `KeycloakConfig`가 `docmesh_config`의 설정 모델이고 `KeycloakAuthService`·`KeycloakProvisioner`가 `docmesh_py_core`의 domain API다. 호환 facade가 있어도 새 코드에서는 두 package-root import 경계를 유지한다.^[raw/articles/docmesh-py-core-api-reference-v0.6.0.md]^[raw/articles/docmesh-py-core-configuration-guide-v0.6.0.md]
 
 - `KeycloakDiscoveryConfig`는 `KEYCLOAK_URL`, `KEYCLOAK_REALM`만 읽는다.
 - `KeycloakConfig`는 discovery 설정을 확장하고 `KEYCLOAK_CLIENT_ID`를 추가로 요구한다.
@@ -57,6 +59,8 @@ v0.5.0 설정 가이드는 `KeycloakDiscoveryConfig`와 `KeycloakConfig`를 구�
 
 둘 다 주거나 둘 다 비우면 `KEYCLOAK provisioning requires a single admin auth mode` 오류가 발생한다.^[raw/articles/docmesh-py-core-configuration-guide-2026.md]
 
+v0.6.0의 `KeycloakProvisioner` 자체는 `config.provisioning_enabled`를 실행 gate로 검사하지 않는다. 애플리케이션 호출자가 해당 flag를 확인한 뒤 `provision()`을 호출해야 하며, dry-run은 원격 호출 없이 `planned` 결과를 만든다. 각 작업 실패는 masked `failed` 항목으로 누적되므로 호출자가 `result.failed`를 처리해야 한다.^[raw/articles/docmesh-py-core-api-reference-v0.6.0.md]^[raw/articles/docmesh-py-core-examples-guide-v0.6.0.md]
+
 ## Related pages
 
 - [[docmesh-py-core]]: Keycloak 인증은 패키지 공개 API의 핵심 축이다.
@@ -68,4 +72,4 @@ v0.5.0 설정 가이드는 `KeycloakDiscoveryConfig`와 `KeycloakConfig`를 구�
 
 fastapi-core는 현재 이 API를 채택해 Keycloak client/provider를 구성한다. `/token`은 `fetch_access_token()`으로 토큰을 발급하고 예외 유형을 HTTP 오류로 매핑하며, `/user`와 `get_current_user()`는 bearer token을 검증해 역할과 scope를 `UserInfo`로 변환한다.
 
-v0.5.0 예제는 `KeycloakConfig()` 환경 설정으로 `KeycloakAuthService`를 만들고, password grant 호출 인자는 환경 credential보다 우선함을 보인다. `client_credentials`는 `KEYCLOAK_TOKEN_GRANT_TYPE=client_credentials`로 선택하며 username/password를 사용하지 않는다. RS256은 JWKS endpoint와 cache/rotation 경로를 사용한다.^[raw/articles/docmesh-py-core-examples-guide-v0.5.0.md]
+v0.6.0 예제는 `docmesh_config.KeycloakConfig()` 환경 설정으로 `docmesh_py_core.KeycloakAuthService`를 만들고, password grant 호출 인자는 환경 credential보다 우선함을 보인다. `client_credentials`는 `KEYCLOAK_TOKEN_GRANT_TYPE=client_credentials`로 선택하며 username/password를 사용하지 않는다. RS256은 JWKS endpoint와 cache/rotation 경로를 사용한다.^[raw/articles/docmesh-py-core-examples-guide-v0.6.0.md]

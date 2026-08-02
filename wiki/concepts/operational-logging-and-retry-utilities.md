@@ -1,10 +1,10 @@
 ---
 title: Operational logging and retry utilities
 created: 2026-06-29
-updated: 2026-07-23
+updated: 2026-08-01
 type: concept
 tags: [api, observability, implementation, security]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-api-reference-v0.4.0.md, raw/articles/docmesh-py-core-api-reference-v0.5.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-v0.4.0.md, raw/articles/docmesh-py-core-examples-guide-v0.5.0.md]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-api-reference-v0.4.0.md, raw/articles/docmesh-py-core-api-reference-v0.5.0.md, raw/articles/docmesh-py-core-configuration-guide-2026.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-v0.4.0.md, raw/articles/docmesh-py-core-examples-guide-v0.5.0.md, raw/articles/docmesh-py-core-api-reference-v0.6.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.6.0.md, raw/articles/docmesh-py-core-examples-guide-v0.6.0.md, raw/articles/docmesh-py-core-env-example-v0.6.0.md]
 confidence: medium
 ---
 
@@ -17,12 +17,17 @@ confidence: medium
 - `mask_sensitive_value(value)`: 비밀번호, 토큰, secret, DSN/URI의 민감값을 마스킹한다.
 - `configure_logging(...)`: stderr/file handler를 구성하고 `DOCMESH_LOG_LEVEL` 또는 명시 `level` 값으로 로그 레벨을 결정한다.
 - `build_service_log_event(...)`: 서비스명, operation, outcome, host, latency, retry_count, error를 포함하는 구조화 이벤트 dict를 만든다.
+- `serialize_error(error)`: 알려진 오류의 type, masked message, service/reason/remediation과 JSON-safe details를 API 응답 경계로 변환한다.
 - `retry_call(operation, ..., retry_on, max_attempts, base_delay_seconds=0.5)`: 지수 백오프 기반으로 동기 함수를 재시도한다.
 - `close_service_clients(clients)`: 여러 wrapper/client에 대해 `close()`를 순회 호출하고 `None` 값은 무시한다. 비동기/혼합 cleanup에는 실패를 모아 나머지 종료를 계속하는 `async_close_service_clients()`를 사용한다.^[raw/articles/docmesh-py-core-api-reference-v0.2.0.md]
 
-v0.5.0 설정 가이드는 `DOCMESH_LOG_LEVEL`의 기본값을 `INFO`로 두고, `configure_logging(level=...)`를 주지 않으면 이 env를 읽도록 문서화한다. 또한 `DOCMESH_LOG_LEVEL`은 `CommonConfig` 필드가 아니라 로깅 함수가 직접 읽는 환경변수라고 구분한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md]
+v0.6.0 설정 가이드는 `DOCMESH_LOG_LEVEL`의 기본값을 `INFO`로 두고, `configure_logging(level=...)`를 주지 않으면 이 env를 읽도록 문서화한다. 또한 `DOCMESH_LOG_LEVEL`은 `CommonConfig` 필드가 아니라 로깅 함수가 직접 읽는 환경변수라고 구분한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.6.0.md]
 
-v0.5.0 예제는 `configure_logging(force=True)`과 `build_service_log_event()`를 함께 쓰며 `error`와 민감 key의 `extra` 값을 마스킹한다. 함수의 level, `DOCMESH_LOG_LEVEL`, `INFO` 순으로 level을 선택하며, 일반 `host`와 호출자가 직접 남기는 로그까지 자동 정제하지 않으므로 secret-safe 값만 전달해야 한다.^[raw/articles/docmesh-py-core-examples-guide-v0.5.0.md]
+v0.6.0 예제는 `configure_logging()`, `LifecycleEvent` observer, `build_service_log_event()`와 `serialize_error()`를 함께 사용한다. 함수의 level, `DOCMESH_LOG_LEVEL`, `INFO` 순으로 level을 선택하며, observer 예외는 primary lifecycle 결과를 바꾸지 않는다. 일반 `host`와 호출자가 직접 남기는 로그까지 자동 정제하지 않으므로 secret-safe 값만 전달해야 한다.^[raw/articles/docmesh-py-core-examples-guide-v0.6.0.md]^[raw/articles/docmesh-py-core-api-reference-v0.6.0.md]
+
+## v0.6.0 lifecycle event and error boundary
+
+`LifecycleEvent`는 operation, outcome, service, latency, retry count, masked error를 `to_dict()`로 제공하고 `LifecycleObserver`는 lifecycle 결과와 분리된 관측성 callback이다. `serialize_error()`는 `issues`, `result`, `failures`, `status`, `diagnosis`를 JSON-safe details로 보존하되 raw client object는 제외한다.^[raw/articles/docmesh-py-core-api-reference-v0.6.0.md]^[raw/articles/docmesh-py-core-examples-guide-v0.6.0.md]
 
 ## Guardrails
 

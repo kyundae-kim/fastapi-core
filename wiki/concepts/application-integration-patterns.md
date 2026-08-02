@@ -1,10 +1,10 @@
 ---
 title: Application integration patterns
 created: 2026-06-29
-updated: 2026-07-23
+updated: 2026-08-02
 type: concept
 tags: [integration, workflow, implementation, observability]
-sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-api-reference-v0.4.0.md, raw/articles/docmesh-py-core-api-reference-v0.5.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-v0.4.0.md, raw/articles/docmesh-py-core-examples-guide-v0.5.0.md]
+sources: [raw/articles/docmesh-py-core-api-reference-2026.md, raw/articles/docmesh-py-core-api-reference-v0.2.0.md, raw/articles/docmesh-py-core-api-reference-v0.3.0.md, raw/articles/docmesh-py-core-api-reference-v0.4.0.md, raw/articles/docmesh-py-core-api-reference-v0.5.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.2.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.3.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.4.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md, raw/articles/docmesh-py-core-examples-guide-2026.md, raw/articles/docmesh-py-core-examples-guide-v0.2.0.md, raw/articles/docmesh-py-core-examples-guide-v0.3.0.md, raw/articles/docmesh-py-core-examples-guide-v0.4.0.md, raw/articles/docmesh-py-core-examples-guide-v0.5.0.md, raw/articles/docmesh-config-api-reference-v0.1.0.md, raw/articles/docmesh-config-configuration-v0.1.0.md, raw/articles/docmesh-config-examples-v0.1.0.md, raw/articles/docmesh-config-env-example-v0.1.0.md, raw/articles/docmesh-py-core-api-reference-v0.6.0.md, raw/articles/docmesh-py-core-configuration-guide-v0.6.0.md, raw/articles/docmesh-py-core-examples-guide-v0.6.0.md, raw/articles/docmesh-py-core-env-example-v0.6.0.md]
 confidence: medium
 ---
 
@@ -12,9 +12,25 @@ confidence: medium
 
 `docmesh-py-core` 문서는 개별 API 설명을 넘어서, 실제 애플리케이션이 설정 로딩·서비스 생성·헬스체크·종료 정리를 어떤 수명주기 패턴으로 묶어야 하는지 보여준다.
 
+## Configuration preflight boundary
+
+`docmesh-config` v0.1.0 예제는 설정 객체가 프로세스 환경변수만 읽고 외부 서비스에 연결하지 않는다는 전제에서 시작한다. 애플리케이션은 필요한 서비스만 선택해 로드하고 `diagnose_services(plan=...)`로 환경 상태를 확인한 뒤 실제 runtime assembly로 넘어가야 한다.^[raw/articles/docmesh-config-api-reference-v0.1.0.md]^[raw/articles/docmesh-config-examples-v0.1.0.md]
+
+이 패키지의 `RuntimePlan`과 `HealthcheckPolicy`는 선택·required·대안 그룹·startup 실패 정책을 표현하는 metadata다. `diagnose_services()`와 `HealthcheckPolicy`를 실제 DNS/socket/API health check로 오해하지 말고, 외부 연결 및 결과 집계는 downstream runtime/health 계층의 책임으로 분리한다.^[raw/articles/docmesh-config-api-reference-v0.1.0.md]^[raw/articles/docmesh-config-examples-v0.1.0.md]
+
+`.env.example`도 자동 로더가 아니므로 개발 shell, container 또는 orchestrator가 필요한 값만 프로세스 환경으로 주입해야 한다. 이 경계는 [[docmesh-config]]와 [[service-configuration-contracts]]에서 설정 계약으로 관리된다.^[raw/articles/docmesh-config-configuration-v0.1.0.md]^[raw/articles/docmesh-config-env-example-v0.1.0.md]
+
+## v0.6.0 lifecycle entrypoint
+
+v0.6.0은 `RuntimePlan`·`Service`·`HealthcheckPolicy`를 `docmesh_config`에서 가져오고 `service_lifespan()`·`ServiceRuntime`·factory를 `docmesh_py_core`에서 가져오는 명시적 import boundary를 사용한다. 일반 async 애플리케이션은 `async with service_lifespan(plan=plan)`으로 생성·startup check·cleanup을 한 lifecycle 안에 둔다.^[raw/articles/docmesh-py-core-api-reference-v0.6.0.md]^[raw/articles/docmesh-py-core-examples-guide-v0.6.0.md]
+
+startup policy는 `HealthcheckPolicy`의 `on_startup`, timeout, attempts, retry delay, `FAIL`/`REPORT`를 통해 선언하고, 이미 열린 runtime의 운영 readiness는 `runtime.check()` 또는 `runtime.check_with_policy()`로 재실행한다. `DOCMESH_HEALTHCHECK_ENABLED` 환경변수는 지원하지 않는다.^[raw/articles/docmesh-py-core-configuration-guide-v0.6.0.md]^[raw/articles/docmesh-py-core-examples-guide-v0.6.0.md]
+
+설정·factory·network를 모두 비활성화한 배포에는 `create_empty_service_runtime()`을 사용하며, 동기 `assemble_services()`는 NATS 또는 timeout startup policy가 없는 경우에만 선택한다. 실제 API endpoint는 서비스별 결과와 전체 timeout을 모두 503으로 매핑해야 한다.^[raw/articles/docmesh-py-core-api-reference-v0.6.0.md]^[raw/articles/docmesh-py-core-examples-guide-v0.6.0.md]
+
 ## Canonical lifecycle
 
-v0.5.0 API 레퍼런스는 일반 애플리케이션에 assembly-first, direct-api-when-needed 정책을 권장한다. 일반 bootstrap에는 `RuntimePlan`과 `await assemble_service_runtime()`을, 동기 CLI·배치 통합에는 `assemble_services()`를 우선 고려하며, 단일 SDK·특수 factory 제어 시 direct API를 사용한다.^[raw/articles/docmesh-py-core-api-reference-v0.5.0.md]
+v0.6.0 API 레퍼런스는 일반 애플리케이션에 `service_lifespan()` 기반 assembly-first, direct-api-when-needed 정책을 권장한다. 일반 bootstrap에는 `RuntimePlan`과 `async with service_lifespan()`을, 동기 CLI·배치 통합에는 `assemble_services()`를 우선 고려하며, 단일 SDK·특수 factory 제어 시 direct API를 사용한다.^[raw/articles/docmesh-py-core-api-reference-v0.6.0.md]
 
 - `RuntimePlan`은 서비스 선택, one-of, `HealthcheckPolicy`를 immutable하게 선언하며 빈 선택·중복·모순 plan을 거부한다. async 조립은 이를 `plan=`으로 전달한다.
 - `assemble_service_runtime()`은 factory 또는 startup check 실패 시 생성된 자원을 정리한다. 동기 `assemble_services()`는 NATS를 지원하지 않는다.^[raw/articles/docmesh-py-core-api-reference-v0.5.0.md]
@@ -22,7 +38,7 @@ v0.5.0 API 레퍼런스는 일반 애플리케이션에 assembly-first, direct-a
 
 배포는 application `RuntimePlan`에서 선택한 서비스의 환경변수만 제공하고, 네트워크 연결 전 `diagnose_services(plan=...)`가 성공한 뒤 assembly를 시작해야 한다. startup healthcheck는 `RuntimePlan.healthcheck`로 선언하며, production에서는 TLS·인증서 검증과 placeholder 검증 오류를 먼저 해결해야 한다.^[raw/articles/docmesh-py-core-configuration-guide-v0.5.0.md]
 
-v0.5.0 예제는 `diagnose_services(plan=...)`를 네트워크 연결 전에 실행한 뒤 `runtime = await assemble_service_runtime(plan=plan)`과 `async with runtime`으로 lifecycle을 소유한다. `ServiceRuntime`은 SQLite wrapper/engine을 종료하지만, NATS `connect()`가 반환한 지속 연결은 application이 `drain()`으로 정리한다.^[raw/articles/docmesh-py-core-examples-guide-v0.5.0.md]
+v0.6.0 예제는 `diagnose_services(plan=...)`를 네트워크 연결 전에 실행한 뒤 `async with service_lifespan(plan=plan) as runtime`으로 lifecycle을 소유한다. `ServiceRuntime`은 wrapper/engine을 종료하지만, NATS `connect()`가 반환한 지속 연결은 application이 `drain()`으로 정리한다.^[raw/articles/docmesh-py-core-examples-guide-v0.6.0.md]
 
 ## Direct config and auth flows
 
@@ -47,3 +63,7 @@ readiness/liveness 용도에서는 `check_all_services()` 결과를 `{ok, servic
 Keycloak 예시는 `password` grant 사용자 credential을 설정 객체에 고정하지 않고 토큰 요청 시점 인자로 전달하는 방식을 권장한다. 로깅 예시는 `configure_logging()`과 `DOCMESH_LOG_LEVEL` 기반 초기화를 보여주며, direct factory 경로에서는 여러 optional client 정리를 `close_service_clients()`로 통일할 수 있다.^[raw/articles/docmesh-py-core-examples-guide-2026.md]
 
 이런 지침은 [[keycloak-authentication-api]]와 [[operational-logging-and-retry-utilities]]의 운영 원칙을 실제 코드 형태로 구체화한 것이다.
+
+현재 consumer adapter의 반복 구현을 줄이는 framework-neutral 개선안은 [[docmesh-py-core-consumer-implementation-minimization]]에 정리했다.
+
+설정 로딩·plan 생성·preflight 중복을 줄이는 docmesh-config 측 개선안은 [[docmesh-config-consumer-implementation-minimization]]에 정리했다.

@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from fastapi_core import ErrorMapping, register_error_mapper
+from fastapi_core import ErrorMapping, create_error_renderer, register_error_mapper
 from fastapi_core.config import AppConfig
 from fastapi_core.factory import create_app
 from fastapi_core.http import _problem_response
@@ -106,6 +106,22 @@ def test_problem_response_generates_one_correlation_id_when_state_is_missing():
 
     generate_uuid.assert_called_once_with()
     assert b'"correlation_id":"generated-id"' in response.body
+
+
+def test_error_renderer_does_not_eagerly_generate_existing_correlation_id():
+    app = _app()
+    request = _request(app)
+    request.state.correlation_id = "existing-id"
+    renderer = create_error_renderer(problem_details=False)
+
+    with patch("fastapi_core.http.uuid4") as generate_uuid:
+        response = renderer(
+            request,
+            ErrorMapping(status_code=400, detail="Bad request"),
+        )
+
+    generate_uuid.assert_not_called()
+    assert b'"correlation_id":"existing-id"' in response.body
 
 
 def test_problem_response_preserves_explicit_none_correlation_id_failure():

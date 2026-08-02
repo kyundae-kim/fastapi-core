@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from docmesh_py_core import StartupFailureMode
+from docmesh_config import StartupFailureMode
 from pydantic import ValidationError
 
 import fastapi_core.docmesh_settings as docmesh_settings_module

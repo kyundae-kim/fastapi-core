@@ -15,8 +15,10 @@ from fastapi_core.testing import (
 
 def test_testing_module_exports_only_contract_helpers():
     assert set(testing_module.__all__) == {
+        "ApplicationContractProfile",
         "ResourceLifecycleProbe",
         "assert_auth_router_contract",
+        "assert_application_contract",
         "assert_health_contract",
         "assert_module_contract",
         "assert_openapi_contract",
@@ -35,6 +37,17 @@ def test_create_empty_runtime_has_no_selected_or_required_services():
 
 def test_testing_empty_runtime_uses_production_canonical_helper():
     assert testing_module.create_empty_runtime is runtime_module.create_empty_runtime
+
+
+def test_create_empty_runtime_delegates_to_docmesh_helper(monkeypatch):
+    sentinel = object()
+    monkeypatch.setattr(
+        runtime_module,
+        "create_empty_service_runtime",
+        lambda: sentinel,
+    )
+
+    assert runtime_module.create_empty_runtime() is sentinel
 
 
 def test_resource_lifecycle_probe_exercises_real_app_lifespan_and_readiness():
